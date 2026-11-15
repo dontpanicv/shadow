@@ -535,6 +535,8 @@ export class Threads {
   private readonly settling = new Map<string, Promise<void>>();
   /** The channels whose emoji the model chooses now. */
   private readonly choosingIcon = new Set<string>();
+  /** The emoji that wait, one after the other, so many new channels stay under the provider's rate limit. */
+  private icons = Promise.resolve();
   private readonly catchUpTimers = new Map<string, Timer>();
   private readonly catchingUp = new Map<string, Promise<void>>();
   private readonly briefChecks: Timer[] = [];
@@ -991,6 +993,17 @@ export class Threads {
       return;
     }
     this.choosingIcon.add(channelId);
+    this.icons = this.icons.then(() =>
+      this.writeIcon(companyId, channel, fast)
+    );
+  }
+
+  private writeIcon(
+    companyId: string,
+    channel: Channel,
+    fast: string
+  ): Promise<void> {
+    const channelId = channel.id;
     const threads = channel.threads
       .slice(0, 10)
       .map((thread) => `- ${thread.title}`);
@@ -1002,7 +1015,7 @@ export class Threads {
     ]
       .filter(Boolean)
       .join("\n");
-    this.llm
+    return this.llm
       .complete(
         CHANNEL_ICON,
         `<channel>\n${text}\n</channel>`,

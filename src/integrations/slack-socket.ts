@@ -4,8 +4,11 @@ const LONGEST_WAIT = 60_000;
 
 /** What a Socket Mode connection tells its owner. */
 export interface SlackSocketHandlers {
-  /** The connection is open: Slack sends events from now on, so whatever came before needs a catch-up. */
-  readonly hello: () => void;
+  /**
+   * The connection is open: Slack sends events from now on, so whatever came before needs a catch-up. `refreshed` is
+   * true when Slack asked for this connection and it came a moment after the one before.
+   */
+  readonly hello: (refreshed: boolean) => void;
   /** An event of the Events API, such as `message` or `channel_rename`. */
   readonly event: (event: { readonly type: string }) => void;
   /** A click on a button of a message that Shadow posted, with Slack's whole payload. */
@@ -35,6 +38,7 @@ export class SlackSocket {
   private socket: SocketLike | null = null;
   private stopped = false;
   private wait = FIRST_WAIT;
+  private refreshing = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -89,7 +93,8 @@ export class SlackSocket {
     }
     if (envelope.type === "hello") {
       this.wait = FIRST_WAIT;
-      this.handlers.hello();
+      this.handlers.hello(this.refreshing);
+      this.refreshing = false;
     } else if (envelope.type === "events_api" && envelope.payload?.event) {
       this.handlers.event(envelope.payload.event);
     } else if (envelope.type === "interactive" && envelope.payload) {
@@ -97,6 +102,7 @@ export class SlackSocket {
     } else if (envelope.type === "disconnect") {
       // Slack refreshes connections now and then: the next one opens at once.
       this.socket = null;
+      this.refreshing = true;
       socket.close();
       this.connect();
     }
@@ -104,6 +110,7 @@ export class SlackSocket {
 
   private again(error: unknown): void {
     this.socket = null;
+    this.refreshing = false;
     if (this.stopped) {
       return;
     }

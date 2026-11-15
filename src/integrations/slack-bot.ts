@@ -14,8 +14,10 @@ import { type SlackUser, slackPersonName } from "./slack-text.ts";
 
 /** How often the changed days of the channels are written, and quiet channels get their brief. */
 export const SLACK_FLUSH_INTERVAL = 60_000;
-/** How often Shadow reads the whole window of every channel again, for what the events missed. */
+/** How often Shadow reads the channels again, for what the events missed. */
 const DAILY_CHECK_MS = 24 * 60 * 60_000;
+/** How far back the daily check reads: a day and a half, so two checks overlap. */
+const DAILY_CHECK_WINDOW_MS = 36 * 60 * 60_000;
 /** A new connection reads from a little before the last event, as an event and its reading can cross. */
 const CATCH_UP_OVERLAP_MS = 5 * 60_000;
 /** The events that change the list of public channels. */
@@ -106,11 +108,18 @@ export interface SlackBotOptions {
 }
 
 /**
+ * The three kinds of work of a company, each one task after the other: `live` keeps each event and gives it to the
+ * module that talks in Slack, `reading` reads Slack's history, which can take hours in a large workspace, and `flush`
+ * writes the changed days and the briefs, which wait for the model. So an event never waits for a reading or a brief.
+ */
+type Lane = "live" | "reading" | "flush";
+
+/**
  * The company's Slack bot, which listens: an admin gives Shadow its bot token (`xoxb-…`) and its app token (`xapp-…`),
  * and Slack sends its events over Socket Mode, so nothing reads Slack on a timer. The public channels become the
  * channels that every member sees, and a channel event makes the bot list them again. Each message event goes into
  * `SlackHistory`, which keeps the channel's day files and its brief. A new connection reads what it missed since the
- * last event, and once a day the bot reads the whole window again, for what an event never brought.
+ * last event, and once a day the bot reads the last `DAILY_CHECK_WINDOW_MS` again, for what an event never brought.
  *
  * @example
  * const bot = new SlackBot(database, secrets, companies, (id) => threads.channelsChanged(id), ports);
@@ -122,8 +131,10 @@ export class SlackBot {
   private readonly history: SlackHistory;
   private readonly sockets = new Map<string, SlackSocket>();
   private readonly listening = new Set<string>();
-  /** The work of each company, one task after the other, so events keep their order. */
+  /** The work of each company and lane, one task after the other, so events keep their order. */
   private readonly queues = new Map<string, Promise<void>>();
+  /** How many tasks of each company and lane wait or run. */
+  private readonly pending = new Map<string, number>();
   private readonly timers: ReturnType<typeof setInterval>[] = [];
   private readonly stopping = new AbortController();
   private readonly connectTo: ((url: string) => SocketLike) | undefined;
@@ -299,7 +310,7 @@ export class SlackBot {
     this.listening.delete(companyId);
   }
 
-  /** Listens for every company with a bot, writes changed days every minute, and checks the whole window daily. */
+  /** Listens for every company with a bot, writes changed days every minute, and checks the channels daily. */
   start(): void {
     for (const companyId of this.companies.ids()) {
       if (this.row(companyId)) {
@@ -309,7 +320,7 @@ export class SlackBot {
     this.timers.push(
       setInterval(() => {
         for (const companyId of this.sockets.keys()) {
-          this.enqueue(companyId, () => this.history.flush(companyId));
+          this.flushSoon(companyId);
         }
       }, SLACK_FLUSH_INTERVAL),
       setInterval(() => {
@@ -334,7 +345,12 @@ export class SlackBot {
 
   /** Waits for the work of a company, then writes its changed days and every brief that waits, quiet or not. */
   async flush(companyId: string): Promise<void> {
-    await this.queues.get(companyId);
+    // A task of one lane can add one to another, such as a reading its flush.
+    while (LANES.some((lane) => this.busy(companyId, lane))) {
+      await Promise.all(
+        LANES.map((lane) => this.queues.get(`${companyId}:${lane}`))
+      );
+    }
     await this.history.flush(companyId, Number.POSITIVE_INFINITY);
   }
 
@@ -348,9 +364,12 @@ export class SlackBot {
     const socket = new SlackSocket(
       () => this.api.openSocket(appToken),
       {
-        hello: () => {
+        hello: (refreshed) => {
           this.listening.add(companyId);
-          this.catchUp(companyId);
+          // Slack's events go to the new connection of a refresh; the daily check reads what the moment between missed.
+          if (!refreshed) {
+            this.catchUp(companyId);
+          }
         },
         event: (event) => this.event(companyId, event),
         interaction: (payload) => this.surface?.interaction(companyId, payload),
@@ -372,11 +391,11 @@ export class SlackBot {
   private catchUp(companyId: string): void {
     const listened = this.row(companyId)?.listened_at ?? null;
     const since = listened === null ? null : listened - CATCH_UP_OVERLAP_MS;
-    this.enqueue(companyId, async (token) => {
+    this.enqueue(companyId, "reading", async (token) => {
       await this.readWorkspace(companyId, token);
       await this.listChannels(companyId, token);
       await this.history.catchUp(companyId, token, since, this.stopping.signal);
-      await this.history.flush(companyId);
+      this.flushSoon(companyId);
       this.heard(companyId);
       if (since === null) {
         // A reading of the whole window is the daily check of today.
@@ -416,9 +435,12 @@ export class SlackBot {
   private event(companyId: string, event: { readonly type: string }): void {
     this.heard(companyId);
     if (CHANNEL_EVENTS.has(event.type)) {
-      // A new channel gets its history at once; the others have nothing to read from now.
-      this.enqueue(companyId, async (token) => {
-        await this.listChannels(companyId, token);
+      // The list changes at once; a new channel gets its history, and the others have nothing to read from now.
+      const listed = this.enqueue(companyId, "live", (token) =>
+        this.listChannels(companyId, token)
+      );
+      this.enqueue(companyId, "reading", async (token) => {
+        await listed;
         await this.history.catchUp(
           companyId,
           token,
@@ -427,7 +449,7 @@ export class SlackBot {
         );
       });
     } else if (event.type === "message") {
-      this.enqueue(companyId, (token) =>
+      this.enqueue(companyId, "live", (token) =>
         this.history.event(
           companyId,
           token,
@@ -439,48 +461,85 @@ export class SlackBot {
     // After the mirror kept a message, the module that talks in Slack sees it, and the other conversation events.
     if (this.surface && !CHANNEL_EVENTS.has(event.type)) {
       const { surface } = this;
-      this.enqueue(companyId, () =>
+      this.enqueue(companyId, "live", () =>
         surface.event(companyId, event as Record<string, unknown>)
       );
     }
   }
 
-  /** Reads the whole window of every channel again once a day, for an event that never came. */
+  /**
+   * Reads the last `DAILY_CHECK_WINDOW_MS` of every channel once a day, for an event that never came; a channel that
+   * Shadow has not read yet gets its whole window. It waits while another reading runs, and the hourly timer tries again.
+   */
   private dailyCheck(companyId: string): void {
     const row = this.row(companyId);
-    if (!row || (row.checked_at ?? 0) > Date.now() - DAILY_CHECK_MS) {
+    if (
+      !row ||
+      (row.checked_at ?? 0) > Date.now() - DAILY_CHECK_MS ||
+      this.busy(companyId, "reading")
+    ) {
       return;
     }
     this.checked(companyId);
-    this.enqueue(companyId, async (token) => {
+    this.enqueue(companyId, "reading", async (token) => {
       await this.listChannels(companyId, token);
-      await this.history.catchUp(companyId, token, null, this.stopping.signal);
+      await this.history.catchUp(
+        companyId,
+        token,
+        Date.now() - DAILY_CHECK_WINDOW_MS,
+        this.stopping.signal
+      );
+      this.flushSoon(companyId);
     });
   }
 
-  /** Runs `task` after the company's earlier work, with its bot token; a failure goes to the status. */
+  /** Writes the changed days and the briefs that wait, unless a flush already waits or runs. */
+  private flushSoon(companyId: string): void {
+    if (!this.busy(companyId, "flush")) {
+      this.enqueue(companyId, "flush", () => this.history.flush(companyId));
+    }
+  }
+
+  private busy(companyId: string, lane: Lane): boolean {
+    return (this.pending.get(`${companyId}:${lane}`) ?? 0) > 0;
+  }
+
+  /**
+   * Runs `task` after the earlier work of the company's lane, with its bot token. The status tells how the last reading
+   * went; the failures of the other lanes go to the log.
+   */
   private enqueue(
     companyId: string,
+    lane: Lane,
     task: (token: string) => Promise<void>
-  ): void {
-    const previous = this.queues.get(companyId) ?? Promise.resolve();
-    this.queues.set(
-      companyId,
-      previous.then(async () => {
+  ): Promise<void> {
+    const key = `${companyId}:${lane}`;
+    const previous = this.queues.get(key) ?? Promise.resolve();
+    this.pending.set(key, (this.pending.get(key) ?? 0) + 1);
+    const next = previous.then(async () => {
+      try {
         const row = this.row(companyId);
         if (!row || this.stopping.signal.aborted) {
           return;
         }
-        try {
-          await task(this.secrets.decrypt(row.token));
+        await task(this.secrets.decrypt(row.token));
+        if (lane === "reading") {
           this.database
             .query("UPDATE slack_bot SET error = NULL WHERE company_id = ?")
             .run(companyId);
-        } catch (error) {
-          this.fail(companyId, error);
         }
-      })
-    );
+      } catch (error) {
+        if (lane === "reading") {
+          this.fail(companyId, error);
+        } else if (!this.stopping.signal.aborted) {
+          console.error(`Slack bot work (${lane}) failed`, error);
+        }
+      } finally {
+        this.pending.set(key, this.pending.get(key)! - 1);
+      }
+    });
+    this.queues.set(key, next);
+    return next;
   }
 
   /** Copies the public channels of Slack into the company. */
@@ -538,6 +597,8 @@ export class SlackBot {
 
   private fail(companyId: string, error: unknown): void {
     if (!this.stopping.signal.aborted) {
+      // A later reading that works clears the status, so the log keeps each failure.
+      console.error("Slack bot reading failed", error);
       this.database
         .query("UPDATE slack_bot SET error = ? WHERE company_id = ?")
         .run(message(error), companyId);
@@ -552,6 +613,8 @@ export class SlackBot {
       .get(companyId) as BotRow | null;
   }
 }
+
+const LANES: readonly Lane[] = ["live", "reading", "flush"];
 
 interface SlackApiChannel {
   id: string;

@@ -358,9 +358,17 @@ test("a new channel gets its last 30 days at once, events bring each change, and
     "Receipt sent",
   ]);
 
-  // Slack refreshes the connection; a message came between the two. The new one reads only from the last event.
-  slack.messages.C2.unshift({ ts: ts(1), user: "U1", text: "Back online" });
+  // Slack refreshes the connection: its events go to the new one, so Slack is not read.
   slack.send({ type: "disconnect", reason: "refresh_requested" });
+  await connected();
+  expect(
+    slack.calls.filter((call) => call.method === "/api/conversations.history")
+  ).toHaveLength(reads);
+
+  // The connection drops, and a message came before the next one. The new one reads only from the last event.
+  slack.messages.C2.unshift({ ts: ts(1), user: "U1", text: "Back online" });
+  slack.sockets.at(-1)!.close();
+  await Bun.sleep(1100);
   await connected();
   const history = slack.calls.filter(
     (call) => call.method === "/api/conversations.history"

@@ -74,7 +74,7 @@ addresses, or code and data from employers or clients.
   (`src/integrations/slack-bot.ts`, through `Companies.syncSlackChannels`) makes, renames, or hides them, by
   `channel.slack_id`. People and agents make, rename, and merge away only private channels. The bot listens over
   Socket Mode (`slack-socket.ts`); never poll Slack on a timer. `slack-history.ts` keeps each message event, reads a
-  new channel's last 30 days once, a gap from the last event, and the whole window once a day, writes one
+  new channel's last 30 days once, a gap from the last event, and the last 36 hours once a day, writes one
   `slack-YYYY-MM-DD.md` file of the channel per changed day each minute, and gives a channel quiet for 10 minutes to
   its brief (`Threads.briefFromSlack`).
 - Shadow has one company; nobody makes or deletes one. A private channel (`channel.owner_id`) and all

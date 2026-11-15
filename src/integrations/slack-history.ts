@@ -101,6 +101,9 @@ type SlackChannelOf = Channel & { slackId: string };
  * brief of a quiet channel the messages that it has not read.
  */
 export class SlackHistory {
+  /** The Slack channels that a reading keeps now, by company: a flush leaves them until the reading is done. */
+  private readonly reading = new Set<string>();
+
   constructor(
     private readonly database: Database,
     private readonly api: SlackApi,
@@ -183,19 +186,39 @@ export class SlackHistory {
 
   /**
    * Writes each day that changed, and gives each channel quiet for `SLACK_BRIEF_QUIET_MS`, or every channel with
-   * `now` past them all, the messages that its brief has not read.
+   * `now` past them all, the messages that its brief has not read. A channel that a reading keeps now waits for it.
+   * Events and readings run beside it, so it runs one at a time.
    */
   async flush(companyId: string, now = Date.now()): Promise<void> {
-    for (const channel of this.slackChannels(companyId)) {
-      const days = this.database
-        .query(
-          "SELECT day FROM slack_day WHERE company_id = ? AND slack_channel_id = ? AND dirty = 1"
-        )
-        .all(companyId, channel.slackId) as { day: string }[];
-      for (const { day } of days) {
-        await this.writeDay(companyId, channel, day);
+    const channels = this.slackChannels(companyId).filter(
+      (channel) => !this.reading.has(`${companyId}:${channel.slackId}`)
+    );
+    // Every day file first, as a brief waits for the model; a channel that fails leaves the others to go on.
+    const failures: unknown[] = [];
+    for (const step of [
+      (channel: SlackChannelOf) => this.writeDays(companyId, channel),
+      (channel: SlackChannelOf) => this.briefWhenQuiet(companyId, channel, now),
+    ]) {
+      for (const channel of channels) {
+        await step(channel).catch((error: unknown) => failures.push(error));
       }
-      await this.briefWhenQuiet(companyId, channel, now);
+    }
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+  }
+
+  private async writeDays(
+    companyId: string,
+    channel: SlackChannelOf
+  ): Promise<void> {
+    const days = this.database
+      .query(
+        "SELECT day FROM slack_day WHERE company_id = ? AND slack_channel_id = ? AND dirty = 1"
+      )
+      .all(companyId, channel.slackId) as { day: string }[];
+    for (const { day } of days) {
+      await this.writeDay(companyId, channel, day);
     }
   }
 
@@ -248,6 +271,33 @@ export class SlackHistory {
         signal
       );
     const oldest = String(from / 1000);
+    const key = `${companyId}:${channel.slackId}`;
+    this.reading.add(key);
+    try {
+      await this.readFrom(companyId, channel, token, call, oldest, signal);
+    } finally {
+      this.reading.delete(key);
+    }
+    this.database
+      .query(
+        "INSERT INTO slack_history (company_id, slack_channel_id, synced_at) VALUES (?, ?, ?) ON CONFLICT (company_id, slack_channel_id) DO UPDATE SET synced_at = excluded.synced_at"
+      )
+      .run(companyId, channel.slackId, Date.now());
+  }
+
+  private async readFrom(
+    companyId: string,
+    channel: SlackChannelOf,
+    token: string,
+    call: (
+      method: string,
+      params: Record<string, string>
+    ) => Promise<Record<string, unknown>>,
+    oldest: string,
+    signal?: AbortSignal
+  ): Promise<void> {
+    // An event can keep a message after Slack listed the channel; only an older one that Slack did not list is gone.
+    const listed = Date.now() / 1000;
     const seen = new Set<string>();
     for (const message of await this.history(call, oldest)) {
       // A reply also sent to the channel comes with its thread.
@@ -271,15 +321,10 @@ export class SlackHistory {
     }
     // A message of the window that Slack no longer lists was deleted there.
     for (const gone of this.storedSince(companyId, channel.slackId, oldest)) {
-      if (!seen.has(gone.ts)) {
+      if (!seen.has(gone.ts) && Number(gone.ts) < listed) {
         this.remove(companyId, channel.slackId, gone.ts);
       }
     }
-    this.database
-      .query(
-        "INSERT INTO slack_history (company_id, slack_channel_id, synced_at) VALUES (?, ?, ?) ON CONFLICT (company_id, slack_channel_id) DO UPDATE SET synced_at = excluded.synced_at"
-      )
-      .run(companyId, channel.slackId, Date.now());
   }
 
   /** The messages from `oldest`, newest first, page by page; the bot joins a channel that it is not in yet. */
@@ -324,6 +369,7 @@ export class SlackHistory {
     parent: SlackMessage,
     signal?: AbortSignal
   ): Promise<void> {
+    const listed = Date.now() / 1000;
     const seen = new Set<string>();
     let cursor = "";
     do {
@@ -346,7 +392,7 @@ export class SlackHistory {
       )
       .all(companyId, channel.slackId, parent.ts) as { ts: string }[];
     for (const { ts } of stored) {
-      if (!seen.has(ts)) {
+      if (!seen.has(ts) && Number(ts) < listed) {
         this.remove(companyId, channel.slackId, ts);
       }
     }
@@ -473,6 +519,25 @@ export class SlackHistory {
     channel: SlackChannelOf,
     day: string
   ): Promise<void> {
+    // The day is taken before it is read, so an event that marks it again while the file is written is not lost.
+    this.database
+      .query(
+        "UPDATE slack_day SET dirty = 0 WHERE company_id = ? AND slack_channel_id = ? AND day = ?"
+      )
+      .run(companyId, channel.slackId, day);
+    try {
+      await this.writeTakenDay(companyId, channel, day);
+    } catch (error) {
+      this.markDay(companyId, channel.slackId, day);
+      throw error;
+    }
+  }
+
+  private async writeTakenDay(
+    companyId: string,
+    channel: SlackChannelOf,
+    day: string
+  ): Promise<void> {
     const messages = this.database
       .query(
         "SELECT ts, thread_ts, author, text, files, day FROM slack_message WHERE company_id = ? AND slack_channel_id = ? AND day = ? AND deleted_at IS NULL ORDER BY CAST(ts AS REAL)"
@@ -516,7 +581,7 @@ export class SlackHistory {
     }
     this.database
       .query(
-        "UPDATE slack_day SET file_id = ?, content_hash = ?, dirty = 0 WHERE company_id = ? AND slack_channel_id = ? AND day = ?"
+        "UPDATE slack_day SET file_id = ?, content_hash = ? WHERE company_id = ? AND slack_channel_id = ? AND day = ?"
       )
       .run(fileId, hash, companyId, channel.slackId, day);
   }
@@ -552,12 +617,13 @@ export class SlackHistory {
         time: Number(row.ts) * 1000,
       }))
     );
+    // A message that an event changed while the brief was written stays unread, for the next brief.
     const read = this.database.query(
-      "UPDATE slack_message SET briefed = 1 WHERE company_id = ? AND slack_channel_id = ? AND ts = ?"
+      "UPDATE slack_message SET briefed = 1 WHERE company_id = ? AND slack_channel_id = ? AND ts = ? AND text = ?"
     );
     this.database.transaction(() => {
       for (const row of rows) {
-        read.run(companyId, channel.slackId, row.ts);
+        read.run(companyId, channel.slackId, row.ts, row.text);
       }
     })();
   }
