@@ -1,7 +1,9 @@
 /**
- * Generates Golem's logo, "Dissolve, Noise": `bun scripts/icon.ts` writes the web app's icons, and `logo` gives
- * `bun run tokens` the path that the web app draws. One cell of the noise is 1 point at the size where the logo shows,
- * as in the UI's dither, so the grain stays visible: a finer one blurs into a gradient on a phone's home screen.
+ * Generates Golem's logo, "Half Badge": an employee badge whose right half is its shadow. `bun scripts/icon.ts` writes
+ * the web app's icons, and `logo` gives `bun run tokens` the path that the web app draws. In the drawing (`icon.golem`
+ * in `design/tokens.json`), `#` is white, `o` is the accent, and `+` is the shadow: the accent in noise. One cell of the
+ * noise is 1 point at the size where the logo shows, as in the UI's dither, so the grain stays visible: a finer one
+ * blurs into a gradient on a phone's home screen.
  */
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -15,8 +17,10 @@ const BLACK = [0, 0, 0, 0xff];
 
 const TILE_PADDING = 0.14;
 const MARK_PADDING = 0.1;
-const FACE_ROWS = tokens.icon.golem.split("|");
-const FOREHEAD = { left: 3, right: 5, row: 1 };
+const ART = tokens.icon.golem.split("|");
+const COLUMNS = Math.max(...ART.map((row) => row.length));
+/** The share of the shadow's noise cells in the accent. */
+const SHADOW = 0.55;
 
 /** Each raster: the path, its size in px, the px of one noise cell, the tile's padding, and the background. */
 const RASTERS: readonly [string, number, number, number, number[]][] = [
@@ -43,46 +47,59 @@ export function svg(
   padding = TILE_PADDING,
   background: string | null = "#000000"
 ): string {
-  const { face, forehead } = logo(side, padding);
+  const { ink, accent } = logo(side, padding);
   const tile = background
     ? `<rect width="${side}" height="${side}" fill="${background}"/>`
     : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" shape-rendering="crispEdges"><title>Golem</title>${tile}<path fill="#ffffff" d="${face}"/><path fill="${ACCENT_COLOR}" d="${forehead}"/></svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" shape-rendering="crispEdges"><title>Golem</title>${tile}<path fill="#ffffff" d="${ink}"/><path fill="${ACCENT_COLOR}" d="${accent}"/></svg>\n`;
 }
 
-/** The paths of the white face and the forehead mark, for the same absolute commands as the pixel icons. */
+/** The paths of the white cells and the accent cells, for the same absolute commands as the pixel icons. */
 export function logo(
   side: number,
   padding = MARK_PADDING
-): { face: string; forehead: string } {
-  let face = "";
+): { ink: string; accent: string } {
+  return {
+    ink: runs(side, padding, WHITE),
+    accent: runs(side, padding, ACCENT),
+  };
+}
+
+/** True where a cell of the shadow takes the accent. */
+export function shaded(x: number, y: number): boolean {
+  return noise(x, y) < SHADOW;
+}
+
+/** One rectangle for each run of cells in `color`, row by row. */
+function runs(side: number, padding: number, color: number[]): string {
+  let path = "";
   for (let y = 0; y < side; y += 1) {
     let start = -1;
     for (let x = 0; x <= side; x += 1) {
-      const white = x < side && colorAt(x, y, side, padding, BLACK) === WHITE;
-      if (white && start < 0) {
+      const inside = x < side && colorAt(x, y, side, padding, BLACK) === color;
+      if (inside && start < 0) {
         start = x;
-      } else if (!white && start >= 0) {
-        face += `M${start} ${y}H${x}V${y + 1}H${start}Z`;
+      } else if (!inside && start >= 0) {
+        path += `M${start} ${y}H${x}V${y + 1}H${start}Z`;
         start = -1;
       }
     }
   }
-  const { pad, cell } = grid(side, padding);
-  const left = pad + FOREHEAD.left * cell;
-  const top = pad + FOREHEAD.row * cell;
-  const right = pad + FOREHEAD.right * cell;
-  return { face, forehead: `M${left} ${top}H${right}V${top + cell}H${left}Z` };
+  return path;
 }
 
-export function lit(x: number, y: number, fu: number): boolean {
-  return 1.08 - smoothstep(0.35, 1, fu) * 1.08 > noise(x, y);
-}
-
-/** The face's area: a whole number of noise cells for each pixel of the 8 × 8 face, so that its edges are sharp. */
-function grid(size: number, padding: number): { pad: number; cell: number } {
-  const cell = Math.round(((1 - 2 * padding) * size) / 8);
-  return { pad: Math.floor((size - cell * 8) / 2), cell };
+/** The drawing's area: a whole number of noise cells for each of its pixels, so that its edges are sharp. */
+function grid(
+  size: number,
+  padding: number
+): { left: number; top: number; cell: number } {
+  // The drawing is taller than wide, so its rows set the size.
+  const cell = Math.round(((1 - 2 * padding) * size) / ART.length);
+  return {
+    left: Math.floor((size - cell * COLUMNS) / 2),
+    top: Math.floor((size - cell * ART.length) / 2),
+    cell,
+  };
 }
 
 function colorAt(
@@ -92,20 +109,16 @@ function colorAt(
   padding: number,
   background: number[]
 ): number[] {
-  const { pad, cell } = grid(side, padding);
-  const column = Math.floor((x - pad) / cell);
-  const row = Math.floor((y - pad) / cell);
-  if (
-    row === FOREHEAD.row &&
-    column >= FOREHEAD.left &&
-    column < FOREHEAD.right
-  ) {
+  const { left, top, cell } = grid(side, padding);
+  const pixel =
+    ART[Math.floor((y - top) / cell)]?.[Math.floor((x - left) / cell)];
+  if (pixel === "#") {
+    return WHITE;
+  }
+  if (pixel === "o" || (pixel === "+" && shaded(x, y))) {
     return ACCENT;
   }
-  if (FACE_ROWS[row]?.[column] !== "#") {
-    return background;
-  }
-  return lit(x, y, (x + 0.5 - pad) / (cell * 8)) ? WHITE : background;
+  return background;
 }
 
 /** The RGBA pixels of a raster; whole cells of `grain` px, centered, with any px left over as background. */
@@ -136,11 +149,6 @@ function noise(x: number, y: number): number {
 
 function fraction(value: number): number {
   return value - Math.floor(value);
-}
-
-function smoothstep(low: number, high: number, value: number): number {
-  const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
-  return t * t * (3 - 2 * t);
 }
 
 /** A PNG of RGBA pixels, each row with no filter. */

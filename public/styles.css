@@ -293,7 +293,7 @@ img.avatar {
 span.avatar.small::after {
   mask-image: var(--dither-corner-20);
 }
-/* Golem's logo (Mark). In light, a black tile keeps the white face apart from the white surface. */
+/* Golem's logo (Mark). In light, a black tile keeps the white badge apart from the white surface. */
 .avatar.agent {
   background: light-dark(#000000, transparent);
 }
@@ -1948,7 +1948,7 @@ span.avatar.large::after {
   margin-bottom: var(--space-md);
   background: url("./logo-96.svg") light-dark(#000000, transparent);
 }
-/* An empty section of a page says so in words; only an empty pane shows the face. */
+/* An empty section of a page says so in words; only an empty pane shows the logo. */
 .page-section .empty {
   padding: var(--space-xl);
 }

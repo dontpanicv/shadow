@@ -112,7 +112,7 @@ addresses, or code and data from employers or clients.
 - Change colors, type, spacing, radii, sizes, shadows, and pixel icons only in `design/tokens.json`, then run
   `bun run tokens`. Never edit `public/tokens.css` or `web/ui/pixels.ts` by hand. The logo has one drawing, `logo` in
   `scripts/icon.ts`: `bun scripts/icon.ts` makes the icons from it and `bun run tokens` the path that the web app
-  draws. Never add another face.
+  draws. Never add another logo.
 - Components live in `public/styles.css` and `web/ui/`, with the look of Linear's web app.
 - `design/components.md` is the spec for every component, measured from Linear's web app. The web never uses a native
   select, picker, menu, toggle, or alert; menus, selects, and tooltips are Radix primitives in `web/ui/`.

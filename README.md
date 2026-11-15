@@ -413,9 +413,9 @@ bun run lint       # Ultracite (Biome); `bun run format` fixes what it can
   ([docs/modular-monolith.md](docs/modular-monolith.md)). `web/` has the same modules.
 - `design/tokens.json` holds every color, size, space, radius, and shadow; `bun run tokens` makes the CSS, the
   16 × 16 pixel icons, and the logo's paths from it. `design/components.md` is the spec of every component.
-- `design/icon.svg` is Golem's face in an 8 × 8 grid: white on black, dissolving to the right, with the aleph of אמת
-  (truth), the letter that gives it life, as the accent cell (#c8603f) on its forehead. `bun scripts/icon.ts` makes it
-  and every app icon, with one noise cell a point at the size where each shows.
+- `design/icon.svg` is Golem's badge in an 8 × 12 grid: an employee badge, white on black, whose right half is its
+  shadow in accent (#c8603f) noise, under an accent clip. `bun scripts/icon.ts` makes it and every app icon, with one
+  noise cell a point at the size where each shows.
 - `.claude/skills/` has the agent skills of this repository, such as
   [Stageshow](https://github.com/benjitaylor/skills), which made the demo above
   (`.claude/skills/stageshow/examples/golem-demo/`). The diagrams are made with

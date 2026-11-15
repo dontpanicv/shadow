@@ -2,8 +2,8 @@
 
 The look is Ember: black, white, and one accent, square corners, pixel icons, and a 1 pt dither. Every value lives in
 `tokens.json`; layouts and motion are measured from Linear's light and dark themes (Inter 4.1, the same font file).
-`accent` is the only color of Golem; `gold` takes its value and marks steps and what waits for a person. Golem's work
-shows in the pixels of its face.
+`accent` is the only color of Golem; `gold` takes its value and marks steps and what waits for a person. Golem's logo
+is a badge whose right half is its shadow.
 Every component exists on the web (`public/styles.css`, `web/ui/`) and looks like Linear's web app. Native selects and
 pickers are never used; menus, selects, switches, and checkboxes are our own.
 
