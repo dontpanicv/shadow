@@ -263,7 +263,7 @@ test("people connect an MCP server by signing in, and agents get its tools", asy
   expect(await integrations.tools(companyId)).toEqual([]);
 });
 
-test("a shared sign-in lists an MCP server's tools, else a private one", async () => {
+test("the newest sign-in lists an MCP server's tools", async () => {
   const signInTo = async (code: string) => {
     const { url } = (await integrations.connect(companyId, alice, "shop")) as {
       url: string;
@@ -276,15 +276,14 @@ test("a shared sign-in lists an MCP server's tools, else a private one", async (
       `http://localhost:3000/api/v1/integrations/callback?code=${code}&state=${state}`
     );
   };
-  const shared = await signInTo("code-1");
-  integrations.setShared(companyId, alice, shared.id, true);
+  const first = await signInTo("code-1");
   const own = await signInTo("code-own");
-  await integrations.tools(companyId);
-  expect(connectedWith.at(-1)).toBe("access-1");
-  integrations.deleteCredential(companyId, alice, shared.id);
   await integrations.tools(companyId);
   expect(connectedWith.at(-1)).toBe("access-own");
   integrations.deleteCredential(companyId, alice, own.id);
+  await integrations.tools(companyId);
+  expect(connectedWith.at(-1)).toBe("access-1");
+  integrations.deleteCredential(companyId, alice, first.id);
 });
 
 test("a sign-in that did not finish adds nothing", async () => {
@@ -303,7 +302,7 @@ test("a sign-in that did not finish adds nothing", async () => {
   expect(integrations.list(companyId, alice)[0]!.credentials).toEqual([]);
 });
 
-test("a turn uses its person's own credential, else a shared one, and only its owner shares or deletes it", async () => {
+test("a turn uses only its person's credential, including old shared records", async () => {
   await shadow.signIn("Bob", "bob@example.com");
   const { internalAdapter } = await shadow.app.auth.$context;
   const found = (await internalAdapter.findUserByEmail("bob@example.com"))!;
@@ -346,32 +345,31 @@ test("a turn uses its person's own credential, else a shared one, and only its o
     label: "Company",
     secret: "company",
   });
-  expect(company).toMatchObject({ ownerId: bob.id, shared: false });
+  expect(company).toMatchObject({ ownerId: bob.id });
   const own = await notes.addCredential(companyId, alice, "notes", {
     label: "Mine",
     secret: "alice",
   });
   // Private: only Alice's turns use hers, and Bob's his.
   expect(await token(alice.id)).toBe("alice");
+  const [tool] = await notes.tools(companyId);
+  await expect(
+    tool!.execute({ account: "Company" }, { userId: alice.id })
+  ).rejects.toThrow("has no account Company");
   expect(await token(bob.id)).toBe("company");
   await expect(token(null)).rejects.toThrow("Notes is not connected");
   expect(notes.list(companyId, alice)[0]!.credentials).toMatchObject([
     { label: "Mine" },
   ]);
 
-  expect(() => notes.setShared(companyId, alice, company.id, true)).toThrow(
-    "Not found"
-  );
-  expect(notes.setShared(companyId, bob, company.id, true)).toMatchObject({
-    label: "Company",
-    shared: true,
-  });
-  expect(reached).toEqual([companyId, companyId, companyId]);
-  expect(await token(null)).toBe("company");
+  shadow.app.database
+    .query("UPDATE credential SET shared = 1 WHERE id = ?")
+    .run(company.id);
+  expect(reached).toEqual([companyId, companyId]);
+  await expect(token(null)).rejects.toThrow("Notes is not connected");
   expect(await token(alice.id)).toBe("alice");
   expect(notes.list(companyId, alice)[0]!.credentials).toMatchObject([
-    { label: "Company", ownerName: "Bob", shared: true },
-    { label: "Mine", shared: false },
+    { label: "Mine" },
   ]);
   expect(notes.list(companyId, bob)[0]!.credentials).toMatchObject([
     { label: "Company" },
@@ -384,7 +382,7 @@ test("a turn uses its person's own credential, else a shared one, and only its o
     "Not found"
   );
   notes.deleteCredential(companyId, alice, own.id);
-  expect(await token(alice.id)).toBe("company");
+  await expect(token(alice.id)).rejects.toThrow("Notes is not connected");
   notes.deleteCredential(companyId, bob, company.id);
 });
 
@@ -437,15 +435,23 @@ test("a tool that acts as a person asks its credential's owner every time, and o
     secret: "curl x",
   });
   expect(chat).toMatchObject({ label: "Company chat" });
-  messenger.setShared(companyId, alice, chat.id, true);
-
   const [send] = await messenger.tools(companyId);
   const asked: [string, string | null][] = [];
-  // Bob's turn uses Alice's shared credential, so Alice allows it.
+  await expect(
+    send!.execute(
+      { text: "Hi" },
+      {
+        userId: bobId,
+        approve: async (text, approverId) => {
+          asked.push([text, approverId]);
+        },
+      }
+    )
+  ).rejects.toThrow("Messenger is not connected");
   await send!.execute(
     { text: "Hi" },
     {
-      userId: bobId,
+      userId: alice.id,
       approve: async (text, approverId) => {
         asked.push([text, approverId]);
       },
@@ -455,14 +461,14 @@ test("a tool that acts as a person asks its credential's owner every time, and o
     send!.execute(
       { text: "Again" },
       {
-        userId: bobId,
+        userId: alice.id,
         approve: () => Promise.reject(new Error("Alice did not allow this.")),
       }
     )
   ).rejects.toThrow("Alice did not allow this.");
   // A routine's script cannot ask.
   await expect(
-    send!.execute({ text: "From a script" }, { userId: bobId })
+    send!.execute({ text: "From a script" }, { userId: alice.id })
   ).rejects.toThrow("Only an agent in a thread can use messenger_send");
   expect(asked).toEqual([["Send: Hi", alice.id]]);
   expect(sent).toEqual(["session of curl x: Hi"]);
@@ -820,11 +826,10 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
       ],
     }
   );
-  const company = await notes.addCredential(companyId, alice, "mail", {
+  await notes.addCredential(companyId, alice, "mail", {
     label: "company@example.com",
     secret: "company",
   });
-  notes.setShared(companyId, alice, company.id, true);
   await notes.addCredential(companyId, alice, "mail", {
     label: "work@example.com",
     secret: "work",
@@ -846,13 +851,11 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
     "company"
   );
   expect(await accounts!.execute({}, turn)).toEqual([
-    { account: "me@example.com", of: "own" },
-    { account: "work@example.com", of: "own" },
-    { account: "company@example.com", of: "own" },
+    { account: "me@example.com" },
+    { account: "work@example.com" },
+    { account: "company@example.com" },
   ]);
-  expect(await accounts!.execute({}, { userId: null })).toEqual([
-    { account: "company@example.com", of: "shared" },
-  ]);
+  expect(await accounts!.execute({}, { userId: null })).toEqual([]);
 });
 
 test("only a credential's owner lets Shadow read it for them, and only a watched one is read", async () => {
@@ -930,7 +933,6 @@ test("only a credential's owner lets Shadow read it for them, and only a watched
   await expect(watching.watch(mail.id, 1, () => false)).rejects.toThrow(
     "Shadow does not watch this credential"
   );
-  watching.setShared(companyId, bob, mail.id, true);
   expect(() => watching.setWatched(companyId, alice, mail.id, true)).toThrow(
     "Not found"
   );
@@ -938,7 +940,6 @@ test("only a credential's owner lets Shadow read it for them, and only a watched
     "Shadow cannot read this integration for you"
   );
   expect(watching.setWatched(companyId, bob, mail.id, true)).toMatchObject({
-    shared: true,
     watched: true,
   });
   expect(watching.watched()).toEqual([
@@ -1038,8 +1039,12 @@ test("only an opted-in account owner's chat receives verified read observations"
       .find((tool) => tool.name === "evidence_fail")!
       .execute({}, { userId: alice.id, observe })
   ).rejects.toThrow("Read failed");
-  observed.setShared(companyId, alice, credential.id, true);
-  await read.execute({}, { userId: notOwner.id, observe });
+  shadow.app.database
+    .query("UPDATE credential SET shared = 1 WHERE id = ?")
+    .run(credential.id);
+  await expect(
+    read.execute({}, { userId: notOwner.id, observe })
+  ).rejects.toThrow("Evidence is not connected");
   await read.execute({}, { userId: alice.id });
   observed.setWatched(companyId, alice, credential.id, false);
   await read.execute({}, { userId: alice.id, observe });

@@ -102,7 +102,7 @@ The thread and file search uses Bun's SQLite FTS5 plus the existing local semant
 standard Snowball stemmer; there is no guessed accent restoration. This change does not bundle a separate SQLite
 library. On macOS, Bun still selects Apple's SQLite. FTS5 is enabled; this implementation needs no native extension.
 
-Each record belongs to one member. A shared integration credential still produces private evidence for its owner.
+Each record and integration credential belongs to one member. A watched credential produces private evidence for its owner.
 An existing shared thread may receive source material that matches its subject, as explicitly permitted.
 Other people's private threads remain inaccessible. The posted update is visible in the matching thread. Any confirmed notification goes only to the account owner. Turning an account off stops its reads, checks,
 and queued reviews. It keeps historical audit data. Deleted Shadow threads are hidden from source recall.

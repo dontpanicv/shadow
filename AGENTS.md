@@ -46,7 +46,7 @@ addresses, or code and data from employers or clients.
   for, they `notices_suggest` it, and it becomes that person's own, with their realm and credentials, only when they
   accept. They post at most `AMBIENT_PER_HOUR` replies in a channel, follow a thread for `FOLLOW_MS`, stop when muted,
   and log decisions without message text. A person's own credentials serve only the turns of their own requests,
-  routines, and reminders; a turn without a person uses shared credentials only.
+  routines, and reminders; a turn without a person uses no personal credentials.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
   retain useful context and infer future checks. A useful development adds a visible source message and files to the
@@ -112,8 +112,8 @@ addresses, or code and data from employers or clients.
 - Register new route tables in `src/app/routes.ts` and new services in `createApp` in `src/app/app.ts`.
 - A person adds integration credentials only in their own Settings, never in Company settings. Like a
   private channel, each one belongs to one member (`credential.owner_id`) and is private to their
-  turns until they set `shared`, which gives it to the turns of every member; only its owner changes or removes it. A
-  tool call uses the credential of its turn's person first, else a shared one (`src/integrations/integrations.ts`). A
+  turns; only its owner changes or removes it. A
+  tool call uses only the credential of its turn's person (`src/integrations/integrations.ts`). A
   person can connect several accounts of one integration; each tool takes an `account`.
 - A connector tool that acts as a person, such as one that sends mail or a message, has an `approval`: the owner of
   its credential allows each call in the thread, and a routine's script cannot call it. An MCP server's tool cannot

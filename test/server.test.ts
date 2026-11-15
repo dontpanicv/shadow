@@ -157,7 +157,7 @@ test("companies are isolated until someone adds you", async () => {
   ).toBe(200);
 });
 
-test("a credential is private until its owner shares it, only its owner deletes it, and secrets never leave the server", async () => {
+test("a credential stays personal even if its old shared flag is set", async () => {
   const base = `/api/v1/companies/${companyId}`;
   const credential = (await (
     await call(`${base}/integrations/notes/credentials`, {
@@ -169,7 +169,7 @@ test("a credential is private until its owner shares it, only its owner deletes 
       },
     })
   ).json()) as any;
-  expect(credential.shared).toBe(false);
+  expect(credential).not.toHaveProperty("shared");
   const bobsView = async () =>
     (await call(`${base}/integrations`, { token: bob })).text();
   expect(await bobsView()).not.toContain("Company");
@@ -180,9 +180,21 @@ test("a credential is private until its owner shares it, only its owner deletes 
       token,
       body: { shared: true },
     });
-  expect((await share(bob)).status).toBe(404);
-  expect(await (await share(alice)).json()).toMatchObject({ shared: true });
-  expect(await bobsView()).toContain("Company");
+  expect((await share(bob)).status).toBe(400);
+  expect((await share(alice)).status).toBe(400);
+  expect(
+    (
+      await call(`${base}/credentials/${credential.id}`, {
+        method: "PUT",
+        token: bob,
+        body: { watched: true },
+      })
+    ).status
+  ).toBe(404);
+  shadow.app.database
+    .query("UPDATE credential SET shared = 1 WHERE id = ?")
+    .run(credential.id);
+  expect(await bobsView()).not.toContain("Company");
   expect(await bobsView()).not.toContain("company-secret");
 
   const remove = (token: string) =>

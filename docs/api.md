@@ -104,7 +104,7 @@ type SearchResult = {
 };
 type RecentSearch = { query: string; searchedAt: number }; // newest first; the same query again, in any case, only moves to the top
 type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
-type Credential = { id: string; label: string; ownerId: string; ownerName: string; shared: boolean; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone shares, watches, or deletes it; shared: every member's turns use it, else only its owner's; watched: its owner lets Shadow read it for them (`src/intake/`)
+type Credential = { id: string; label: string; ownerId: string; ownerName: string; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone changes or deletes it; watched: its owner lets Shadow read it for them (`src/intake/`)
 type Integration = { id: string; name: string; connect: "secret" | "sign-in"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
 type RoutineRun = {
 	id: string;
@@ -411,19 +411,18 @@ to put that host on the internet while the rest of Shadow stays private.
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `GET …/integrations` | | `Integration[]`, with the person's own credentials and the ones other members shared |
+| `GET …/integrations` | | `Integration[]`, with only the person's own credentials |
 | `POST …/integrations/:integrationId/credentials` | `{ label?, secret, address?, username? }`; `label` when the integration is `labeled`, `address` when it has `address`, `username` when it has `username` | `Credential`, private; `400` unless `connect` is `"secret"`, or when the integration cannot use the secret, such as a Slack cURL whose session Slack refuses |
 | `POST …/integrations/:integrationId/connect` | `{ address }` for `"sign-in"` with `address`: the person's own server | `{ url }`: the integration's sign-in page. `400` when `address` is not http or https |
 | `GET /integrations/callback` | OAuth `code` and `state` | Finishes the person's sign-in and returns to Settings; the browser must have the session that started it |
-| `PUT …/credentials/:credentialId` | `{ shared }`, `{ watched }`, or both | `Credential`; `404` unless it is the person's own; `400` for `watched: true` when the integration is not `watchable` |
+| `PUT …/credentials/:credentialId` | `{ watched }` | `Credential`; `404` unless it is the person's own; `400` for `watched: true` when the integration is not `watchable` |
 | `DELETE …/credentials/:credentialId` | | `204`; `404` unless it is the person's own |
 | `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is an admin, `404` unless the integration has `client` |
 
-A person connects integrations in Settings. A new credential is private: only the turns of its owner use it. Its owner
-shares it, and then the turns of every member use it, or makes it private again; only its owner deletes it. A turn is
+A person connects integrations in Settings. Every credential serves only its owner's turns; only its owner deletes it. A turn is
 for the author of the message it answers, the person whose request another thread passes on, the person who last
 wrote a routine's instructions or script, or the person who asked for a reminder or last changed it. Each tool call
-uses the newest credential of that person, else the newest shared one, unless the call names another account in its
+uses the newest credential of that person, unless the call names another of their accounts in its
 `account` argument; `<integrationId>_accounts` lists them. The agents of a company get the tools of each integration
 that someone connected there. Secrets never leave the server.
 
@@ -431,7 +430,7 @@ An integration with `connect: "sign-in"` is one or more MCP servers, such as Not
 own machine or instance: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. The provider returns to `base_url/api/v1/integrations/callback`, where Shadow exchanges the code and saves the credential. A sign-in needs the same browser session that started it.
 The agents then get the servers' tools as
 `<integrationId>_<tool>`, in the codemode namespace of the integration. Shadow lists a server's tools with the newest
-shared sign-in, else with a private one; the list has only tool names and schemas. Each Google Workspace service has its own MCP server and sign-in; all six use Shadow’s configured Google sign-in client.
+sign-in; the list has only tool names and schemas. Each Google Workspace service has its own MCP server and sign-in; all six use Shadow’s configured Google sign-in client.
 
 An integration with `client` signs in with Shadow's own OAuth client, because its sign-in server does not register
 clients: Google and HubSpot. Google uses the client in `config/shadow.toml`; an admin sets HubSpot’s client in Settings. Until a client is available, only admins see the integration, and `connect`
@@ -466,7 +465,7 @@ count. A reminder keeps its existing conversation context.
 Agents in every thread of a company, including its orchestrator, have `reminders_create`, `reminders_list`,
 `reminders_update`, and `reminders_cancel`. A reminder belongs to that company and its source thread. It runs once when
 its saved UTC time is due, or when Shadow starts again after that time. Its turn is for the person who asked for it or
-last changed it, not for its recipient; a reminder from before this rule uses only the shared credentials.
+last changed it, not for its recipient; a reminder from before this rule uses no personal credentials.
 Agents make and change reminders; a person sees their pending ones in Upcoming and cancels one there.
 
 ### Intake (`src/intake/`)
@@ -652,6 +651,5 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
   loopback, private, link-local, and other non-public addresses after each DNS answer and redirect. Each person of a
   thread has a browser of their own, with their own logins.
 - A codemode script stops after 15 minutes. A routine runs at most every 15 minutes.
-- A credential belongs to the person who connected it. While it is private, only that person's turns use it; once they
-  share it, the turns of every member use it. A turn never uses another person's private credential. Secrets never
+- A credential belongs to the person who connected it. Only that person's turns use it. Secrets never
   leave the server.

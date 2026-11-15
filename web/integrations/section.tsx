@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
 import type { Integration } from "../app/types.ts";
-import { useMe } from "../companies/data.ts";
 import {
   Button,
   Dialog,
@@ -17,11 +16,9 @@ import { Icon } from "../ui/icon.tsx";
 import { showToast } from "../ui/toast.tsx";
 
 /**
- * The integrations, with the person's own credentials, which they share with every member's turns or keep private, and
- * the ones other members shared. Secrets go to the server and never come back.
+ * The integrations, with the person's own credentials. Secrets go to the server and never come back.
  */
 export function IntegrationsSection({ companyId }: { companyId: string }) {
-  const { user } = useMe();
   const base = `/companies/${companyId}`;
   const queryKey = ["companies", companyId, "integrations"];
   const { data: integrations = [] } = useQuery({
@@ -78,14 +75,6 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
         predicate: ({ queryKey: key }) => key.includes("integrations"),
       });
     },
-  });
-  const share = useMutation({
-    mutationFn: (input: { credentialId: string; shared: boolean }) =>
-      request(`${base}/credentials/${input.credentialId}`, {
-        method: "PUT",
-        body: { shared: input.shared },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
   const watch = useMutation({
     mutationFn: (input: { credentialId: string; watched: boolean }) =>
@@ -158,67 +147,46 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
               />
             )}
           </SettingsRow>
-          {integration.credentials.map((credential) =>
-            credential.ownerId === user.id ? (
-              <Fragment key={credential.id}>
+          {integration.credentials.map((credential) => (
+            <Fragment key={credential.id}>
+              <SettingsRow
+                compact
+                label={credential.label}
+                lead={<Icon name="key" />}
+              >
+                <Button
+                  icon="trash"
+                  label={`Delete ${credential.label}`}
+                  onClick={() => remove.mutate(credential.id)}
+                  size="icon"
+                  variant="ghost"
+                />
+              </SettingsRow>
+              {integration.watchable ? (
                 <SettingsRow
                   compact
-                  description={credential.shared ? "Shared" : "Private"}
-                  label={credential.label}
-                  lead={<Icon name="key" />}
+                  label="Read for me"
+                  lead={<Icon name="check" />}
                 >
                   <Switch
-                    checked={!credential.shared}
-                    label="Private"
+                    checked={
+                      watch.isPending &&
+                      watch.variables.credentialId === credential.id
+                        ? watch.variables.watched
+                        : credential.watched
+                    }
+                    label={`Read ${credential.label} for me`}
                     onChange={(checked) =>
-                      share.mutate({
+                      watch.mutate({
                         credentialId: credential.id,
-                        shared: !checked,
+                        watched: checked,
                       })
                     }
                   />
-                  <Button
-                    icon="trash"
-                    label={`Delete ${credential.label}`}
-                    onClick={() => remove.mutate(credential.id)}
-                    size="icon"
-                    variant="ghost"
-                  />
                 </SettingsRow>
-                {integration.watchable ? (
-                  <SettingsRow
-                    compact
-                    label="Read for me"
-                    lead={<Icon name="check" />}
-                  >
-                    <Switch
-                      checked={
-                        watch.isPending &&
-                        watch.variables.credentialId === credential.id
-                          ? watch.variables.watched
-                          : credential.watched
-                      }
-                      label={`Read ${credential.label} for me`}
-                      onChange={(checked) =>
-                        watch.mutate({
-                          credentialId: credential.id,
-                          watched: checked,
-                        })
-                      }
-                    />
-                  </SettingsRow>
-                ) : null}
-              </Fragment>
-            ) : (
-              <SettingsRow
-                compact
-                description={`Shared by ${credential.ownerName}`}
-                key={credential.id}
-                label={credential.label}
-                lead={<Icon name="key" />}
-              />
-            )
-          )}
+              ) : null}
+            </Fragment>
+          ))}
         </SettingsCard>
       ))}
       <Dialog

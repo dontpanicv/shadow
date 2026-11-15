@@ -1,11 +1,9 @@
 import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
-import type { CredentialSummary } from "./integrations.ts";
 
 /**
- * The integrations, with the credentials that a person sees in the company: the shared ones and their own, which they
- * share or delete. Shadow's own OAuth client of an integration is the server's. The Slack bot is the company's, for
+ * The integrations, with only a person's own credentials. Shadow's own OAuth client of an integration is the server's. The Slack bot is the company's, for
  * its admins.
  */
 export const integrationApiRoutes: readonly Route[] = [
@@ -107,30 +105,18 @@ export const integrationApiRoutes: readonly Route[] = [
     "PUT",
     "/api/v1/companies/:company/credentials/:credential",
     api(async ({ app, user, params, body }) => {
-      if (
-        typeof body.shared !== "boolean" &&
-        typeof body.watched !== "boolean"
-      ) {
-        throw new HttpError(400, "Send shared or watched as true or false");
+      app.companies.requireMember(params.company!, user);
+      if (typeof body.watched !== "boolean" || "shared" in body) {
+        throw new HttpError(400, "Send watched as true or false");
       }
-      let credential: CredentialSummary | undefined;
-      if (typeof body.shared === "boolean") {
-        credential = app.integrations.setShared(
-          params.company!,
-          user,
-          params.credential!,
-          body.shared
-        );
-      }
-      if (typeof body.watched === "boolean") {
-        credential = app.integrations.setWatched(
+      return json(
+        app.integrations.setWatched(
           params.company!,
           user,
           params.credential!,
           body.watched
-        );
-      }
-      return json(credential);
+        )
+      );
     }),
   ],
   [

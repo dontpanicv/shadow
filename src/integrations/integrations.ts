@@ -27,11 +27,9 @@ export interface CredentialSummary {
   readonly createdAt: number;
   readonly id: string;
   readonly label: string;
-  /** The person who connected it, whose account it is; only they share, make private, or delete it. */
+  /** The person who connected it, who alone changes or deletes it. */
   readonly ownerId: string;
   readonly ownerName: string;
-  /** Whether the turns of every member use it; else only the turns of its owner. */
-  readonly shared: boolean;
   /** Whether its owner lets Shadow read it for them; see `Connector.watch`. */
   readonly watched: boolean;
 }
@@ -329,9 +327,9 @@ const SIGN_IN_MS = 10 * 60 * 1000;
 
 /**
  * The outside systems that agents use. A person connects an integration in their Settings, in the company, and each
- * credential is private, for their own turns, until they share it with the turns of every member. Each credential is
- * an account, such as a Google address: a turn uses the account that a tool call names, else the newest of the person
- * it is for, else the newest shared one. Only its owner shares or deletes a credential. Secrets never leave the server.
+ * credential is for their own turns. Each credential is an account, such as a Google address: a turn uses the account
+ * that a tool call names, else the newest of the person it is for. Only its owner changes or deletes a credential.
+ * Secrets never leave the server.
  */
 export class Integrations {
   private readonly catalog: readonly Connector[];
@@ -355,11 +353,11 @@ export class Integrations {
       options.catalog ?? integrationCatalog(undefined, options.baseUrl);
   }
 
-  /** The integrations, with the credentials that the person sees in the company: the shared ones and their own. */
+  /** The integrations, with only the person's own credentials. */
   list(companyId: string, user: User): Integration[] {
     this.companies.requireMember(companyId, user);
     const credentials = this.summaries(
-      "c.company_id = ?1 AND (c.shared = 1 OR c.owner_id = ?2)",
+      "c.company_id = ?1 AND c.owner_id = ?2",
       companyId,
       user.id
     );
@@ -398,16 +396,14 @@ export class Integrations {
   ): (CredentialSummary & { integration: string })[] {
     const rows = this.database
       .query(
-        `SELECT c.id, c.integration, c.label, c.owner_id AS ownerId, u.name AS ownerName, c.shared, c.watched, c.created_at AS createdAt FROM credential c JOIN user u ON u.id = c.owner_id WHERE ${where} AND c.deleted_at IS NULL ORDER BY c.created_at`
+        `SELECT c.id, c.integration, c.label, c.owner_id AS ownerId, u.name AS ownerName, c.watched, c.created_at AS createdAt FROM credential c JOIN user u ON u.id = c.owner_id WHERE ${where} AND c.deleted_at IS NULL ORDER BY c.created_at`
       )
-      .all(...params) as (Omit<CredentialSummary, "shared" | "watched"> & {
+      .all(...params) as (Omit<CredentialSummary, "watched"> & {
       integration: string;
-      shared: number;
       watched: number;
     })[];
     return rows.map((row) => ({
       ...row,
-      shared: row.shared === 1,
       watched: row.watched === 1,
     }));
   }
@@ -644,7 +640,6 @@ export class Integrations {
       label,
       ownerId: user.id,
       ownerName: user.name,
-      shared: false,
       watched: false,
       createdAt: Date.now(),
     };
@@ -665,32 +660,7 @@ export class Integrations {
     return credential;
   }
 
-  /** Shares the person's credential with the turns of every member, or makes it private to their own turns again. */
-  setShared(
-    companyId: string,
-    user: User,
-    credentialId: string,
-    shared: boolean
-  ): CredentialSummary {
-    this.companies.requireMember(companyId, user);
-    const { changes } = this.database
-      .query(`UPDATE credential SET shared = ?4 WHERE ${OWN_CREDENTIAL}`)
-      .run(credentialId, companyId, user.id, shared ? 1 : 0);
-    if (changes === 0) {
-      throw notFound();
-    }
-    this.options.changed?.(companyId);
-    const { integration: _, ...credential } = this.summaries(
-      "c.id = ?",
-      credentialId
-    )[0]!;
-    return credential;
-  }
-
-  /**
-   * Lets Shadow read the person's own credential for them, or stops it. Only the owner does, also for a shared
-   * credential: what Shadow finds is always theirs, and goes only where they can see it.
-   */
+  /** Lets Shadow read the person's own credential for them, or stops it. */
   setWatched(
     companyId: string,
     user: User,
@@ -1075,21 +1045,20 @@ export class Integrations {
   private accountsTool(companyId: string, connector: Connector): CompanyTool {
     return {
       name: `${connector.id}_accounts`,
-      description: `The ${connector.name} accounts that the other ${connector.id}_ tools can use for this person, by \`account\`: their own first, newest first, then the ones that other members shared.`,
+      description: `The ${connector.name} accounts that the other ${connector.id}_ tools can use for this person, by \`account\`, newest first.`,
       parameters: Type.Object({}),
       execute: async (_args, turn) => {
         const person = this.turnPerson(companyId, turn.userId);
         return this.credentialRows(companyId, connector, person).map((row) => ({
           account: row.label,
-          of: row.owner_id === person ? "own" : "shared",
         }));
       },
     };
   }
 
   /**
-   * The tools of a connector's MCP servers, named `<id>_<tool>`, as the newest shared sign-in lists them, else the
-   * newest private one; the list has only names and schemas, and no tool call uses that sign-in for another person.
+   * The tools of a connector's MCP servers, named `<id>_<tool>`, as the newest sign-in lists them.
+   * The list has only names and schemas; a tool call uses only the requester's credential.
    * None of a server without a sign-in, or when it fails, so one shop that is down does not stop the agents.
    */
   private async mcpTools(
@@ -1098,7 +1067,7 @@ export class Integrations {
   ): Promise<AccountTool[]> {
     const row = this.database
       .query(
-        "SELECT id, label, owner_id, secret FROM credential WHERE integration = ? AND company_id = ? AND deleted_at IS NULL ORDER BY shared DESC, created_at DESC, rowid DESC LIMIT 1"
+        "SELECT id, label, owner_id, secret FROM credential WHERE integration = ? AND company_id = ? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1"
       )
       .get(connector.id, companyId) as CredentialRow | null;
     if (!row) {
@@ -1247,7 +1216,7 @@ export class Integrations {
 
   /**
    * The credential that a turn of `userId` in a company uses for a connector: the one named `account`, else the
-   * person's newest, else the newest shared one.
+   * person's newest.
    */
   private credentialFor(
     companyId: string,
@@ -1262,7 +1231,7 @@ export class Integrations {
     );
     if (rows.length === 0) {
       throw new Error(
-        `${connector.name} is not connected. Connect it in Settings, and share it for the turns of every member.`
+        `${connector.name} is not connected for this person. Connect it in Settings.`
       );
     }
     const row = account
@@ -1283,8 +1252,7 @@ export class Integrations {
   }
 
   /**
-   * Who allows a call that acts with a credential: its owner, whom the call acts as, while a member; else the turn's
-   * person. The owner of a shared credential allows it for another person's turn, as for a machine.
+   * Who allows a call that acts with a credential: its owner, while a member; else the turn's person.
    */
   private approverOf(
     companyId: string,
@@ -1296,7 +1264,7 @@ export class Integrations {
       : userId;
   }
 
-  /** The credentials of a connector that a turn of `person` uses: their own, newest first, then the shared ones. */
+  /** The credentials of a connector that a turn of `person` uses, newest first. */
   private credentialRows(
     companyId: string,
     connector: Connector,
@@ -1304,7 +1272,7 @@ export class Integrations {
   ): CredentialRow[] {
     return this.database
       .query(
-        "SELECT id, label, owner_id, secret FROM credential WHERE integration = ?1 AND company_id = ?2 AND deleted_at IS NULL AND (shared = 1 OR owner_id = ?3) ORDER BY owner_id IS NOT ?3, created_at DESC, rowid DESC"
+        "SELECT id, label, owner_id, secret FROM credential WHERE integration = ?1 AND company_id = ?2 AND deleted_at IS NULL AND owner_id = ?3 ORDER BY created_at DESC, rowid DESC"
       )
       .all(connector.id, companyId, person) as CredentialRow[];
   }

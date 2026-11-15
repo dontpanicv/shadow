@@ -791,6 +791,8 @@ const migrations = [
   // routines and reminders: places went, so the routines and reminders at a place rest, deleted.
   `UPDATE routine SET deleted_at = strftime('%s', 'now') * 1000 WHERE place_id IS NOT NULL AND deleted_at IS NULL;
   UPDATE reminder SET deleted_at = strftime('%s', 'now') * 1000 WHERE place_id IS NOT NULL AND deleted_at IS NULL;`,
+  // integrations: revoke old credential sharing. Keep the column while older machines may still read it.
+  "UPDATE credential SET shared = 0 WHERE shared != 0;",
 ];
 
 export function openDatabase(path: string): Database {

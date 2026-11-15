@@ -319,7 +319,7 @@ test("a connector without a credential fails the script", async () => {
   const result = await scripts.test(companyId, null, SCRIPT, undefined, null);
   expect(result).toMatchObject({ ok: false });
   expect(!result.ok && result.error).toContain(
-    "School 2 is not connected. Connect it in Settings"
+    "School 2 is not connected for this person. Connect it in Settings"
   );
 });
 

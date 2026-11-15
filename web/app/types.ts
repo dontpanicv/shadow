@@ -190,7 +190,6 @@ export interface Credential {
   readonly ownerId: string;
   readonly ownerName: string;
   /** Whether every member's turns use it; else only its owner's. */
-  readonly shared: boolean;
   readonly watched: boolean;
   readonly createdAt: number;
 }
