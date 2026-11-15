@@ -9,13 +9,13 @@ import {
   until,
 } from "../../test/harness.ts";
 import type { User } from "../platform/auth.ts";
-import type { ChatRef, ChatSummary } from "../workspaces/workspaces.ts";
+import type { ThreadRef, ThreadSummary } from "../workspaces/workspaces.ts";
 import type { Artifact } from "./artifacts.ts";
 
 let golem: TestApp;
 let alice: User;
 let eve: User;
-let chat: ChatRef & ChatSummary;
+let thread: ThreadRef & ThreadSummary;
 /** What each tool returned to the agent, in order. */
 const toolResults: string[] = [];
 /** The tool call the scripted agent makes for the next message. */
@@ -28,15 +28,19 @@ beforeAll(async () => {
   alice = await userOf("Alice", "alice@example.com");
   eve = await userOf("Eve", "eve@example.com");
   const workspaceId = (await golem.app.workspaces.create(alice, "Family")).id;
-  const topic = golem.app.workspaces.createTopic(workspaceId, alice, "trips");
-  golem.faux.setResponses(Array.from({ length: 40 }, () => agent));
-  const summary = await golem.app.chats.create(
+  const channel = golem.app.workspaces.createChannel(
     workspaceId,
     alice,
-    topic.id,
+    "trips"
+  );
+  golem.faux.setResponses(Array.from({ length: 40 }, () => agent));
+  const summary = await golem.app.threads.create(
+    workspaceId,
+    alice,
+    channel.id,
     "Plan the trip"
   );
-  chat = golem.app.workspaces.chat(summary.id, alice);
+  thread = golem.app.workspaces.thread(summary.id, alice);
 });
 afterAll(() => golem.close());
 
@@ -75,11 +79,11 @@ function agent(context: Context) {
 async function useTool(
   name: string,
   args: JsonObject,
-  chatId = chat.id
+  threadId = thread.id
 ): Promise<string> {
   const before = toolResults.length;
   nextCall = { name, args };
-  await golem.app.chats.send(chatId, alice, `Use ${name}`);
+  await golem.app.threads.send(threadId, alice, `Use ${name}`);
   await until(
     async () => toolResults.length,
     (count) => count > before
@@ -89,22 +93,22 @@ async function useTool(
 
 function onlyArtifact(): Artifact {
   const artifacts = golem.app.artifacts.inPlace(
-    chat.workspaceId,
-    chat.topicId,
+    thread.workspaceId,
+    thread.channelId,
     alice
   );
   expect(artifacts).toHaveLength(1);
   return artifacts[0]!;
 }
 
-test("an agent makes an artifact in its chat, changes it, and reads and writes its data", async () => {
+test("an agent makes an artifact in its thread, changes it, and reads and writes its data", async () => {
   expect(
     await useTool("artifacts_create", { title: "Trip dates", html: POLL })
   ).toContain("Made the artifact.");
   const artifact = onlyArtifact();
   expect(artifact).toMatchObject({
-    topicId: chat.topicId,
-    chatId: chat.id,
+    channelId: thread.channelId,
+    threadId: thread.id,
     title: "Trip dates",
     visibility: "members",
     visitors: 0,
@@ -144,7 +148,7 @@ test("an agent makes an artifact in its chat, changes it, and reads and writes i
     await useTool("artifacts_data", { id: artifact.id, prefix: "clo" })
   ).toContain('"key":"closed"');
   expect(await useTool("artifacts_list", {})).toContain(
-    `[Plan the trip](chat:${chat.id})`
+    `[Plan the trip](thread:${thread.id})`
   );
   expect(await useTool("artifacts_read", { id: "missing" })).toContain(
     "There is no artifact missing"
@@ -283,7 +287,9 @@ test("a members artifact is only for members, and people delete its records, its
   expect(artifacts.dataFor(id, alice)).toEqual([]);
   expect(onlyArtifact().visitors).toBe(0);
   artifacts.delete(id, alice);
-  expect(artifacts.inPlace(chat.workspaceId, chat.topicId, alice)).toEqual([]);
+  expect(
+    artifacts.inPlace(thread.workspaceId, thread.channelId, alice)
+  ).toEqual([]);
   expect(() => artifacts.open(id, { user: alice })).toThrow("Not found");
   // Nothing is removed: the artifact, its records, and its visitors stay, marked deleted.
   const kept = (table: string, column: string) =>
@@ -309,7 +315,7 @@ test("a members artifact is only for members, and people delete its records, its
 
 test("an artifact keeps a limited number of visitors and bytes, and gets them back when its data is cleared", () => {
   const { artifacts, database } = golem.app;
-  const { id } = artifacts.create(chat, chat.topicId, {
+  const { id } = artifacts.create(thread, thread.channelId, {
     title: "Busy",
     html: "<p>Busy</p>",
     visibility: "public",
@@ -330,7 +336,7 @@ test("an artifact keeps a limited number of visitors and bytes, and gets them ba
   });
   const visitors = () =>
     artifacts
-      .inPlace(chat.workspaceId, chat.topicId, alice)
+      .inPlace(thread.workspaceId, thread.channelId, alice)
       .find((artifact) => artifact.id === id)!.visitors;
   expect(visitors()).toBe(10_000);
 
@@ -376,7 +382,7 @@ test("an artifact keeps a limited number of visitors and bytes, and gets them ba
 test("the content policy and the runtime start every page, before any of the agent's HTML", () => {
   const { artifacts } = golem.app;
   const make = (html: string) =>
-    artifacts.create(chat, chat.topicId, {
+    artifacts.create(thread, thread.channelId, {
       title: "Page",
       html,
       requestKey: crypto.randomUUID(),
@@ -400,13 +406,13 @@ test("the content policy and the runtime start every page, before any of the age
   expect(policy).not.toMatch(/(img|media)-src[^;]*https/);
   expect(policy).not.toMatch(/(script|style|font)-src[^;]*https:[ ;]/);
   expect(
-    artifacts.create(chat, chat.topicId, {
+    artifacts.create(thread, thread.channelId, {
       title: "Again",
       html: "<p>2</p>",
       requestKey: "same",
     }).id
   ).toBe(
-    artifacts.create(chat, chat.topicId, {
+    artifacts.create(thread, thread.channelId, {
       title: "Again",
       html: "<p>2</p>",
       requestKey: "same",
@@ -414,84 +420,88 @@ test("the content policy and the runtime start every page, before any of the age
   );
 });
 
-test("an artifact belongs to its topic: other chats see it after its chat is settled, and it goes with a merge", async () => {
-  const { artifacts, chats, workspaces } = golem.app;
+test("an artifact belongs to its channel: other threads see it after its thread is settled, and it goes with a merge", async () => {
+  const { artifacts, threads, workspaces } = golem.app;
   const workspaceId = (await workspaces.create(alice, "Kitchen")).id;
-  const recipes = workspaces.createTopic(workspaceId, alice, "recipes");
-  const made = await chats.create(
+  const recipes = workspaces.createChannel(workspaceId, alice, "recipes");
+  const made = await threads.create(
     workspaceId,
     alice,
     recipes.id,
     "Save banana bread"
   );
-  const banana = artifacts.create(workspaces.chat(made.id, alice), recipes.id, {
-    title: "Banana bread",
-    html: "<p>Bananas, flour, cardamom</p>",
-    requestKey: crypto.randomUUID(),
-  });
-  workspaces.setChatSettled(workspaceId, made.id, alice, true);
-  await chats.create(workspaceId, alice, recipes.id, "Make it vegan");
+  const banana = artifacts.create(
+    workspaces.thread(made.id, alice),
+    recipes.id,
+    {
+      title: "Banana bread",
+      html: "<p>Bananas, flour, cardamom</p>",
+      requestKey: crypto.randomUUID(),
+    }
+  );
+  workspaces.setThreadSettled(workspaceId, made.id, alice, true);
+  await threads.create(workspaceId, alice, recipes.id, "Make it vegan");
   expect(
     artifacts
       .inPlace(workspaceId, recipes.id, alice)
       .map((artifact) => artifact.id)
   ).toEqual([banana.id]);
-  expect(artifacts.get(banana.id, alice).topicId).toBe(recipes.id);
+  expect(artifacts.get(banana.id, alice).channelId).toBe(recipes.id);
   expect(() => artifacts.inPlace(workspaceId, recipes.id, eve)).toThrow(
     "Not found"
   );
 
   const general = workspaces
-    .topics(workspaceId, alice)
-    .find((topic) => topic.name === "general")!;
-  // The merge waits for the agents of the topic.
+    .channels(workspaceId, alice)
+    .find((channel) => channel.name === "general")!;
+  // The merge waits for the agents of the channel.
   await until(
     () =>
-      chats.merge(workspaceId, alice, recipes.id, general.id).then(
+      threads.merge(workspaceId, alice, recipes.id, general.id).then(
         () => true,
         () => false
       ),
     Boolean
   );
-  expect(artifacts.get(banana.id, alice).topicId).toBe(general.id);
+  expect(artifacts.get(banana.id, alice).channelId).toBe(general.id);
   expect(
-    workspaces.topics(workspaceId, alice).map((topic) => topic.name)
+    workspaces.channels(workspaceId, alice).map((channel) => channel.name)
   ).toEqual(["general"]);
 });
 
-test("the orchestrator's artifacts belong to the workspace, and an agent puts one in a topic it names", async () => {
-  const { artifacts, chats } = golem.app;
-  const orchestrator = await chats.orchestrator(chat.workspaceId, alice);
+test("the orchestrator's artifacts belong to the workspace, and an agent puts one in a channel it names", async () => {
+  const { artifacts, threads } = golem.app;
+  const orchestrator = await threads.orchestrator(thread.workspaceId, alice);
   await useTool(
     "artifacts_create",
     { title: "Chores", html: "<p>Dishes</p>" },
     orchestrator.id
   );
-  const [chores] = artifacts.inPlace(chat.workspaceId, null, alice);
+  const [chores] = artifacts.inPlace(thread.workspaceId, null, alice);
   expect(chores).toMatchObject({
     title: "Chores",
-    topicId: null,
-    chatId: orchestrator.id,
+    channelId: null,
+    threadId: orchestrator.id,
   });
   expect(toolResults.at(-1)).toContain("Made the artifact.");
 
   const named = await useTool(
     "artifacts_create",
-    { title: "Packing list", html: "<p>Tent</p>", topic: "#trips" },
+    { title: "Packing list", html: "<p>Tent</p>", channel: "#trips" },
     orchestrator.id
   );
   expect(named).toContain("Made the artifact.");
   expect(
     artifacts
-      .inPlace(chat.workspaceId, chat.topicId, alice)
+      .inPlace(thread.workspaceId, thread.channelId, alice)
       .map((artifact) => artifact.title)
   ).toContain("Packing list");
   expect(
     await useTool(
       "artifacts_create",
-      { title: "Lost", html: "<p>?</p>", topic: "nowhere" },
+      { title: "Lost", html: "<p>?</p>", channel: "nowhere" },
       orchestrator.id
     )
-  ).toContain("There is no topic #nowhere.");
+  ).toContain("There is no channel #nowhere.");
   expect(await useTool("artifacts_list", {})).toContain("The workspace's");
 });

@@ -12,7 +12,7 @@ export interface CheckSnapshot {
   text: string;
   state: "open" | "resolved" | "stopped";
   sourceIds: string[];
-  chatId: string | null;
+  threadId: string | null;
   checkAt: number;
   reviewAt: number;
   explicitTime: number;
@@ -41,13 +41,13 @@ export interface FollowingChange {
   revision: number;
   quote: string;
 }
-/** A chat update that intake made: it waits, was posted, or was cancelled. */
+/** A thread update that intake made: it waits, was posted, or was cancelled. */
 export interface IntakeUpdate {
   id: string;
-  chatId: string | null;
-  chatTitle: string | null;
-  /** The title of the chat that Golem will start, when no chat fits yet. */
-  newChat: string | null;
+  threadId: string | null;
+  threadTitle: string | null;
+  /** The title of the thread that Golem will start, when no thread fits yet. */
+  newThread: string | null;
   body: string;
   /** now: at the next minute; brief: at the 08:00 review. */
   attention: "now" | "brief";
@@ -60,9 +60,9 @@ export interface IntakeUpdate {
 }
 /** An observation that intake keeps, and where it went. */
 export interface IntakeKept extends Evidence {
-  outcome: "chat" | "filed" | "context";
-  chatId: string | null;
-  /** The chat's title, or the topic's name for a filed observation. */
+  outcome: "thread" | "filed" | "context";
+  threadId: string | null;
+  /** The thread's title, or the channel's name for a filed observation. */
   place: string | null;
 }
 export interface IntakeFeedback {
@@ -153,7 +153,7 @@ export class Following {
         : null,
       current: JSON.parse(row.current) as CheckSnapshot,
     }));
-    // Old revisions can name a topic that is no longer visible. Do not disclose their text or sources.
+    // Old revisions can name a channel that is no longer visible. Do not disclose their text or sources.
     const visibleHistory = history.filter(
       (row) =>
         this.visible(workspaceId, owner, row.current) &&
@@ -212,7 +212,7 @@ export class Following {
       this.requireRevision(current.check, input.revision);
       this.database
         .query(
-          "UPDATE intake_check SET text=?,state=?,check_at=?,next_review_at=?,explicit_time=?,notified_at=?,revised_at=?,source_ids=?,chat_id=? WHERE id=? AND workspace_id=? AND owner_id=?"
+          "UPDATE intake_check SET text=?,state=?,check_at=?,next_review_at=?,explicit_time=?,notified_at=?,revised_at=?,source_ids=?,thread_id=? WHERE id=? AND workspace_id=? AND owner_id=?"
         )
         .run(
           next.text,
@@ -223,7 +223,7 @@ export class Following {
           next.notifiedAt,
           Date.now(),
           JSON.stringify(next.sourceIds),
-          next.chatId,
+          next.threadId,
           id,
           workspaceId,
           owner.id
@@ -377,7 +377,7 @@ export class Following {
     return deleted;
   }
 
-  /** Lets intake read a blocked sender or chat again; what it deleted stays deleted. */
+  /** Lets intake read a blocked sender or thread again; what it deleted stays deleted. */
   unblock(workspaceId: string, owner: User, id: string): void {
     this.workspaces.requireMember(workspaceId, owner);
     const changed = this.database
@@ -391,7 +391,7 @@ export class Following {
     this.audit.record(id, "block.removed", workspaceId, owner.id, {});
   }
 
-  /** Whether the person blocked the sender or the chat of an observation that a source gives. */
+  /** Whether the person blocked the sender or the thread of an observation that a source gives. */
   blocks(
     credential: { id: string; workspaceId: string; ownerId: string },
     item: WatchedItem
@@ -415,7 +415,7 @@ export class Following {
 
   /**
    * Every update that waits to be posted, newest first, for the agents to read beside what intake keeps; reading
-   * changes nothing, so each still goes to its chat at the 08:00 review or when the person writes there.
+   * changes nothing, so each still goes to its thread at the 08:00 review or when the person writes there.
    */
   waiting(workspaceId: string, owner: User) {
     return this.updates(workspaceId, owner)
@@ -424,9 +424,9 @@ export class Following {
       )
       .map((update) => ({
         id: update.id,
-        chatId: update.chatId,
-        chat: update.chatTitle,
-        newChat: update.newChat,
+        threadId: update.threadId,
+        thread: update.threadTitle,
+        newThread: update.newThread,
         message: update.body,
         posts:
           update.attention === "now" ? "within minutes" : "at the 08:00 review",
@@ -532,7 +532,7 @@ export class Following {
   }
 
   private updates(workspaceId: string, owner: User): IntakeUpdate[] {
-    const titles = this.chatTitles(workspaceId, owner);
+    const titles = this.threadTitles(workspaceId, owner);
     const rows = this.database
       .query(
         "SELECT * FROM intake_delivery WHERE workspace_id=? AND owner_id=? AND ((delivered_at IS NULL AND cancelled_at IS NULL) OR created_at>?) ORDER BY created_at DESC LIMIT 100"
@@ -543,9 +543,9 @@ export class Following {
     return rows.flatMap((row) => {
       const ids = JSON.parse(row.evidence_ids) as string[];
       const sources = this.rows(workspaceId, owner, ids);
-      // Like delivery itself: an update shows only while the person sees its chat and all its sources.
+      // Like delivery itself: an update shows only while the person sees its thread and all its sources.
       if (
-        (row.chat_id !== null && !titles.has(row.chat_id)) ||
+        (row.thread_id !== null && !titles.has(row.thread_id)) ||
         sources.length !== ids.length
       ) {
         return [];
@@ -559,9 +559,9 @@ export class Following {
       return [
         {
           id: row.id,
-          chatId: row.chat_id,
-          chatTitle: row.chat_id ? titles.get(row.chat_id)! : null,
-          newChat: subject ?? null,
+          threadId: row.thread_id,
+          threadTitle: row.thread_id ? titles.get(row.thread_id)! : null,
+          newThread: subject ?? null,
           body: row.body,
           attention: row.attention === "now" ? "now" : "brief",
           notice: notice ?? null,
@@ -575,42 +575,42 @@ export class Following {
   }
 
   private kept(workspaceId: string, owner: User, query: string): IntakeKept[] {
-    const titles = this.chatTitles(workspaceId, owner);
-    const topics = new Map(
+    const titles = this.threadTitles(workspaceId, owner);
+    const channels = new Map(
       this.workspaces
-        .topicsIn(workspaceId, owner.id)
-        .map((topic) => [topic.id, topic.name])
+        .channelsIn(workspaceId, owner.id)
+        .map((channel) => [channel.id, channel.name])
     );
     const rows = this.recall.items(workspaceId, owner, query, 100);
     const evidence = this.recall.evidence(rows);
     return rows.map((row, index) => {
-      const topic = row.archived_id
+      const channel = row.archived_id
         ? (
             this.database
-              .query("SELECT topic_id FROM intake_archive WHERE id=?")
-              .get(row.archived_id) as { topic_id: string } | null
-          )?.topic_id
+              .query("SELECT channel_id FROM intake_archive WHERE id=?")
+              .get(row.archived_id) as { channel_id: string } | null
+          )?.channel_id
         : undefined;
-      if (row.chat_id && titles.has(row.chat_id)) {
+      if (row.thread_id && titles.has(row.thread_id)) {
         return {
           ...evidence[index]!,
-          outcome: "chat",
-          chatId: row.chat_id,
-          place: titles.get(row.chat_id)!,
+          outcome: "thread",
+          threadId: row.thread_id,
+          place: titles.get(row.thread_id)!,
         };
       }
-      if (topic && topics.has(topic)) {
+      if (channel && channels.has(channel)) {
         return {
           ...evidence[index]!,
           outcome: "filed",
-          chatId: null,
-          place: `#${topics.get(topic)}`,
+          threadId: null,
+          place: `#${channels.get(channel)}`,
         };
       }
       return {
         ...evidence[index]!,
         outcome: "context",
-        chatId: null,
+        threadId: null,
         place: null,
       };
     });
@@ -647,7 +647,7 @@ export class Following {
         (each) => each.id === id
       );
       return update
-        ? `Chat update for ${update.chatTitle ?? update.newChat ?? "a new chat"}: ${update.body.slice(0, 300)}`
+        ? `Thread update for ${update.threadTitle ?? update.newThread ?? "a new thread"}: ${update.body.slice(0, 300)}`
         : null;
     }
     if (kind === "source") {
@@ -659,11 +659,11 @@ export class Following {
     return null;
   }
 
-  private chatTitles(workspaceId: string, owner: User) {
+  private threadTitles(workspaceId: string, owner: User) {
     return new Map(
       this.workspaces
-        .chatsIn(workspaceId, owner.id)
-        .map((chat) => [chat.id, chat.title])
+        .threadsIn(workspaceId, owner.id)
+        .map((thread) => [thread.id, thread.title])
     );
   }
 
@@ -693,10 +693,10 @@ export class Following {
     check: CheckSnapshot
   ): boolean {
     return (
-      (!check.chatId ||
+      (!check.threadId ||
         this.workspaces
-          .chatsIn(workspaceId, owner.id)
-          .some((chat) => chat.id === check.chatId)) &&
+          .threadsIn(workspaceId, owner.id)
+          .some((thread) => thread.id === check.threadId)) &&
       this.rows(workspaceId, owner, check.sourceIds).length ===
         check.sourceIds.length
     );
@@ -727,7 +727,7 @@ export class Following {
       workspaceId,
       userId: owner.id,
       source: "intake",
-      chatId: null,
+      threadId: null,
     });
     this.audit.record(trace, "model.response", workspaceId, owner.id, {
       result,

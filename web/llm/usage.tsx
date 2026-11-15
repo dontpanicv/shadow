@@ -18,7 +18,7 @@ const DAYS = 30;
 const DAY = 24 * 60 * 60 * 1000;
 
 const SOURCES: Record<UsageSource, string> = {
-  chat: "Topic chats",
+  thread: "Channel threads",
   orchestrator: "Golem",
   routine: "Routines",
   reminder: "Reminders",
@@ -80,23 +80,23 @@ export function UsageSection({ workspaceId }: { workspaceId: string }) {
         title="By model"
       />
       <UsageRows
-        rows={usage.chats.map((row) => ({
+        rows={usage.threads.map((row) => ({
           ...row,
-          key: row.chatId,
+          key: row.threadId,
           label: (
             <>
               <Link
-                className="chat-link"
-                params={{ workspaceId, chatId: row.chatId }}
-                to="/w/$workspaceId/chat/$chatId"
+                className="thread-link"
+                params={{ workspaceId, threadId: row.threadId }}
+                to="/w/$workspaceId/thread/$threadId"
               >
                 {row.title}
               </Link>
-              <WorkingSpinner chatId={row.chatId} />
+              <WorkingSpinner threadId={row.threadId} />
             </>
           ),
         }))}
-        title="Top chats"
+        title="Top threads"
       />
       {usage.people ? (
         <UsageRows

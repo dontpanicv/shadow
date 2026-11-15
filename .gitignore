@@ -4,7 +4,6 @@ node_modules
 # output
 out
 dist
-hands/target
 *.tgz
 
 # code coverage
@@ -37,25 +36,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # local Pi Durable storage
 data
 
-# generated iOS project (run xcodegen in ios/)
-ios/Golem.xcodeproj
-ios/Golem/Info.plist
-ios/Golem/Golem.entitlements
-ios/Share/Info.plist
-ios/GolemActivity/Info.plist
-ios/GolemNotification/Info.plist
-ios/Share/Share.entitlements
-ios/build
-ios/Config/Local.xcconfig
-
 # Golem keeps everything it needs and stores in these two folders
 config
-
-# the voice models the app bundles (ios/scripts/fetch-parakeet.sh, ios/scripts/fetch-supertonic.sh)
-ios/Models
-
-# temporary UI tests that take simulator screenshots of the iOS app
-ios/GolemUITests
 
 # archify working folders (the README keeps only the rendered pictures)
 .archify

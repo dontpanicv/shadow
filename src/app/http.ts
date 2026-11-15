@@ -75,18 +75,6 @@ export function signedIn(
   };
 }
 
-/** A redirect that keeps the cookies better-auth set, such as the session or the Google sign-in state. */
-export function withCookies(
-  result: { headers: Headers },
-  location: string
-): Response {
-  const headers = new Headers({ location });
-  for (const cookie of result.headers.getSetCookie()) {
-    headers.append("set-cookie", cookie);
-  }
-  return new Response(null, { status: 303, headers });
-}
-
 export function json(body: unknown, status = 200): Response {
   return new Response(clientJson(body), {
     status,
@@ -95,9 +83,9 @@ export function json(body: unknown, status = 200): Response {
 }
 
 /**
- * JSON that the iOS app can read too. Text cut inside an emoji keeps half of a UTF-16 pair, which Swift's
- * `JSONDecoder` refuses, so it becomes U+FFFD; and the line ends that `JSON.stringify` leaves, but on which Swift's
- * `lines` splits an event stream, are escaped.
+ * JSON that every client can read. Text cut inside an emoji keeps half of a UTF-16 pair, which strict decoders
+ * refuse, so it becomes U+FFFD; and the line ends that `JSON.stringify` leaves, but on which some readers split an
+ * event stream, are escaped.
  */
 export function clientJson(body: unknown): string {
   return JSON.stringify(body, (_key, value) =>

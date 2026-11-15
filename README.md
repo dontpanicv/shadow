@@ -2,8 +2,8 @@
 
 # Golem
 
-A family AI assistant and second brain that runs on your own machine. One server in your home, one app for the whole
-family on the web, the iPhone, and Android, and no cloud service between you and your data.
+A family AI assistant and second brain that runs on your own machine. One server in your home, one web app for the
+whole family, and no cloud service between you and your data.
 
 In Prague legend, Rabbi Loew shaped the Golem from clay to serve and protect his community. This one is made from
 SQLite and Markdown.
@@ -17,58 +17,52 @@ SQLite and Markdown.
 
 - **One assistant for the family.** Everybody talks to the same Golem. It knows who writes each message, what each
   person wants, and what the family decided last week.
-- **It remembers.** Each topic keeps a brief that Golem writes again when a conversation goes quiet. A learning
+- **It remembers.** Each channel keeps a brief that Golem writes again when a conversation goes quiet. A learning
   loop keeps short facts about each person and how things are done. The family writes its own facts too. Golem reads
   all of it before every answer.
-- **It does real work.** Golem runs commands on your Macs and Linux machines, reads your mail and calendar, controls
-  the heating, orders the groceries, and browses the web. It asks before it sends, buys, or runs a destructive
-  command.
-- **It works on your computers.** Pair your Macs and Linux machines once, and Golem uses them as you would from a
-  terminal. From your phone on the train: "start the photo backup on the home server and tell me when it is done".
-  Golem starts the job on the server, the job keeps running when your phone sleeps, and Golem tells you when it ends.
-- **It works on your iPhone.** While the app is open, Golem sets alarms and timers, adds to Apple Reminders and the
-  calendar, plays music, looks at photos, and reads Apple Health on the phone itself: "wake me at 6:30".
+- **It does real work.** Golem reads your mail and calendar, controls the heating, orders the groceries, and browses
+  the web. It asks before it acts as you, for example before it sends mail.
 - **It makes pages and small apps.** Ask for an invite, a poll, a packing list, or a game, and Golem builds it as an
   artifact that keeps its own data. Keep it for the family, or share a public link with anyone, while the rest of
   Golem stays private.
 - **It reads your accounts for you.** Turn on "Read for me" for mail, WhatsApp, Slack, or Plaud. Golem keeps useful
   context and follows unresolved matters. If the builder has 30 days to reply, Golem checks later without a routine
   or a task card. A local model reads new material first.
-- **It stays quiet.** Passive updates send no push. Golem tells you about useful changes and due follow-ups in your
-  matching Golem chat. Explicit routines, reminders, and external messages still need your request or consent.
+- **It stays quiet.** Passive updates send no notification. Golem tells you about useful changes and due follow-ups
+  in your matching Golem thread. Explicit routines, reminders, and external messages still need your request or consent.
 - **Your data stays with you.** One server, one SQLite database, Markdown files, and a search index that runs on the
-  machine. Each person's own topics, machines, accounts, and places are private until they share them.
+  machine. Each person's own channels, accounts, and places are private until they share them.
 
 ## How a conversation flows
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/conversation-flow-dark.svg">
-  <img alt="A family member asks Golem, their own endless chat, or writes in a topic chat. Golem sends work to topic chats with send_to_chat, and the answers come back to it. Topic chats run code mode scripts. When a chat goes quiet, the topic brief is written again, the learning loop updates the learned facts, and the messages go into the search index. The brief, the learned facts, and the workspace facts become prompt sections that every turn reads." src="docs/assets/conversation-flow-light.svg">
+  <img alt="A family member asks Golem, their own endless thread, or writes in a channel thread. Golem sends work to channel threads with send_to_thread, and the answers come back to it. Channel threads run code mode scripts. When a thread goes quiet, the channel brief is written again, the learning loop updates the learned facts, and the messages go into the search index. The brief, the learned facts, and the workspace facts become prompt sections that every turn reads." src="docs/assets/conversation-flow-light.svg">
 </picture>
 
-- **The family has one workspace.** It holds topics, such as `#general`, `#home`, or `#travel`. A topic is open to
+- **The family has one workspace.** It holds channels, such as `#general`, `#home`, or `#travel`. A channel is open to
   every member, or private to one person.
-- **A topic holds chats.** A chat is one conversation about one thing. Several people can write in it, and its
-  agent knows who wrote each message. A chat that is done is settled; its files and artifacts stay in the topic.
-- **Golem is your endless chat.** Each person has one chat with Golem that never ends: the **Golem** tab. It
-  answers simple things itself and gives other work to the chat of the right topic, or starts one. The answer
-  comes back to your Golem chat. A message passes between chats at most twice, so agents cannot talk to each other
+- **A channel holds threads.** A thread is one conversation about one thing. Several people can write in it, and its
+  agent knows who wrote each message. A thread that is done is settled; its files and artifacts stay in the channel.
+- **Golem is your endless thread.** Each person has one thread with Golem that never ends: the **Golem** tab. It
+  answers simple things itself and gives other work to the thread of the right channel, or starts one. The answer
+  comes back to your Golem thread. A message passes between threads at most twice, so agents cannot talk to each other
   without end.
-- **The endless chat does not get slow.** A memory tree of short summaries covers your conversation and the results
-  that workers send back. Their internal work stays in their chats. Old messages fold into the tree, and the agent
+- **The endless thread does not get slow.** A memory tree of short summaries covers your conversation and the results
+  that workers send back. Their internal work stays in their threads. Old messages fold into the tree, and the agent
   opens a summary again with `zoom` when it needs the details.
-- **The topic brief.** When a chat is quiet for 10 minutes, or settled, a background model writes the topic's
+- **The channel brief.** When a thread is quiet for 10 minutes, or settled, a background model writes the channel's
   brief again: its purpose, what is happening now, the decisions, the open questions, and what each person wants.
-  Every chat of the topic starts from it.
+  Every thread of the channel starts from it.
 - **Learned facts.** The learning loop reads the new messages and keeps only lasting facts about each person, such
-  as their work, the people in their life, and what they do not eat, and how-tos for each topic; it skips the
+  as their work, the people in their life, and what they do not eat, and how-tos for each channel; it skips the
   details of one task. It can also suggest a routine or a reminder. You see, change, and remove what it learned in
   Settings, and it does not learn a removed fact again.
 - **Workspace facts.** The family writes facts about itself in Workspace settings: names, birthdays, addresses, work.
 - **Recall.** Every message, file, note, and artifact goes into the search index. Agents look things up there with the
   `recall` tool before they say that they do not know.
 
-The brief, the learned facts, the workspace facts, and the paired machines are prompt sections. A section keeps the
+The brief, the learned facts, and the workspace facts are prompt sections. A section keeps the
 same text until its content changes, so the model's prompt cache stays warm.
 
 ## Under the hood
@@ -76,20 +70,20 @@ same text until its content changes, so the model's prompt cache stays warm.
 ### Pi Durable
 
 Agents run on [Pi Durable](https://github.com/earendil-works/pi), the durable agent runtime of Earendil. The workspace
-has one Pi Durable session, and each chat is one conversation in it, with its transcript, runs, and tasks. A run that
+has one Pi Durable session, and each thread is one conversation in it, with its transcript, runs, and tasks. A run that
 a restart stopped continues when Golem starts again, and messages that came while Golem was off are caught up. A
-tool that is safe to repeat, such as `send_to_chat`, runs again after a crash and finds the message it sent before.
-The endless Golem chat compacts itself when its context gets long.
+tool that is safe to repeat, such as `send_to_thread`, runs again after a crash and finds the message it sent before.
+The endless Golem thread compacts itself when its context gets long.
 
 Each routine keeps one durable conversation and its full transcript. A new run starts a new active context with its
 saved instructions and script result; a restart resumes that same run, boundary, and tool tasks. Progress stays in
 the routine's script store. A long run compacts between tool rounds at 160 KiB of serialized input, and a provider
 guard refuses routine input above 256 KiB. These are byte limits, not exact token counts. Older runs remain available
-in the chat and through search.
+in the thread and through search.
 
 ### Code mode
 
-The model calls only a small set of core tools directly: topics, chats, files, `recall`, and web search. Every
+The model calls only a small set of core tools directly: channels, threads, files, `recall`, and web search. Every
 other tool is in a namespace that the model uses from a short TypeScript script, in the code mode sandbox of
 [Pi](https://github.com/earendil-works/pi) (`pi-codemode`, 256 MB, its own worker):
 
@@ -99,90 +93,10 @@ const lights = await tools.home_assistant_states({ account: "home", domain: "lig
 return { events, lightsOn: lights.filter((light) => light.state === "on").length };
 ```
 
-The namespaces are `hands_` (machines), `artifacts_`, `browser_`, `routines_`, `reminders_`, and one for each
-connected integration, such as `google_` or `home_assistant_`. The agent finds tools with `describeNamespace()` and
+The namespaces are `artifacts_`, `browser_`, `routines_`, `reminders_`, and one for each connected integration,
+such as `google_` or `home_assistant_`. The agent finds tools with `describeNamespace()` and
 `searchTools()`, so the prompt does not list hundreds of tools. One script can call many tools and return only what
 matters, which keeps the context small.
-
-### Hands and machines
-
-Agents use your computers through [`hands`](hands/), a small daemon for macOS and Linux, written in Rust. Golem
-never runs a model on a machine and never sends it a credential: the machine only does what the agent asks, as the
-person who installed it. `hands` is Golem's copy of the `hands` daemon of
-[Mycroft](https://github.com/dontpanicv/mycroft), built on the pi-env daemon of [Pi](https://github.com/earendil-works/pi).
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/machines-dark.svg">
-  <img alt="A person clicks Add machine; Golem gives a curl command with a one-time code. On the machine the install script downloads the script and binary pinned to Golem's TLS key, checks the SHA-256, and runs golem-hands install --pair, which posts the machine's name, addresses, port, and certificate hash to Golem and gets the person's Ed25519 key. Later Golem opens wss to every address with the certificate pinned, gets a nonce, and signs it. When dcg flags a command, Golem asks the person; after Allow it sends job.start, and the machine returns the output and exit code." src="docs/assets/machines-light.svg">
-</picture>
-
-- **Pairing.** **Add machine** in your own Settings shows one command, with a code of 16 letters that works once,
-  for 10 minutes. Paste it into a terminal on the Mac or the Linux machine. The script downloads the binary for that
-  system over HTTPS pinned to Golem's TLS key, checks its SHA-256, and runs `golem-hands install --pair`. That installs
-  `hands` as a user service (launchd on a Mac, systemd on Linux) and sends Golem the machine's name, addresses, port,
-  and the SHA-256 of its certificate. Golem answers with your Ed25519 public key, which Golem derives from its secret
-  key, one for each person. From then on the machine trusts that key, and Golem trusts that certificate. On a Mac,
-  `install` then walks you through the permissions, one at a time: Accessibility, Screen Recording, the Desktop,
-  Documents, and Downloads folders, Local Network, and optionally Full Disk Access.
-- **Transport.** The machine listens on one port: WebSocket over TLS 1.3 ([rustls](https://github.com/rustls/rustls)
-  and [tungstenite](https://github.com/snapview/tungstenite-rs)), with a self-signed ECDSA P-256 certificate. Golem
-  connects to every address of the machine at once (its LAN address, its VPN address, its hostname) and keeps the
-  first that authenticates, with the certificate pinned. The machine sends a fresh nonce; Golem signs it, with the hash of
-  the certificate, with your Ed25519 key. Until the signature checks out, the machine accepts nothing else, and the
-  handshake must end within 10 seconds. After that, each WebSocket message is one binary frame of pi-env's protocol:
-  `exec`, `open`, `pread`, `write`, `close`, `listFiles`, and the `job.*` operations.
-- **The daemon.** For each connection, the listener starts its own `serve` process, so one crash ends only that
-  connection. Commands of `exec` end with the connection. Long work is a **job** instead: a supervisor starts it in
-  its own process group, writes its output and exit code to disk, and keeps it running when the connection drops or
-  the supervisor restarts. Agents read its output later, wait for it, or cancel it. Finished jobs stay for 7 days. The
-  service gets the `PATH` of your shell, so commands find `brew`, `npm`, `cargo`, or `gh` as your terminal does. The
-  machine also announces itself over Bonjour (`_golem-hands._tcp`).
-- **The network.** Golem connects to the machine, so the Golem server must reach it: on the same network, or over a
-  VPN such as Tailscale or NetBird. `golem-hands install --bind <address>` limits the listener to one address, such
-  as the VPN one. The machine needs no public address.
-- **Tools.** Agents use the machine from code mode: `hands_exec` for a command, `hands_job_start`, `hands_job_wait`,
-  and `hands_job_cancel` for long work, `hands_read`, `hands_write`, `hands_edit`, and `hands_list` for files, and
-  `hands_copy_file` to put a file of the topic on the machine; `save_file` brings a result back.
-- **Approvals.** Before a command that
-  [dcg (destructive command guard)](https://github.com/Dicklesworthstone/destructive_command_guard) flags, such as
-  `rm -rf` or `git push --force`, the agent waits until a person allows it: the person who paired the machine when the
-  turn is somebody else's, or else the turn's own person. The question shows in the chat and comes as a push
-  notification with Allow and Deny.
-- **Who can use it.** A machine is private to your turns until you share it with every member. Several people can pair
-  the same machine; it trusts each of their keys. `golem-hands unpair` takes a key away, also on open connections.
-  Treat a paired machine as shell access for Golem, as the user who installed `hands`.
-
-### The iPhone as hands
-
-"Wake me at 6:30." "Start a 12-minute timer for the pasta." "Put milk on the shopping list." "What is on my calendar
-tomorrow?" The agents still live on the server, but while the Golem app is open, they can use the iPhone itself, as
-they use a paired machine.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-dark.svg">
-  <img alt="While the Golem app is on screen, it holds GET /api/v1/phone/calls open. The person says Wake me at 6:30; the app sends the message to the chat, and the agent's script calls phone_alarm_set. Golem sends the call on the newest stream of the turn's person, with no approval. The app calls AlarmManager.schedule, and iOS asks for access on the first use. The app posts the answer to /api/v1/phone/calls/:id, as text or JPEGs, and the agent answers Alarm set for 6:30." src="docs/assets/phone-light.svg">
-</picture>
-
-- **Transport.** The phone accepts no connections, so it connects to Golem: while the app is on screen, it holds an
-  event stream open (`GET /api/v1/phone/calls`). A `phone_*` tool sends its call on the newest stream of the turn's
-  person and waits up to 3 minutes, in memory only, for the answer (`POST /api/v1/phone/calls/:id`, with text, or
-  JPEGs from Photos or the camera). When the stream closes, its waiting calls fail at once; with no stream, the tool
-  tells the agent that the phone is not connected.
-- **Tools.** Each tool uses one of Apple's own frameworks; there are no workarounds:
-  - Alarms and timers that ring also in silent mode, with the countdown on the Lock Screen (AlarmKit).
-  - Apple Reminders and every calendar on the phone: read, add, change, and delete (EventKit).
-  - Contacts: find, add, and change.
-  - Messages, mail, and phone or FaceTime calls: iOS fills them in, and the person taps Send or Call.
-  - Apple Music in the Music app: play a song, an album, a playlist, or an artist, and control playback (MusicKit).
-  - Photos: find photos by date, kind, or favorite, look at one, and save a workspace picture or video.
-  - The camera: the person takes a photo or scans pages (VisionKit), and the agent looks at them.
-  - Apple Health: daily values, sleep, and workouts; and log water, caffeine, weight, body fat, or mindful minutes.
-  - The location with its address, and directions in Apple Maps.
-  - Links, the clipboard, the battery and storage, the flashlight, and the screen brightness.
-  - Apple Home scenes, and accessories on or off (HomeKit); and Wallet passes (PassKit).
-- **Who can use it.** A tool acts only on the phone of the person whose turn it is, and needs no approval. iOS asks
-  for each kind of access once, on its first use. Golem cannot see the Clock app's own alarms, Apple Notes, or other
-  apps: iOS gives no app access to them.
 
 ### Integrations
 
@@ -211,11 +125,11 @@ namespace.
 
 ### Search and recall
 
-The workspace has one search index, `index.sqlite`, on the server. The Search page of every app and the agents'
+The workspace has one search index, `index.sqlite`, on the server. The Search page of the web app and the agents'
 `recall` tool use it, so a person and their agent find the same things.
 
-- **What goes in.** The messages of every chat, the text of every artifact, and every file in the workspace and its
-  topics:
+- **What goes in.** The messages of every thread, the text of every artifact, and every file in the workspace and its
+  channels:
   - documents (Markdown, Office, OpenDocument, mail, calendars, and more) in chunks of about 1800 characters;
   - PDFs page by page, where a scanned page is rendered as a picture and read with OCR;
   - pictures, at most 1024 pixels long, and screenshots with their OCR text;
@@ -235,16 +149,16 @@ The workspace has one search index, `index.sqlite`, on the server. The Search pa
   another scale than text. The share of query words that a source contains adds to it. A source shows when it stands
   out by meaning (z ≥ 3) or holds at least half of the words, so a search shows nothing rather than noise. A query of
   ids or numbers counts the words more.
-- **Privacy.** Before it ranks, a search leaves out what its person may not see. A person finds the topics that every
-  member sees, their own private topics, and their own Golem chat. An agent's `recall` sees what the person of its turn
-  sees: in your Golem chat or private topic that is you, and in a shared topic it is the person whose message the
+- **Privacy.** Before it ranks, a search leaves out what its person may not see. A person finds the channels that every
+  member sees, their own private channels, and their own Golem thread. An agent's `recall` sees what the person of its turn
+  sees: in your Golem thread or private channel that is you, and in a shared channel it is the person whose message the
   agent answers.
 - **Recall.** Agents call `recall` with a question in plain words, and get up to 20 results (8 by default), each with
-  its kind, title, date, the link of its chat, and a snippet. They are told to recall before they say that they do
+  its kind, title, date, the link of its thread, and a snippet. They are told to recall before they say that they do
   not know.
 - **The Search page.** Results come as you type, each with the Markdown lines around the first word that matches.
   Before a query, the page shows your recent searches and Golem.
-- **Freshness.** Golem indexes a chat a second after it changes and checks the files every minute; it reads and
+- **Freshness.** Golem indexes a thread a second after it changes and checks the files every minute; it reads and
   embeds again only what changed. Until the model runs, search finds words only, and the Search page says so.
 
 [docs/data.md](docs/data.md) has every file kind and the details.
@@ -252,17 +166,16 @@ The workspace has one search index, `index.sqlite`, on the server. The Search pa
 ### Artifacts
 
 An artifact is a page or a small app that an agent writes in HTML: an invite with RSVPs, a poll, a shared shopping
-list, a game, or a schedule to print or save as a PDF. It belongs to the topic of the chat that made it and
-stays there when the chat is settled. The side panel of a chat shows the artifacts of its topic, and the phone
-apps show them in the same way.
+list, a game, or a schedule to print or save as a PDF. It belongs to the channel of the thread that made it and
+stays there when the thread is settled. The side panel of a thread shows the artifacts of its channel.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/artifacts-dark.svg">
-  <img alt="A family member opens golem.example.com, and anyone with a link opens a.example.com. Both hosts are on Cloudflare and reach the Mac mini through an outbound cloudflared tunnel; the public host passes only artifact paths and answers 404 to the rest. Golem listens on 127.0.0.1:3000, checks who may open the artifact, and shows it in a sandboxed page. The page keeps its data through the golem runtime in golem.sqlite, where the chat agent writes the HTML." src="docs/assets/artifacts-light.svg">
+  <img alt="A family member opens golem.example.com, and anyone with a link opens a.example.com. Both hosts are on Cloudflare and reach the Mac mini through an outbound cloudflared tunnel; the public host passes only artifact paths and answers 404 to the rest. Golem listens on 127.0.0.1:3000, checks who may open the artifact, and shows it in a sandboxed page. The page keeps its data through the golem runtime in golem.sqlite, where the thread agent writes the HTML." src="docs/assets/artifacts-light.svg">
 </picture>
 
-- **Members or public.** A new artifact is for members: only signed-in people who can see its topic open it, so an
-  artifact of a private topic stays private. Any member who sees it, or an agent, can make it public; then anyone
+- **Members or public.** A new artifact is for members: only signed-in people who can see its channel open it, so an
+  artifact of a private channel stays private. Any member who sees it, or an agent, can make it public; then anyone
   with its link opens it, without an account. A link is four words, such as `amber-fox-lake-moss`: easy to know again,
   and too many to guess. A name is never given out again, also after a delete.
 - **Data without a backend.** The page keeps data through `golem`, a small runtime that Golem puts at its start:
@@ -289,34 +202,33 @@ heating at the cottage each time I leave work." A reminder can wait for a place 
 run at a place instead of on a schedule; the phone tells Golem when it happens.
 
 - **Places.** Each person marks their places on a map in their own Settings: a name, a pin, and a circle of 100 to
-  5000 meters (iOS does not see a smaller circle reliably). The web app shows OpenStreetMap through Golem, so the
-  browser never asks OpenStreetMap itself, and finds an address with OpenStreetMap's search; the iPhone uses Apple
-  Maps. A place is private to its person's turns until they share it with every member.
+  5000 meters. The web app shows OpenStreetMap through Golem, so the browser never asks OpenStreetMap itself, and
+  finds an address with OpenStreetMap's search. A place is private to its person's turns until they share it with
+  every member.
 - **The reminder.** The agent makes it with `reminders_create`: the text, the person to remind, a place by name, and
   `arrive` or `leave`. It uses the places of the person who asked, their own first and then the shared ones. The
-  reminder waits in its chat and shows in the person's Upcoming, where they can cancel it.
+  reminder waits in its thread and shows in the person's Upcoming, where they can cancel it.
 - **A point of interest.** A reminder can also wait at one specific public place, such as one shop. The agent finds it
   in OpenStreetMap with `reminders_search_points_of_interest` and makes the reminder with
   `reminders_create_at_point_of_interest`; it asks when the place is not clear. Settings does not list such a place,
-  and a person has pending reminders at no more than 12 of them, because iOS watches at most 20 places for an app.
+  and a person has pending reminders at no more than 12 of them.
 - **The routine.** The agent makes it with `routines_create`: the instructions, a place by name, `arrive` or
-  `leave`, and the person whose arrival or departure runs it. It runs each time that event comes, in its topic's
-  chat, as a routine on a schedule does, but at most every 15 minutes, as a person at the edge of the circle goes in
+  `leave`, and the person whose arrival or departure runs it. It runs each time that event comes, in its channel's
+  thread, as a routine on a schedule does, but at most every 15 minutes, as a person at the edge of the circle goes in
   and out. It shows under "Routines at a place" in Upcoming, where the person pauses it.
-- **The iPhone watches; Golem decides.** The iPhone is only a sensor. Golem gives it the places of its person's
-  pending reminders and routines, one circle for each place however many wait there, and the app watches them with
-  Core Location (`CLMonitor`), so iOS wakes it in the background when the person crosses a circle, also when the app
-  does not run. Visits and significant location changes wake it too, for a crossing that `CLMonitor` tells late. The first such place asks for location access: iOS asks "While Using" first, and "Always" when the
-  first event comes. The app tells Golem only "arrived at Cottage at 12:03" or "left Cottage", never where the person
-  is, and Golem keeps only the last state at each place, with no history. Golem then decides what is due: the
+- **The phone watches; Golem decides.** The phone is only a sensor. Golem gives it the places of its person's
+  pending reminders and routines, one circle for each place however many wait there. The phone tells Golem only
+  "arrived at Cottage at 12:03" or "left Cottage", never where the person is, and Golem keeps only the last state at
+  each place, with no history. Golem then decides what is due: the
   reminders and routines of that place, person, and event, a pause, and the 15 minutes between two runs.
 - **A new reminder or routine.** A new reminder starts as "outside", so a person who is already at the place gets an
   arrival reminder at once. A new routine waits for the next crossing.
-- **Golem reminds.** The reminder is due at once: its chat wakes, the agent writes the reminder, and it comes as a
-  time-sensitive push. A second report of the same state changes nothing, and a cancelled reminder stays quiet.
-- **Without a connection**, as in the mountains, the iPhone keeps each report with its time and sends it when it is
-  online again; it also shows the reminders of that place itself. Golem still makes a late reminder due, but does not
-  run a routine for a crossing that it hears of more than 15 minutes late.
+- **Golem reminds.** The reminder is due at once: its thread wakes, the agent writes the reminder, and it comes as a
+  notification in the person's inbox. A second report of the same state changes nothing, and a cancelled reminder
+  stays quiet.
+- **Without a connection**, as in the mountains, the phone keeps each report with its time and sends it when it is
+  online again. Golem still makes a late reminder due, but does not run a routine for a crossing that it hears of
+  more than 15 minutes late.
 
 ### Your accounts, read for you
 
@@ -325,28 +237,28 @@ The first read covers one day; later reads continue from a saved cursor, includi
 private messages, mentions, and your own messages. Plaud supplies meeting summaries.
 
 Intake keeps Slack messages that the person sends, direct mentions, DMs, group DMs, and replies in those Slack
-chats. Gmail reads incoming mail only from the Primary inbox after Gmail filters, plus sent mail for context. It excludes archived incoming mail, other inbox categories, spam, trash, and drafts before fetching bodies. WhatsApp retains both incoming and outgoing text. The configured judge reads bounded batches
-with subject-scoped source history and candidate Golem chats. EmbeddingGemma remains the local recall model.
+threads. Gmail reads incoming mail only from the Primary inbox after Gmail filters, plus sent mail for context. It excludes archived incoming mail, other inbox categories, spam, trash, and drafts before fetching bodies. WhatsApp retains both incoming and outgoing text. The configured judge reads bounded batches
+with subject-scoped source history and candidate Golem threads. EmbeddingGemma remains the local recall model.
 There is no separate relevance-reading model.
 
 The clock also starts work. A stated response period gets a durable check. When it is due, Golem reads fresh source
 evidence before it decides whether you need to know. An acknowledgement does not count as a substantive answer.
 An undated promise gets an internal review, with no claim that a deadline was missed.
 
-Useful developments add a visible message and source files to the existing subject chat, saying what changed and
+Useful developments add a visible message and source files to the existing subject thread, saying what changed and
 what it asks of you. Golem is your second brain, not your worker: it remembers and reminds, and it does research or
 drafts only when you ask. What a message asks of you is nudged in the morning summary every 2 days until you deal
 with it, or tell Golem it is done, rejected, or someone else's. A separate
 notification decision needs exact source evidence: the owner asked, an awaited reply needs attention, a stated time
 arrived, or time-sensitive preparation helps now. Golem checks the latest source before a permitted notification.
-Normal messages, mentions, and an hour without a reply do not qualify alone. An existing matching shared family chat can
-receive the sources too, as a visible message. New subjects start in your own private topics;
-when none fits, Golem creates a private topic and its first chat. The chat agent has its normal tools and
-can find older related mail and tickets. No separate worker chat is made.
+Normal messages, mentions, and an hour without a reply do not qualify alone. An existing matching shared family thread can
+receive the sources too, as a visible message. New subjects start in your own private channels;
+when none fits, Golem creates a private channel and its first thread. The thread agent has its normal tools and
+can find older related mail and tickets. No separate worker thread is made.
 Nonurgent developments wait for the morning review in the 08:00 Europe/Prague hour: one plan groups them by matter,
-posts one message to each chat, and sends you one summary with a notification.
-Silent context updates and filing send no push. No source starts an agent, so nothing is researched or drafted for
-you unless you ask. External messages still need a person's request and approval.
+posts one message to each thread, and sends you one summary with a notification.
+Silent context updates and filing send no notification. No source starts an agent, so nothing is researched or
+drafted for you unless you ask. External messages still need a person's request and approval.
 
 Source data, model calls, searches, state changes, agent work, and corrections go to a separate private `audit.sqlite`.
 Source files stay grouped: one per Gmail or Slack thread, one per Plaud meeting, and one per conversation per day for WhatsApp and Slack DMs. New messages update the same file.
@@ -354,14 +266,14 @@ Source files stay grouped: one per Gmail or Slack thread, one per Plaud meeting,
 **Following** shows what Golem is monitoring, the supporting sources, and the change history. Mark a matter handled, stop it, reopen it, or correct it in plain text. Stopping a matter does not mark it complete. Corrections remain in the audit and guide later assessments.
 
 See [the process and verification notes](docs/proactive.md), [API](docs/api.md#intake-srcintake), and
-[data storage](docs/data.md). The account setting and conversation flow work in every app. Upcoming keeps explicit
+[data storage](docs/data.md). The account setting and conversation flow work in the web app. Upcoming keeps explicit
 reminders and routines; it has no inferred task list.
 
 Private replay data must stay outside this public repository.
 
 ### More
 
-- **Browser.** Agents visit websites in a headless Chrome of their own for each chat and person, driven by Vercel's
+- **Browser.** Agents visit websites in a headless Chrome of their own for each thread and person, driven by Vercel's
   [agent-browser](https://github.com/vercel-labs/agent-browser). They search the web with ChatGPT's own search,
   because search engines block a headless browser. All their web traffic goes through one egress that blocks the
   server, the home network, and private addresses.
@@ -374,66 +286,16 @@ Private replay data must stay outside this public repository.
 - **Feedback from the agents.** When a tool fails or answers wrong, when no tool can do the work, or when an agent sees
   an easier way, it reports this with `feedback_report` and continues. The server's owner reads the reports under
   **Private** › **Feedback** and dismisses each one when it is done. A report describes Golem, not the person, and
-  links its chat only when the owner can see it.
+  links its thread only when the owner can see it.
 - **The model.** Golem uses ChatGPT, signed in once with the device login of OpenAI's Codex. The server's owner
   chooses the model and the effort for everybody.
 
-## The apps
+## The web app
 
-The web app, the iOS app, and the Android app do the same things, with one design system, Ember: shades of black and
-white, one rust accent, square corners, 16 × 16 pixel icons, and a fine dither. All talk to the JSON API in
-[docs/api.md](docs/api.md).
-
-- **Web.** A React single-page app that keeps its data local, shows each change at once, and stays current over
-  server-sent events. It opens on what it showed last, also before the server answers.
-- **iPhone.** A native SwiftUI app with the navigation of Slack's iOS app and Ember's flat surfaces.
-  - **Push notifications** with Reply, Snooze, and Done, and Allow or Deny for an approval, also on the Apple Watch.
-    Siri reads a message aloud and sends your spoken reply.
-  - A **Live Activity** shows the work for your message on the Lock Screen and in the Dynamic Island.
-  - The **Share** extension sends a link, text, pictures, or files to Golem.
-  - **Places** on a map start [reminders and routines when you arrive or leave](#reminders-and-routines-at-a-place).
-  - **Voice, on the device:** dictation in every composer, and a hands-free conversation with Golem
-    ([below](#voice-on-the-iphone)).
-
-- **Android.** A native Kotlin app with Jetpack Compose and Material 3 in Ember's colors, with the same screens as the iPhone app:
-  dictation, the share sheet, places with geofences, and the phone tools that Android allows. It shows notifications
-  while it runs; Golem has no pushes to Android yet.
-
-You build the iOS app yourself with Xcode and install it on your family's iPhones. It is not in the App Store. The
-Android app you build with Gradle ([docs/android.md](docs/android.md)); it is not in Google Play.
-
-### Voice on the iPhone
-
-Everything that hears or speaks runs on the iPhone itself, on its Neural Engine. No audio leaves the phone: Golem
-gets only the text, and the thinking happens on the server, with ChatGPT, as for a typed message.
-
-| Job | Model | Runs with |
-| --- | --- | --- |
-| Speech to text | [Parakeet Ultra](https://huggingface.co/moondream/parakeet-ultra), 25 European languages, Czech and English among them; it tells the language by itself | [FluidAudio](https://github.com/FluidInference/FluidAudio) and Core ML |
-| Text to speech | [Supertonic-3](https://huggingface.co/Supertone/supertonic-3), in Czech or English, for each sentence the language it is in | FluidAudio and Core ML |
-| Is this speech? | Apple's built-in sound classifier (SoundAnalysis) | iOS, nothing to download |
-| Echo cancellation | Apple's voice processing of the audio engine | iOS |
-
-The two models are in the app (about 630 MB and 170 MB; `ios/scripts/fetch-*.sh` downloads them before the build),
-so they work without a connection and nothing is downloaded on the phone.
-
-- **Dictation.** Hold the mic in any composer and talk, then let go to send. Slide left to cancel, or slide up or tap
-  to keep it listening. The words show in the field as you talk: Parakeet transcribes everything said again every
-  second and at every pause, so the text comes in short steps, and the final text is one pass over all of it. Only
-  what the sound classifier calls speech is transcribed, so a fan or typing never turns into "Thank you." The Action
-  button, Siri, and Shortcuts can start it too: **Dictate to Golem** opens your Golem chat with the mic on, and
-  **Ask Golem** sends a question with a screenshot and the clipboard without opening the app, and the answer comes
-  as a notification.
-- **Conversation.** The wave button in a chat starts a hands-free conversation. The microphone stays on with echo
-  cancellation. A pause ends your turn: a short one after a finished sentence, a longer one after "and…", "um", or a
-  comma, in Czech and English. Your words go to the chat as a voice message, which tells the agent to answer as
-  people speak: plain sentences, one to three of them, and one short sentence before it uses a tool. Golem says each
-  sentence as it streams in: Supertonic makes a sentence while the one before it plays, in 80 ms buffers.
-- **Cutting in.** With headphones, your voice stops Golem at once, and what it did not say yet is dropped. On the
-  iPhone's speaker, echo cancellation leaves enough of Golem's own voice to sound like words, so only "stop", "wait",
-  and the like cut in there; a tap on the orb always does. What the microphone hears while Golem speaks is never sent.
-- **It keeps going.** A conversation goes on with the screen locked and when you leave the chat's screen. Ending it
-  stops the microphone and the voice, never the work: the agent finishes, and the answer is in the chat.
+The web app is a React single-page app with one design system, Ember: shades of black and white, one rust accent,
+square corners, 16 × 16 pixel icons, and a fine dither. It talks to the JSON API in [docs/api.md](docs/api.md). It
+keeps its data local, shows each change at once, and stays current over server-sent events. It opens on what it
+showed last, also before the server answers. Notifications go to each person's inbox in the app.
 
 ## Self-hosting
 
@@ -442,15 +304,10 @@ so they work without a connection and nothing is downloaded on the phone.
 - **A Mac with Apple silicon**, such as a Mac mini, that stays on. Linux on x86-64 or arm64 also works for the server.
 - **[Bun](https://bun.sh)**, and these tools, which Golem checks before it starts:
   `brew install ffmpeg poppler tesseract whisper-cpp dicklesworthstone/tap/dcg cloudflared`.
-- **[Rust](https://rustup.rs)**, to build the `hands` binaries that Golem gives to the machines that pair:
-  `rustup target add aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl`,
-  and for the Linux binaries on a Mac, `brew install zig && cargo install --locked cargo-zigbuild`.
 - **A domain on Cloudflare**, for the tunnel and the HTTPS address. Google sign-in needs `https` on a public name.
 - **A Google Cloud project** for Google sign-in. Nobody can sign in with a password.
 - **A ChatGPT account** for the model, and enough free memory for the local search model.
-- **Optional:** an Apple Developer account and Xcode for the iPhone app and its push notifications, the Android SDK
-  and JDK 17 for the Android app, and `gog`,
-  `slackcli`, `wacli`, or `tesla-control` for those integrations.
+- **Optional:** `gog`, `slackcli`, `wacli`, or `tesla-control` for those integrations.
 
 ### Run it
 
@@ -458,7 +315,6 @@ so they work without a connection and nothing is downloaded on the phone.
 git clone https://github.com/dontpanicv/golem.git && cd golem
 bun install
 bunx --bun agent-browser install   # Chrome for the agents' browser, if Google Chrome is not installed
-hands/scripts/build-release.sh     # the hands binaries for macOS and Linux
 bun start                          # makes config/golem.toml on the first start, then stops
 ```
 
@@ -474,13 +330,13 @@ client_secret = "…"
 ```
 
 [google-sign-in.md](google-sign-in.md) shows how to make the Google client. Then sign in, connect ChatGPT in
-Settings, and add the other members in Workspace settings. Each person adds their own machines and accounts in their
+Settings, and add the other members in Workspace settings. Each person adds their own accounts in their
 Settings.
 
 Golem keeps everything in two folders ([docs/data.md](docs/data.md)). `GOLEM_CONFIG` and `GOLEM_DATA` move them.
 
 - `config/`: `golem.toml` and `secret.key`. Keep a copy of it safe and apart from the data backups.
-- `data/`: the database, the chats, the files, the search index and its model, and the logs. Back it up offsite.
+- `data/`: the database, the threads, the files, the search index and its model, and the logs. Back it up offsite.
 
 ### The recommended deployment: a Mac mini behind a Cloudflare Tunnel
 
@@ -517,29 +373,6 @@ Obfuscation, because it breaks the app's content policy, and do not cache the Go
 To update: `git pull && bun install`, then the restart command that `install-service.sh` printed, such as
 `launchctl kickstart -k gui/$(id -u)/dev.golem.server`. Golem builds the web app when it starts.
 
-### The iPhone app
-
-```sh
-brew install xcodegen
-ios/scripts/fetch-parakeet.sh      # ~630 MB, the dictation model
-ios/scripts/fetch-supertonic.sh    # ~170 MB, the voice
-cd ios && xcodegen generate && open Golem.xcodeproj
-```
-
-Put your values in `ios/Config/Local.xcconfig`, which git ignores: `DEVELOPMENT_TEAM`, `GOLEM_BUNDLE_ID`,
-`GOLEM_SERVER_URL` (`https://golem.example.com`), and `GOLEM_ASSOCIATED_DOMAIN` (`golem.example.com`). On the server,
-set `ios_app_id = "<DEVELOPMENT_TEAM>.<GOLEM_BUNDLE_ID>"`, so that Google sign-in returns to the app. For push
-notifications, add an APNs key as `config/apns.p8` and its `[apns]` table (`key_id`, `team_id`, `topic`).
-
-### The Android app
-
-```sh
-cd android && ./gradlew :app:installDebug
-```
-
-[docs/android.md](docs/android.md) has the tools it needs, the release key, and the `[android]` table that lets Google
-sign-in return to the app.
-
 ### Let your agent set it up
 
 Paste this prompt into a coding agent, such as Claude Code or Codex, on the Mac that will run Golem:
@@ -549,9 +382,8 @@ Set up Golem (https://github.com/dontpanicv/golem) on this Mac as a self-hosted 
 
 1. Read README.md, google-sign-in.md, docs/artifacts-sharing.md, and docs/integrations.md first.
 2. Check that this is a Mac with Apple silicon. Install what is missing with Homebrew: bun, ffmpeg, poppler,
-   tesseract, whisper-cpp, dicklesworthstone/tap/dcg, cloudflared, rustup (then a stable Rust), zig, and cargo-zigbuild.
-3. Clone the repository to ~/golem, run `bun install`, `bunx --bun agent-browser install`, and
-   `hands/scripts/build-release.sh`.
+   tesseract, whisper-cpp, dicklesworthstone/tap/dcg, and cloudflared.
+3. Clone the repository to ~/golem, and run `bun install` and `bunx --bun agent-browser install`.
 4. Run `bun start` once, so Golem writes config/golem.toml, and stop it.
 5. Ask me for: the Golem hostname (such as golem.example.com), the artifact hostname (such as a.example.com),
    and the Google emails of the family, the owner first. Write base_url, allowed_emails, and share_url into
@@ -575,14 +407,12 @@ bun run dev        # http://localhost:3000, rebuilds the web app on every change
 bun test
 bun run typecheck
 bun run lint       # Ultracite (Biome); `bun run format` fixes what it can
-bun run lint:ios   # SwiftLint (`brew install swiftlint`)
 ```
 
 - `src/` is a modular monolith: one module for each domain, each with its service, routes, and tests
   ([docs/modular-monolith.md](docs/modular-monolith.md)). `web/` has the same modules.
 - `design/tokens.json` holds every color, size, space, radius, and shadow; `bun run tokens` makes the CSS, the
-  Swift and Kotlin tokens, the 16 × 16 pixel icons, and the logo's paths from it. `design/components.md` is the spec of
-  every component on the web, iOS, and Android.
+  16 × 16 pixel icons, and the logo's paths from it. `design/components.md` is the spec of every component.
 - `design/icon.svg` is Golem's face in an 8 × 8 grid: white on black, dissolving to the right, with the aleph of אמת
   (truth), the letter that gives it life, as the accent cell (#c8603f) on its forehead. `bun scripts/icon.ts` makes it
   and every app icon, with one noise cell a point at the size where each shows.
@@ -596,10 +426,9 @@ bun run lint:ios   # SwiftLint (`brew install swiftlint`)
 Golem stands on the work of these projects and people:
 
 - **Agents:** [Pi](https://github.com/earendil-works/pi) by Earendil (Pi Durable, Pi Codemode, Pi AI, and Chord);
-  the `hands` daemon of [Mycroft](https://github.com/dontpanicv/mycroft); the memory tree follows
+  the memory tree follows
   [UniiChat](https://github.com/VictorTaelin/UniiChat); the search ranking follows
   [DigUp](https://github.com/ARahim3/DigUp); web search follows [pi-web-access](https://github.com/nicobailon/pi-web-access);
-  [destructive_command_guard](https://github.com/Dicklesworthstone/destructive_command_guard);
   [agent-browser](https://github.com/vercel-labs/agent-browser); the
   [Model Context Protocol SDK](https://github.com/modelcontextprotocol/typescript-sdk).
 - **Server:** [Bun](https://bun.sh), [TypeScript](https://www.typescriptlang.org), [Effect](https://effect.website),
@@ -612,21 +441,13 @@ Golem stands on the work of these projects and people:
   [Shiki](https://shiki.style), [Leaflet](https://leafletjs.com) with [OpenStreetMap](https://www.openstreetmap.org),
   [Chart.js](https://www.chartjs.org), [docx-preview](https://github.com/VolodymyrBaydalka/docxjs), and
   [read-excel-file](https://gitlab.com/catamphetamine/read-excel-file).
-- **iOS:** SwiftUI, [XcodeGen](https://github.com/yonaskolb/XcodeGen), and
-  [FluidAudio](https://github.com/FluidInference/FluidAudio).
-- **Android:** Kotlin, [Jetpack Compose](https://developer.android.com/compose), Material 3,
-  [Coil](https://coil-kt.github.io/coil/), [OkHttp](https://square.github.io/okhttp/), and
-  [multiplatform-markdown-renderer](https://github.com/mikepenz/multiplatform-markdown-renderer).
 - **Integrations:** [gog](https://github.com/openclaw/gogcli), [wacli](https://github.com/openclaw/wacli),
   [slackcli](https://github.com/shaharia-lab/slackcli), [Rettiwt-API](https://github.com/Rishikant181/Rettiwt-API),
   [vehicle-command](https://github.com/teslamotors/vehicle-command),
   [salus-it500-cloud](https://github.com/Peterka35/salus-it500-cloud), and TeslaMate for the charging log.
-- **Models:** [EmbeddingGemma 2](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) by Google (Apache 2.0);
-  [Parakeet Ultra](https://huggingface.co/moondream/parakeet-ultra) by Moondream (CC-BY-4.0), built on NVIDIA's
-  Parakeet TDT 0.6B v3 (CC-BY-4.0); [Supertonic-3](https://huggingface.co/Supertone/supertonic-3) by Supertone
-  (BigScience Open RAIL-M, with use restrictions); the Core ML conversions of both are by FluidInference.
+- **Models:** [EmbeddingGemma 2](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) by Google (Apache 2.0).
 - **Design:** the Ember look, inspired by the work of [Charles Postiaux](https://x.com/postiauxcharles); the measures of
-  [Linear](https://linear.app), the navigation of Slack's iOS app, the layout of
+  [Linear](https://linear.app), the layout of
   [T3 Code](https://github.com/pingdotgg/t3code); and the [Inter](https://rsms.me/inter/) and
   [Geist Mono](https://github.com/vercel/geist-font) fonts (SIL Open Font License).
 - **Tools for this repository:** [Stageshow](https://github.com/benjitaylor/skills) by Benji Taylor (MIT) and

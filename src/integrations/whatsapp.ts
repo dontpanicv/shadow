@@ -216,7 +216,7 @@ export function whatsAppConnector(binary: string): Connector {
           ].join("\n\n"),
         execute: async ({ to, file: fileId, caption }, store, signal, file) => {
           if (!file) {
-            throw new Error("Only an agent in a chat can send files.");
+            throw new Error("Only an agent in a thread can send files.");
           }
           const { path, name } = await file(fileId);
           return whatsApp.send(
@@ -236,14 +236,14 @@ export function whatsAppConnector(binary: string): Connector {
       {
         name: "whatsapp_save_media",
         description:
-          "Saves the picture, video, audio, or document of a message, which has a `MediaType`, to this chat's topic. Returns its file id. When WhatsApp no longer keeps it, the phone sends it again if it is online.",
+          "Saves the picture, video, audio, or document of a message, which has a `MediaType`, to this thread's channel. Returns its file id. When WhatsApp no longer keeps it, the phone sends it again if it is online.",
         parameters: Type.Object({
           chat: Type.String({ description: "The chat's JID." }),
           message: Type.String({ description: "The message's `MsgID`." }),
         }),
         execute: ({ chat, message }, store, signal, _file, _allowed, save) => {
           if (!save) {
-            throw new Error("Only an agent in a chat can save files.");
+            throw new Error("Only an agent in a thread can save files.");
           }
           return save((path) =>
             whatsApp.download(store, chat, message, path, signal)

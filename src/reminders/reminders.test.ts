@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { authDatabase } from "../../test/database.ts";
-import type { Chats } from "../chats/chats.ts";
 import { Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { migrate } from "../platform/database.ts";
+import type { Threads } from "../threads/threads.ts";
 import type { Workspaces } from "../workspaces/workspaces.ts";
 import { Reminders } from "./reminders.ts";
 
@@ -20,13 +20,13 @@ function setup(
 ) {
   const database = authDatabase();
   migrate(database);
-  const chatsOf = (workspaceId: string) =>
+  const threadsOf = (workspaceId: string) =>
     workspaceId === "home"
       ? [
           {
-            id: "chat",
+            id: "thread",
             workspaceId,
-            topicId: "general",
+            channelId: "general",
             conversationId: 1,
             title: "Plans",
             updatedAt: 0,
@@ -60,27 +60,27 @@ function setup(
     agentMember() {
       return alice;
     },
-    chatsIn: (workspaceId: string) => chatsOf(workspaceId),
-    allChatsIn: (workspaceId: string) => chatsOf(workspaceId),
-    chatOf: (workspaceId: string, conversationId: number) =>
-      chatsOf(workspaceId).find(
-        (chat) => chat.conversationId === conversationId
+    threadsIn: (workspaceId: string) => threadsOf(workspaceId),
+    allThreadsIn: (workspaceId: string) => threadsOf(workspaceId),
+    threadOf: (workspaceId: string, conversationId: number) =>
+      threadsOf(workspaceId).find(
+        (thread) => thread.conversationId === conversationId
       ) ?? null,
   } as unknown as Pick<
     Workspaces,
     | "agentMember"
-    | "allChatsIn"
+    | "allThreadsIn"
     | "requireMember"
     | "members"
-    | "chatOf"
-    | "chatsIn"
+    | "threadOf"
+    | "threadsIn"
   >;
   const calls: string[] = [];
   const requesters: (string | null)[] = [];
   const asking = { requester };
-  const chats = {
+  const threads = {
     instruct: async (
-      _chat: unknown,
+      _thread: unknown,
       _text: string,
       requestId: string,
       _notify: unknown,
@@ -92,7 +92,7 @@ function setup(
     },
     requester: async () => asking.requester,
     realm: async () => null,
-  } as unknown as Pick<Chats, "instruct" | "realm" | "requester">;
+  } as unknown as Pick<Threads, "instruct" | "realm" | "requester">;
   // OpenStreetMap's search, which has every place that it is asked for.
   const places = new Places(database, workspaces, (async (url: string) => {
     const osmId = new URL(url).searchParams.get("osm_ids");
@@ -113,9 +113,9 @@ function setup(
   return {
     database,
     workspaces,
-    chats,
+    threads,
     places,
-    reminders: new Reminders(database, workspaces, chats, places),
+    reminders: new Reminders(database, workspaces, threads, places),
     calls,
     requesters,
     asking,
@@ -123,8 +123,8 @@ function setup(
 }
 
 test("one-time reminders run once, also when the machine starts after their due time", async () => {
-  const { database, workspaces, chats, places, reminders, calls } = setup();
-  const reminder = reminders.create("home", alice, "chat", alice.id, {
+  const { database, workspaces, threads, places, reminders, calls } = setup();
+  const reminder = reminders.create("home", alice, "thread", alice.id, {
     id: "first",
     createdBy: alice.id,
     text: "Review the document",
@@ -132,7 +132,7 @@ test("one-time reminders run once, also when the machine starts after their due 
   });
   expect(reminder.dueAt).toBe(Date.UTC(2090, 10, 1, 8));
   expect(reminders.tick(reminder.dueAt - 1)).toEqual([]);
-  const restarted = new Reminders(database, workspaces, chats, places);
+  const restarted = new Reminders(database, workspaces, threads, places);
   await Promise.all(restarted.tick(reminder.dueAt + 60_000));
   expect(calls).toEqual(["reminder:first:0"]);
   expect(reminders.get("home", alice, null, "first").deliveredAt).toBeNumber();
@@ -149,20 +149,20 @@ test("a failed reminder retries, a quiet one is done, and a cancelled one stays 
     }
     return requestId.startsWith("reminder:quiet") ? null : "Done";
   });
-  const quiet = reminders.create("home", alice, "chat", alice.id, {
+  const quiet = reminders.create("home", alice, "thread", alice.id, {
     id: "quiet",
     createdBy: alice.id,
     text: "Water the plants",
     ...time,
     at: "2090-11-01T10:00:00+01:00",
   });
-  const first = reminders.create("home", alice, "chat", alice.id, {
+  const first = reminders.create("home", alice, "thread", alice.id, {
     id: "retry",
     createdBy: alice.id,
     text: "Call grandma",
     ...time,
   });
-  const second = reminders.create("home", alice, "chat", alice.id, {
+  const second = reminders.create("home", alice, "thread", alice.id, {
     id: "cancel",
     createdBy: alice.id,
     text: "Buy milk",
@@ -197,7 +197,7 @@ test("reminders stay in their workspace and reject a wrong time-zone offset", ()
     "reminders_cancel",
   ]);
   expect(() =>
-    reminders.create("home", alice, "chat", alice.id, {
+    reminders.create("home", alice, "thread", alice.id, {
       id: "wrong-zone",
       createdBy: alice.id,
       text: "Call grandma",
@@ -206,7 +206,7 @@ test("reminders stay in their workspace and reject a wrong time-zone offset", ()
     })
   ).toThrow("UTC offset");
   expect(() =>
-    reminders.create("home", alice, "chat", "eve", {
+    reminders.create("home", alice, "thread", "eve", {
       id: "wrong-person",
       createdBy: alice.id,
       text: "Call grandma",
@@ -236,7 +236,7 @@ test("the agent tool creates a workspace reminder for the person who asked", asy
   });
   const [reminder] = reminders.list("home", alice, null);
   expect(reminder).toMatchObject({
-    chatId: "chat",
+    threadId: "thread",
     recipientId: alice.id,
     text: "Review the document",
   });
@@ -303,7 +303,7 @@ test("a reminder runs as the person who asked for it or last changed it, not as 
   await Promise.all(reminders.tick(reminder!.dueAt));
   expect(requesters).toEqual([alice.id]);
 
-  const second = reminders.create("home", alice, "chat", alice.id, {
+  const second = reminders.create("home", alice, "thread", alice.id, {
     id: "changed",
     createdBy: alice.id,
     text: "Pay rent",
@@ -318,7 +318,7 @@ test("a reminder runs as the person who asked for it or last changed it, not as 
   await Promise.all(reminders.tick(second.dueAt));
   expect(requesters).toEqual([alice.id, bob.id]);
 
-  const older = reminders.create("home", alice, "chat", alice.id, {
+  const older = reminders.create("home", alice, "thread", alice.id, {
     id: "older",
     createdBy: alice.id,
     text: "Water the plants",
@@ -448,7 +448,7 @@ test("a reminder for an arrival where its person is now is due at once", () => {
     initial: true,
   });
   const create = (id: string, event: "arrive" | "leave") =>
-    reminders.create("home", alice, "chat", alice.id, {
+    reminders.create("home", alice, "thread", alice.id, {
       id,
       text: "Water the plants",
       place: { id: home.id, event },
@@ -473,7 +473,7 @@ test("a reminder at a place fires within its window: not before its start, at on
     id: string,
     place: { event: "arrive" | "leave"; from?: string; until?: string }
   ) =>
-    reminders.create("home", alice, "chat", alice.id, {
+    reminders.create("home", alice, "thread", alice.id, {
       id,
       text: "The four work matters",
       place: { id: office.id, ...place },
@@ -555,7 +555,7 @@ test("a reminder at a point of interest is only for the person who asks, and fir
 
   // Another member cannot use it, and neither can an agent alone.
   expect(() =>
-    reminders.create("home", bob, "chat", alice.id, {
+    reminders.create("home", bob, "thread", alice.id, {
       id: "bob",
       createdBy: bob.id,
       text: "Spy",
@@ -590,7 +590,7 @@ test("a person waits at 12 points of interest at most, and more reminders can wa
     insert.run(`point-${index}`, alice.id, `Shop ${index}`, `N${index}`);
   }
   const create = (id: string, placeId: string) =>
-    reminders.create("home", alice, "chat", alice.id, {
+    reminders.create("home", alice, "thread", alice.id, {
       id,
       createdBy: alice.id,
       text: "Buy it",

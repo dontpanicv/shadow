@@ -6,12 +6,13 @@ import { dirname } from "node:path";
  * Application tables. better-auth owns `user`, `session`, `account`, `verification`, `organization` (workspaces),
  * `member`, and `invitation`; it migrates them itself. Append a migration; never edit one that shipped.
  *
- * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `workspaces` owns `topic`, `chat`, and `workspace_facts` (and reads
+ * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `workspaces` owns `channel`, `thread`, and `workspace_facts` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
  * `credential`, `oauth_client`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
- * `hands` owns `machine`, `places` owns `place` and `place_presence`, `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
+ * `places` owns `place` and `place_presence`, `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
  * `routines` owns `routine` and `routine_run`, `reminders` owns `reminder`, `agenda` owns `suggestion`, `feedback` owns `feedback`, and `notifications` owns
- * `notification`, `push_device`, and `live_activity`. Start a new migration with a comment that names its owner.
+ * `notification`. No module reads `machine`, `push_device`, or `live_activity` since the machines and the phone apps went.
+ * Start a new migration with a comment that names its owner.
  */
 const migrations = [
   `CREATE TABLE channel (
@@ -613,6 +614,55 @@ const migrations = [
   DROP INDEX place_name;
   CREATE UNIQUE INDEX place_name ON place (workspace_id, owner_id, name COLLATE NOCASE) WHERE osm_id IS NULL;
   CREATE UNIQUE INDEX place_point_of_interest ON place (workspace_id, owner_id, osm_id) WHERE osm_id IS NOT NULL;`,
+  // workspaces, and every module that keeps a reference: topics are channels and chats are threads again, as in Slack.
+  `DROP TRIGGER intake_check_created;
+  DROP TRIGGER intake_check_changed;
+  DROP INDEX chat_topic;
+  DROP INDEX routine_topic;
+  DROP INDEX artifact_chat;
+  DROP INDEX artifact_topic;
+  DROP INDEX chat_own_orchestrator;
+  ALTER TABLE topic RENAME TO channel;
+  ALTER TABLE chat RENAME TO thread;
+  ALTER TABLE intake_chat_read RENAME TO intake_thread_read;
+  ALTER TABLE thread RENAME COLUMN topic_id TO channel_id;
+  ALTER TABLE routine RENAME COLUMN topic_id TO channel_id;
+  ALTER TABLE routine RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE artifact RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE artifact RENAME COLUMN topic_id TO channel_id;
+  ALTER TABLE reminder RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE notification RENAME COLUMN topic_id TO channel_id;
+  ALTER TABLE notification RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE llm_usage RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE suggestion RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE suggestion RENAME COLUMN topic_id TO channel_id;
+  ALTER TABLE live_activity RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE feedback RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_item RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_check RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_context RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_delivery RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_thread_read RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_source_read RENAME COLUMN chat_id TO thread_id;
+  ALTER TABLE intake_archive RENAME COLUMN topic_id TO channel_id;
+  CREATE INDEX thread_channel ON thread (channel_id, updated_at);
+  CREATE INDEX routine_channel ON routine (channel_id);
+  CREATE INDEX artifact_thread ON artifact (thread_id);
+  CREATE INDEX artifact_channel ON artifact (channel_id);
+  CREATE UNIQUE INDEX thread_own_orchestrator ON thread (workspace_id, created_by) WHERE orchestrator = 1;
+  CREATE TRIGGER intake_check_created AFTER INSERT ON intake_check BEGIN
+    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,current)
+    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+  END;
+  CREATE TRIGGER intake_check_changed AFTER UPDATE ON intake_check
+    WHEN OLD.text IS NOT NEW.text OR OLD.state IS NOT NEW.state OR OLD.source_ids IS NOT NEW.source_ids
+      OR OLD.check_at IS NOT NEW.check_at OR OLD.next_review_at IS NOT NEW.next_review_at
+      OR OLD.thread_id IS NOT NEW.thread_id OR OLD.explicit_time IS NOT NEW.explicit_time
+      OR OLD.notified_at IS NOT NEW.notified_at
+    BEGIN
+    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,previous,current)
+    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'threadId',OLD.thread_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+  END;`,
 ];
 
 export function openDatabase(path: string): Database {

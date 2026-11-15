@@ -45,7 +45,7 @@ const server = Layer.unwrap(
 );
 
 HttpRouter.serve(server).pipe(
-  // Event streams stay open for as long as a page or the app watches a chat.
+  // Event streams stay open for as long as a page or the app watches a thread.
   Layer.provide(
     BunHttpServer.layer({
       hostname: config.host,

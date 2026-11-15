@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Navigate } from "@tanstack/react-router";
 import { Empty } from "../ui/components.tsx";
 import {
-  chatsOf,
+  channelsOf,
   lastOpened,
   orchestratorQuery,
-  topicsOf,
+  threadsOf,
   useMe,
 } from "./data.ts";
 import { FloatingSidebarButton, Shell } from "./shell.tsx";
@@ -36,65 +36,65 @@ export function Home() {
 
 const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId/");
 
-/** A workspace opens on the topic or chat this browser had open last, if it still exists, else on the orchestrator. */
+/** A workspace opens on the channel or thread this browser had open last, if it still exists, else on the orchestrator. */
 export function WorkspaceHome() {
   const { workspaceId } = workspaceRoute.useParams();
-  const topics = useLiveQuery({
-    query: (q) => q.from({ topic: topicsOf(workspaceId) }),
+  const channels = useLiveQuery({
+    query: (q) => q.from({ channel: channelsOf(workspaceId) }),
   });
-  const chats = useLiveQuery({
-    query: (q) => q.from({ chat: chatsOf(workspaceId) }),
+  const threads = useLiveQuery({
+    query: (q) => q.from({ thread: threadsOf(workspaceId) }),
   });
   const orchestrator = useQuery(orchestratorQuery(workspaceId)).data;
-  if (!(topics.isReady && chats.isReady && orchestrator)) {
+  if (!(channels.isReady && threads.isReady && orchestrator)) {
     return null;
   }
   const last = lastOpened();
   if (last?.workspaceId === workspaceId) {
-    if (topics.data.some((topic) => topic.id === last.topicId)) {
+    if (channels.data.some((channel) => channel.id === last.channelId)) {
       return (
         <Navigate
-          params={{ workspaceId, topicId: last.topicId! }}
+          params={{ workspaceId, channelId: last.channelId! }}
           replace
-          to="/w/$workspaceId/topic/$topicId"
+          to="/w/$workspaceId/channel/$channelId"
         />
       );
     }
     if (
-      last.chatId === orchestrator.id ||
-      chats.data.some((chat) => chat.id === last.chatId)
+      last.threadId === orchestrator.id ||
+      threads.data.some((thread) => thread.id === last.threadId)
     ) {
       return (
         <Navigate
-          params={{ workspaceId, chatId: last.chatId! }}
+          params={{ workspaceId, threadId: last.threadId! }}
           replace
-          to="/w/$workspaceId/chat/$chatId"
+          to="/w/$workspaceId/thread/$threadId"
         />
       );
     }
   }
   return (
     <Navigate
-      params={{ workspaceId, chatId: orchestrator.id }}
+      params={{ workspaceId, threadId: orchestrator.id }}
       replace
-      to="/w/$workspaceId/chat/$chatId"
+      to="/w/$workspaceId/thread/$threadId"
     />
   );
 }
 
 const orchestratorRoute = getRouteApi("/signed-in/w/$workspaceId/orchestrator");
 
-/** The orchestrator's chat; a search result opens one of the workspace's own artifacts here. */
+/** The orchestrator's thread; a search result opens one of the workspace's own artifacts here. */
 export function OrchestratorPage() {
   const { workspaceId } = orchestratorRoute.useParams();
   const search = orchestratorRoute.useSearch();
   const orchestrator = useQuery(orchestratorQuery(workspaceId)).data;
   return orchestrator ? (
     <Navigate
-      params={{ workspaceId, chatId: orchestrator.id }}
+      params={{ workspaceId, threadId: orchestrator.id }}
       replace
       search={search}
-      to="/w/$workspaceId/chat/$chatId"
+      to="/w/$workspaceId/thread/$threadId"
     />
   ) : null;
 }

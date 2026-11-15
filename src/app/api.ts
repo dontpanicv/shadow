@@ -17,7 +17,7 @@ export type ApiInput = AuthedInput & {
   readonly files: readonly File[];
 };
 
-/** A JSON route for a signed-in person: the iOS app with its bearer token, or the web app with its session cookie. */
+/** A JSON route for a signed-in person: the web app with its session cookie, or a client with a bearer token. */
 export function api(handler: (input: ApiInput) => Promise<Response>): Handler {
   return signedIn(
     async (input) => {

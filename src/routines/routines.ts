@@ -5,12 +5,12 @@ import {
   type CodemodeTool,
   renderDeclarations,
 } from "@earendil-works/pi-codemode";
-import type { Chats } from "../chats/chats.ts";
 import type { Integrations } from "../integrations/integrations.ts";
 import type { Place, PlaceEvent, Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
 import type { Indexer } from "../search/search.ts";
+import type { Threads } from "../threads/threads.ts";
 import type { Realm, Workspaces } from "../workspaces/workspaces.ts";
 import { routineTools } from "./tools.ts";
 
@@ -27,12 +27,12 @@ export interface RoutineRun {
 }
 
 /**
- * Work a topic does on a schedule, or each time a person arrives at or leaves a place: an optional script collects
+ * Work a channel does on a schedule, or each time a person arrives at or leaves a place: an optional script collects
  * what is new, and an agent acts on it.
  */
 export interface Routine {
   readonly id: string;
-  readonly topicId: string;
+  readonly channelId: string;
   readonly name: string;
   /** A cron expression in the server's time zone; null for a routine at a place. */
   readonly schedule: string | null;
@@ -42,8 +42,8 @@ export interface Routine {
   readonly script: string | null;
   readonly enabled: boolean;
   readonly nextRunAt: number | null;
-  /** The chat where its agent answers; it starts at the first run that reaches the agent. */
-  readonly chatId: string | null;
+  /** The thread where its agent answers; it starts at the first run that reaches the agent. */
+  readonly threadId: string | null;
   readonly lastRun: RoutineRun | null;
 }
 
@@ -81,19 +81,24 @@ export type ScriptResult =
 
 export type RoutineWorkspaces = Pick<
   Workspaces,
-  | "allTopicsIn"
-  | "allChatsIn"
-  | "topic"
-  | "topicsIn"
+  | "allChannelsIn"
+  | "allThreadsIn"
+  | "channel"
+  | "channelsIn"
   | "agentMember"
   | "members"
   | "requireMember"
-  | "chatOf"
-  | "chatsIn"
+  | "threadOf"
+  | "threadsIn"
 >;
-export type RoutineChats = Pick<
-  Chats,
-  "instruct" | "messages" | "observe" | "realm" | "requester" | "startAgentChat"
+export type RoutineThreads = Pick<
+  Threads,
+  | "instruct"
+  | "messages"
+  | "observe"
+  | "realm"
+  | "requester"
+  | "startAgentThread"
 >;
 export type RoutineSearch = Pick<Indexer, "search">;
 export type RoutinePlaces = Pick<Places, "find" | "usable">;
@@ -106,13 +111,13 @@ const SCRIPT_TIMEOUT = 5 * 60_000;
 const MIN_ROUTINE_GAP = 15 * 60_000;
 /** The most of a script's result the agent gets. */
 const MAX_RESULT = 50_000;
-/** Runs the topic details page shows. */
+/** Runs the channel details page shows. */
 const RECENT_RUNS = 20;
 
 interface RoutineRow {
   readonly id: string;
   readonly workspaceId: string;
-  readonly topicId: string;
+  readonly channelId: string;
   readonly name: string;
   /** '' for a routine at a place. */
   readonly schedule: string;
@@ -121,7 +126,7 @@ interface RoutineRow {
   readonly store: string;
   readonly enabled: number;
   readonly nextRunAt: number | null;
-  readonly chatId: string | null;
+  readonly threadId: string | null;
   /** The member who last wrote its instructions or script, whose turns its runs are; `golem` when nobody did. */
   readonly createdBy: string;
   readonly placeId: string | null;
@@ -130,15 +135,15 @@ interface RoutineRow {
 }
 
 const ROUTINE_COLUMNS =
-  "id, workspace_id AS workspaceId, topic_id AS topicId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, chat_id AS chatId, created_by AS createdBy, place_id AS placeId, place_event AS placeEvent, place_person_id AS placePersonId";
+  "id, workspace_id AS workspaceId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, place_id AS placeId, place_event AS placeEvent, place_person_id AS placePersonId";
 const RUN_COLUMNS =
   "r.id, r.routine_id AS routineId, t.name AS routineName, r.started_at AS startedAt, r.finished_at AS finishedAt, r.outcome, r.error";
 
 /**
- * The routines of every topic, and the scheduler that runs them; a routine at a place runs when the iPhone of its
+ * The routines of every channel, and the scheduler that runs them; a routine at a place runs when the iPhone of its
  * person reports the event. A run first runs the routine's script in a
  * code mode sandbox; a script that finds nothing new ends the run without the agent. Otherwise, or without a script,
- * the agent of the routine's chat gets the instructions and the script's result, and answers there, or stays quiet.
+ * the agent of the routine's thread gets the instructions and the script's result, and answers there, or stays quiet.
  * A script that fails goes to the agent too, which repairs it.
  */
 export class Routines {
@@ -150,7 +155,7 @@ export class Routines {
     private readonly database: Database,
     private readonly workspaces: RoutineWorkspaces,
     private readonly integrations: Pick<Integrations, "tools">,
-    private readonly chats: RoutineChats,
+    private readonly threads: RoutineThreads,
     private readonly search: RoutineSearch,
     private readonly places: RoutinePlaces
   ) {}
@@ -186,8 +191,8 @@ export class Routines {
             : {
                 ...routine,
                 ...JSON.parse(run.input),
-                topicId: routine.topicId,
-                chatId: routine.chatId,
+                channelId: routine.channelId,
+                threadId: routine.threadId,
               },
           run.id,
           run.startedAt,
@@ -224,23 +229,23 @@ export class Routines {
       .map((routine) => this.run(routine, now));
   }
 
-  /** The routines of a topic and their newest runs. */
-  inTopic(
+  /** The routines of a channel and their newest runs. */
+  inChannel(
     workspaceId: string,
-    topicId: string,
+    channelId: string,
     user: User
   ): { routines: Routine[]; runs: RoutineRun[] } {
-    this.workspaces.topic(workspaceId, topicId, user);
+    this.workspaces.channel(workspaceId, channelId, user);
     const rows = this.database
       .query(
-        `SELECT ${ROUTINE_COLUMNS} FROM routine WHERE topic_id = ? AND deleted_at IS NULL ORDER BY created_at`
+        `SELECT ${ROUTINE_COLUMNS} FROM routine WHERE channel_id = ? AND deleted_at IS NULL ORDER BY created_at`
       )
-      .all(topicId) as RoutineRow[];
+      .all(channelId) as RoutineRow[];
     const runs = this.database
       .query(
-        `SELECT ${RUN_COLUMNS} FROM routine_run r JOIN routine t ON t.id = r.routine_id WHERE t.topic_id = ? AND t.deleted_at IS NULL ORDER BY r.started_at DESC LIMIT ${RECENT_RUNS}`
+        `SELECT ${RUN_COLUMNS} FROM routine_run r JOIN routine t ON t.id = r.routine_id WHERE t.channel_id = ? AND t.deleted_at IS NULL ORDER BY r.started_at DESC LIMIT ${RECENT_RUNS}`
       )
-      .all(topicId) as RoutineRun[];
+      .all(channelId) as RoutineRun[];
     return { routines: rows.map((row) => this.routineOf(row)), runs };
   }
 
@@ -257,27 +262,27 @@ export class Routines {
     return this.get(routineId, user);
   }
 
-  /** Moves the routine that runs in a chat to the topic the chat moved to, so its results stay in its topic. */
-  /** Moves the routines of topic `from` to topic `to`, as when one topic merges into another. */
-  moveTopic(from: string, to: string): void {
+  /** Moves the routine that runs in a thread to the channel the thread moved to, so its results stay in its channel. */
+  /** Moves the routines of channel `from` to channel `to`, as when one channel merges into another. */
+  moveChannel(from: string, to: string): void {
     this.database
-      .query("UPDATE routine SET topic_id = ? WHERE topic_id = ?")
+      .query("UPDATE routine SET channel_id = ? WHERE channel_id = ?")
       .run(to, from);
   }
 
-  moveWithChat(chatId: string, topicId: string): void {
+  moveWithThread(threadId: string, channelId: string): void {
     this.database
       .query(
-        "UPDATE routine SET topic_id = ? WHERE chat_id = ? AND deleted_at IS NULL"
+        "UPDATE routine SET channel_id = ? WHERE thread_id = ? AND deleted_at IS NULL"
       )
-      .run(topicId, chatId);
+      .run(channelId, threadId);
   }
 
   delete(routineId: string, user: User): void {
     this.softDelete(this.rowFor(routineId, user).id);
   }
 
-  /** Runs a routine now, in the background; its run shows on the topic's details page. */
+  /** Runs a routine now, in the background; its run shows on the channel's details page. */
   runNow(routineId: string, user: User): void {
     const row = this.rowFor(routineId, user);
     if (this.running.has(row.id)) {
@@ -318,7 +323,7 @@ export class Routines {
       .map((row) => this.run(row, now));
   }
 
-  /** The routines of a workspace in the topics `realm` sees, for its agents. */
+  /** The routines of a workspace in the channels `realm` sees, for its agents. */
   inWorkspace(workspaceId: string, realm: Realm): Routine[] {
     return this.live(
       this.database
@@ -330,23 +335,23 @@ export class Routines {
     ).map((row) => this.routineOf(row));
   }
 
-  /** Adds a routine to a topic for an agent of the workspace. Creating it again with the same id changes nothing. */
+  /** Adds a routine to a channel for an agent of the workspace. Creating it again with the same id changes nothing. */
   create(
     workspaceId: string,
-    topicId: string,
+    channelId: string,
     input: RoutineInput & { readonly id: string; readonly createdBy: string }
   ): Routine {
     const name = required(input.name, "Name");
     const now = Date.now();
-    const when = this.when(workspaceId, topicId, input, input.createdBy);
+    const when = this.when(workspaceId, channelId, input, input.createdBy);
     this.database
       .query(
-        "INSERT OR IGNORE INTO routine (id, workspace_id, topic_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, place_id, place_event, place_person_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO routine (id, workspace_id, channel_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, place_id, place_event, place_person_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         input.id,
         workspaceId,
-        topicId,
+        channelId,
         name,
         when.schedule,
         required(input.instructions, "Instructions"),
@@ -385,7 +390,7 @@ export class Routines {
       moved || (row.placeId !== null && createdBy !== row.createdBy)
         ? this.when(
             workspaceId,
-            row.topicId,
+            row.channelId,
             moved
               ? changes
               : {
@@ -425,7 +430,7 @@ export class Routines {
     return this.routineOf(this.row(workspaceId, routineId));
   }
 
-  /** Deletes a routine in a topic `realm` sees, for an agent of the workspace; its chat stays. */
+  /** Deletes a routine in a channel `realm` sees, for an agent of the workspace; its thread stays. */
   remove(workspaceId: string, realm: Realm, routineId: string): Routine {
     const routine = this.routineOf(this.row(workspaceId, routineId, realm));
     this.softDelete(routineId);
@@ -483,7 +488,7 @@ export class Routines {
     return routineTools(
       this,
       this.workspaces,
-      this.chats,
+      this.threads,
       this.places,
       workspaceId,
       await this.declarations(workspaceId)
@@ -600,7 +605,7 @@ export class Routines {
       .query("UPDATE routine_run SET result = ? WHERE id = ?")
       .run(JSON.stringify(result), runId);
     if (!result.ok) {
-      // The run's failure notifies its person once; the agent's repair answer stays in the chat.
+      // The run's failure notifies its person once; the agent's repair answer stays in the thread.
       await this.tell(
         routine,
         runId,
@@ -626,9 +631,9 @@ export class Routines {
   }
 
   /**
-   * Gives the agent of the routine's chat a task, and starts the chat on the first one. Its answer notifies
+   * Gives the agent of the routine's thread a task, and starts the thread on the first one. Its answer notifies
    * `notify`: a run's answer notifies nobody, as the agent calls notify when something is wrong or unusual; a repair's
-   * answer, which says what does not work, notifies everyone who sees the chat.
+   * answer, which says what does not work, notifies everyone who sees the thread.
    */
   private async tell(
     routine: RoutineRow,
@@ -636,8 +641,8 @@ export class Routines {
     text: string,
     notify: readonly string[] | "everyone"
   ): Promise<string | null> {
-    return this.chats.instruct(
-      await this.chatFor(routine),
+    return this.threads.instruct(
+      await this.threadFor(routine),
       text,
       `routine:${runId}`,
       notify,
@@ -647,7 +652,7 @@ export class Routines {
   }
 
   /**
-   * Tells the routine's person in its chat that a run failed, with a notification, every time, also when the agent
+   * Tells the routine's person in its thread that a run failed, with a notification, every time, also when the agent
    * repaired the script or could not answer.
    */
   private async reportFailure(
@@ -658,8 +663,8 @@ export class Routines {
     if (routine.createdBy === "golem") {
       return;
     }
-    await this.chats.observe(
-      await this.chatFor(routine),
+    await this.threads.observe(
+      await this.threadFor(routine),
       `The routine "${routine.name}" failed: ${error}`,
       `routine:${runId}:failed`,
       { id: routine.createdBy, name: "", email: "" },
@@ -667,26 +672,26 @@ export class Routines {
     );
   }
 
-  /** The routine's chat, started at its first run; read again, as an earlier step of this run may have started it. */
-  private async chatFor(routine: RoutineRow) {
-    const { chatId } = this.database
-      .query("SELECT chat_id AS chatId FROM routine WHERE id = ?")
-      .get(routine.id) as { chatId: string | null };
+  /** The routine's thread, started at its first run; read again, as an earlier step of this run may have started it. */
+  private async threadFor(routine: RoutineRow) {
+    const { threadId } = this.database
+      .query("SELECT thread_id AS threadId FROM routine WHERE id = ?")
+      .get(routine.id) as { threadId: string | null };
     const existing = this.workspaces
-      .allChatsIn(routine.workspaceId)
-      .find((candidate) => candidate.id === chatId);
+      .allThreadsIn(routine.workspaceId)
+      .find((candidate) => candidate.id === threadId);
     if (existing) {
       return existing;
     }
-    const chat = await this.chats.startAgentChat(
+    const thread = await this.threads.startAgentThread(
       routine.workspaceId,
-      routine.topicId,
+      routine.channelId,
       routine.name
     );
     this.database
-      .query("UPDATE routine SET chat_id = ? WHERE id = ?")
-      .run(chat.id, routine.id);
-    return chat;
+      .query("UPDATE routine SET thread_id = ? WHERE id = ?")
+      .run(thread.id, routine.id);
+    return thread;
   }
 
   /** Runs a script with the integrations of the person `userId`'s turns use, and what `realm` sees. */
@@ -736,17 +741,17 @@ export class Routines {
     }
   }
 
-  /** The person of a routine's private topic; null for a topic every member sees. */
+  /** The person of a routine's private channel; null for a channel every member sees. */
   private realmOf(routine: RoutineRow): Realm {
     return (
       this.workspaces
-        .allTopicsIn(routine.workspaceId)
-        .find((topic) => topic.id === routine.topicId)?.ownerId ?? null
+        .allChannelsIn(routine.workspaceId)
+        .find((channel) => channel.id === routine.channelId)?.ownerId ?? null
     );
   }
 
   /**
-   * What scripts call: the connectors' tools, and reading the topics, chats, and search of the workspace that
+   * What scripts call: the connectors' tools, and reading the channels, threads, and search of the workspace that
    * `realm` sees.
    */
   private async scriptTools(
@@ -766,15 +771,15 @@ export class Routines {
     return [
       ...connectors,
       {
-        name: "list_topics",
+        name: "list_channels",
         description:
-          "The topics of the workspace with their summaries and chats, newest chat first.",
+          "The channels of the workspace with their summaries and threads, newest thread first.",
         inputSchema: { type: "object", properties: {} },
         execute: () =>
-          this.workspaces.topicsIn(workspaceId, realm).map((topic) => ({
-            name: topic.name,
-            summary: topic.summary,
-            chats: topic.chats.map(({ id, title, updatedAt }) => ({
+          this.workspaces.channelsIn(workspaceId, realm).map((channel) => ({
+            name: channel.name,
+            summary: channel.summary,
+            threads: channel.threads.map(({ id, title, updatedAt }) => ({
               id,
               title,
               updatedAt,
@@ -782,33 +787,33 @@ export class Routines {
           })),
       },
       {
-        name: "read_chat",
+        name: "read_thread",
         description:
-          "The newest messages of a chat, oldest first. `time` is in Unix milliseconds.",
+          "The newest messages of a thread, oldest first. `time` is in Unix milliseconds.",
         inputSchema: {
           type: "object",
           properties: {
-            chat: { type: "string", description: "The chat id" },
+            thread: { type: "string", description: "The thread id" },
             limit: { type: "integer", minimum: 1, maximum: 200 },
           },
-          required: ["chat"],
+          required: ["thread"],
         },
         execute: async (args) => {
-          const { chat: chatId, limit } = args as {
-            chat: string;
+          const { thread: threadId, limit } = args as {
+            thread: string;
             limit?: number;
           };
-          // A script reads no person's own chat.
-          const chat = this.workspaces
-            .chatsIn(workspaceId, realm)
+          // A script reads no person's own thread.
+          const thread = this.workspaces
+            .threadsIn(workspaceId, realm)
             .find(
               (candidate) =>
-                candidate.id === chatId && candidate.ownerId === null
+                candidate.id === threadId && candidate.ownerId === null
             );
-          if (!chat) {
-            throw new Error(`There is no chat ${chatId}.`);
+          if (!thread) {
+            throw new Error(`There is no thread ${threadId}.`);
           }
-          const { messages } = await this.chats.messages(chat);
+          const { messages } = await this.threads.messages(thread);
           return messages
             .filter((message) => !message.streaming)
             .slice(-(limit ?? 50))
@@ -818,7 +823,7 @@ export class Routines {
       {
         name: "search",
         description:
-          "Search the workspace: chats, notes, files, and captured mail or chats.",
+          "Search the workspace: threads, notes, files, and captured mail or threads.",
         inputSchema: {
           type: "object",
           properties: {
@@ -843,7 +848,7 @@ export class Routines {
    */
   private when(
     workspaceId: string,
-    topicId: string,
+    channelId: string,
     input: Pick<RoutineInput, "schedule" | "place">,
     createdBy: string
   ): {
@@ -870,8 +875,8 @@ export class Routines {
       !(
         (event === "arrive" || event === "leave") &&
         this.workspaces
-          .topicsIn(workspaceId, personId)
-          .some((topic) => topic.id === topicId) &&
+          .channelsIn(workspaceId, personId)
+          .some((channel) => channel.id === channelId) &&
         people.every((userId) =>
           this.places
             .usable(workspaceId, userId)
@@ -881,7 +886,7 @@ export class Routines {
     ) {
       throw new HttpError(
         400,
-        "Give a place that the person and the writer use, arrive or leave, and a topic that the person sees."
+        "Give a place that the person and the writer use, arrive or leave, and a channel that the person sees."
       );
     }
     return {
@@ -922,7 +927,7 @@ export class Routines {
       .get(row.id) as RoutineRun | null;
     return {
       id: row.id,
-      topicId: row.topicId,
+      channelId: row.channelId,
       name: row.name,
       schedule: row.placeId ? null : row.schedule,
       place: this.placeOf(row),
@@ -930,7 +935,7 @@ export class Routines {
       script: row.script,
       enabled: row.enabled === 1,
       nextRunAt: row.enabled === 1 ? row.nextRunAt : null,
-      chatId: row.chatId,
+      threadId: row.threadId,
       lastRun,
     };
   }
@@ -961,23 +966,23 @@ export class Routines {
   }
 
   /**
-   * The routines among `rows` whose topic is not deleted, and that `realm` sees when given; a deleted topic's
+   * The routines among `rows` whose channel is not deleted, and that `realm` sees when given; a deleted channel's
    * routines rest with it.
    */
   private live(rows: RoutineRow[], realm?: Realm): RoutineRow[] {
-    const topics = new Map<string, Set<string>>();
+    const channels = new Map<string, Set<string>>();
     return rows.filter((row) => {
-      let ids = topics.get(row.workspaceId);
+      let ids = channels.get(row.workspaceId);
       if (!ids) {
         ids = new Set(
           (realm === undefined
-            ? this.workspaces.allTopicsIn(row.workspaceId)
-            : this.workspaces.topicsIn(row.workspaceId, realm)
-          ).map((topic) => topic.id)
+            ? this.workspaces.allChannelsIn(row.workspaceId)
+            : this.workspaces.channelsIn(row.workspaceId, realm)
+          ).map((channel) => channel.id)
         );
-        topics.set(row.workspaceId, ids);
+        channels.set(row.workspaceId, ids);
       }
-      return ids.has(row.topicId);
+      return ids.has(row.channelId);
     });
   }
 
@@ -1013,7 +1018,7 @@ export class Routines {
     if (!row) {
       throw notFound();
     }
-    this.workspaces.topic(row.workspaceId, row.topicId, user);
+    this.workspaces.channel(row.workspaceId, row.channelId, user);
     return row;
   }
 }
@@ -1048,7 +1053,7 @@ function runTask(
     place ?? "",
     `Its instructions: ${routine.instructions}`,
     found === null ? "" : `What its script found:\n${found}`,
-    `Do what the instructions say, with your tools. Write your answer for the people in this topic; it stays in this chat and notifies nobody. Call notify only when something is wrong or not usual, such as a source or a connector that fails, or when the instructions ask you to alert people. If nothing needs anyone's attention, answer with only QUIET.`,
+    `Do what the instructions say, with your tools. Write your answer for the people in this channel; it stays in this thread and notifies nobody. Call notify only when something is wrong or not usual, such as a source or a connector that fails, or when the instructions ask you to alert people. If nothing needs anyone's attention, answer with only QUIET.`,
   ]
     .filter(Boolean)
     .join("\n\n");

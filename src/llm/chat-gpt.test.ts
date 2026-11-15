@@ -38,7 +38,7 @@ test("every request has the idle timeout and keeps the caller's options", () => 
   withIdleTimeout(provider, 1000).streamSimple(
     undefined as never,
     undefined as never,
-    { sessionId: "chat" }
+    { sessionId: "thread" }
   );
-  expect(sent).toEqual({ sessionId: "chat", timeoutMs: 1000 });
+  expect(sent).toEqual({ sessionId: "thread", timeoutMs: 1000 });
 });

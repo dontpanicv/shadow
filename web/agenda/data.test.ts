@@ -8,13 +8,13 @@ const HOUR = 60 * 60 * 1000;
 function routine(id: string, fields: Partial<Routine>): Routine {
   return {
     id,
-    topicId: "topic",
+    channelId: "channel",
     name: id,
     schedule: "0 7 * * *",
     place: null,
     enabled: true,
     nextRunAt: null,
-    chatId: null,
+    threadId: null,
     lastRun: null,
     ...fields,
   };
@@ -54,7 +54,7 @@ test("the agenda shows what needs the person, the suggestions, then what runs by
     reminders: [
       {
         id: "week",
-        chatId: "chat",
+        threadId: "thread",
         recipientId: "alice",
         createdBy: "alice",
         text: "Call the dentist",
@@ -66,7 +66,7 @@ test("the agenda shows what needs the person, the suggestions, then what runs by
       },
       {
         id: "tomorrow",
-        chatId: "chat",
+        threadId: "thread",
         recipientId: "alice",
         createdBy: "alice",
         text: "Take out the bins",
@@ -78,7 +78,7 @@ test("the agenda shows what needs the person, the suggestions, then what runs by
       },
       {
         id: "soon",
-        chatId: "chat",
+        threadId: "thread",
         recipientId: "alice",
         createdBy: "alice",
         text: "Water the plants",
@@ -90,7 +90,7 @@ test("the agenda shows what needs the person, the suggestions, then what runs by
       },
       {
         id: "cottage",
-        chatId: "chat",
+        threadId: "thread",
         recipientId: "alice",
         createdBy: "alice",
         text: "Pack the tent",
@@ -116,20 +116,19 @@ test("the agenda shows what needs the person, the suggestions, then what runs by
         text: "Remind me to water the plants",
         schedule: "0 8 * * 6",
         at: NOW + 24 * HOUR,
-        topicId: "topic",
-        chatId: "chat",
+        channelId: "channel",
+        threadId: "thread",
         createdAt: NOW,
       },
     ],
     approvals: [
       {
-        chatId: "chat",
+        threadId: "thread",
         approval: {
-          id: "deploy",
-          tool: "hands_run",
-          text: "Run on bender: make deploy",
+          id: "send",
+          tool: "google_mail_send",
+          text: "Send an email to Bob",
           approverId: null,
-          allowsTurn: true,
           expiresAt: NOW + HOUR,
         },
       },
@@ -140,7 +139,7 @@ test("the agenda shows what needs the person, the suggestions, then what runs by
     group.items.map(itemId),
   ]);
   expect(groups).toEqual([
-    ["Needs you", ["deploy", "broken"]],
+    ["Needs you", ["send", "broken"]],
     ["Suggested", ["plants"]],
     ["Today", ["soon", "today"]],
     ["Tomorrow", ["tomorrow"]],

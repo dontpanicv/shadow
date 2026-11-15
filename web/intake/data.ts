@@ -144,7 +144,7 @@ export async function deleteUpdate(workspaceId: string, id: string) {
   });
 }
 
-/** Lets Golem read a blocked sender or chat again. */
+/** Lets Golem read a blocked sender or thread again. */
 export async function unblock(workspaceId: string, id: string) {
   await request(`/workspaces/${workspaceId}/following/blocks/${id}`, {
     method: "DELETE",

@@ -3,7 +3,7 @@ import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { $ } from "bun";
 import { clientKey } from "../src/artifacts/web.ts";
 import type { User } from "../src/platform/auth.ts";
-import type { ChatRef } from "../src/workspaces/workspaces.ts";
+import type { ThreadRef } from "../src/workspaces/workspaces.ts";
 import { cookies, startTestApp, type TestApp, until } from "./harness.ts";
 
 function location(response: Response): string | null {
@@ -17,7 +17,7 @@ describe("the web app", () => {
   let bobCookie: string;
   let workspaceId: string;
   let generalId: string;
-  let chat: ChatRef;
+  let thread: ThreadRef;
 
   beforeAll(async () => {
     await $`bun run build`.quiet();
@@ -33,15 +33,15 @@ describe("the web app", () => {
       .get("alice@example.com") as User;
     const workspace = await golem.app.workspaces.create(alice, "Family");
     workspaceId = workspace.id;
-    generalId = golem.app.workspaces.topics(workspaceId, alice)[0]!.id;
-    const summary = await golem.app.chats.create(
+    generalId = golem.app.workspaces.channels(workspaceId, alice)[0]!.id;
+    const summary = await golem.app.threads.create(
       workspaceId,
       alice,
       generalId,
       "Plan the trip"
     );
-    chat = golem.app.workspaces
-      .allChatsIn(workspaceId)
+    thread = golem.app.workspaces
+      .allThreadsIn(workspaceId)
       .find((candidate) => candidate.id === summary.id)!;
   });
 
@@ -53,7 +53,7 @@ describe("the web app", () => {
       "/login",
       "/settings",
       "/workspaces/new",
-      `/w/${workspaceId}/t/${chat.id}`,
+      `/w/${workspaceId}/t/${thread.id}`,
     ]) {
       const page = await golem.call(path);
       expect([path, page.status]).toEqual([path, 200]);
@@ -81,7 +81,7 @@ describe("the web app", () => {
     });
     expect(await me.json()).toMatchObject({ user: { name: "Alice" } });
     const create = (origin: string) =>
-      golem.call(`/api/v1/workspaces/${workspaceId}/topics`, {
+      golem.call(`/api/v1/workspaces/${workspaceId}/channels`, {
         body: { name: `from-${new URL(origin).hostname.split(".")[0]}` },
         headers: { cookie: aliceCookie, origin },
       });
@@ -91,7 +91,7 @@ describe("the web app", () => {
   });
 
   test("an artifact link runs the artifact in a sandbox, for anyone when public and for members otherwise", async () => {
-    const artifact = golem.app.artifacts.create(chat, generalId, {
+    const artifact = golem.app.artifacts.create(thread, generalId, {
       title: "Trip <dates>",
       html: "<!doctype html><html><head></head><body>Vote</body></html>",
       visibility: "public",
@@ -157,7 +157,7 @@ describe("the web app", () => {
 
   test("the public host serves only public artifacts at /<name>, and nothing else", async () => {
     const make = (visibility: "public" | "members") =>
-      golem.app.artifacts.create(chat, generalId, {
+      golem.app.artifacts.create(thread, generalId, {
         title: "Share",
         html: "<p>Hi</p>",
         visibility,
@@ -276,7 +276,7 @@ describe("the web app", () => {
       ).status
     ).toBe(429);
     // A members link tells a signed-out client that its name exists, so it counts too.
-    const members = golem.app.artifacts.create(chat, generalId, {
+    const members = golem.app.artifacts.create(thread, generalId, {
       title: "Members",
       html: "<p>M</p>",
       requestKey: "web-members-miss",

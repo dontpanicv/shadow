@@ -1,14 +1,14 @@
 import type { Database } from "bun:sqlite";
 import type { User } from "../platform/auth.ts";
-import { HttpError, notFound } from "../platform/errors.ts";
+import { notFound } from "../platform/errors.ts";
 import type { Workspaces } from "../workspaces/workspaces.ts";
 
-/** Something that needs a person's attention. It opens its chat, or its topic when `chatId` is null. */
+/** Something that needs a person's attention. It opens its thread, or its channel when `threadId` is null. */
 export interface Notification {
   readonly id: string;
   readonly workspaceId: string;
-  readonly topicId: string;
-  readonly chatId: string | null;
+  readonly channelId: string;
+  readonly threadId: string | null;
   readonly title: string;
   /** Plain text, without Markdown. */
   readonly text: string;
@@ -18,119 +18,46 @@ export interface Notification {
 
 export type NotificationInput = Pick<
   Notification,
-  "workspaceId" | "topicId" | "chatId" | "title" | "text"
+  "workspaceId" | "channelId" | "threadId" | "title" | "text"
 > & {
   readonly userId: string;
-  /** A durable producer's id, so a retry creates no second notification or push. */
+  /** A durable producer's id, so a retry creates no second notification. */
   readonly id?: string;
-  /** The approval that the push lets the person allow or deny. */
-  readonly approvalId?: string;
-  /** A push that comes through a Focus: a reminder or an approval. */
-  readonly timeSensitive?: boolean;
 };
 
 export interface Inbox {
   readonly notifications: readonly Notification[];
   /** The unread notifications of this workspace. */
   readonly unread: number;
-  /** The unread notifications of all the person's workspaces, which the app icon shows. */
-  readonly badge: number;
 }
 
-export type PushEnvironment = "sandbox" | "production";
-
-/** A device of a person that gets pushes: an iPhone with the app. */
-export interface PushDevice {
-  readonly token: string;
-  readonly environment: PushEnvironment;
-}
-
-export interface PushMessage {
-  readonly notification: Notification;
-  /** The notification's text, short enough for a push. */
-  readonly body: string;
-  readonly badge: number;
-  readonly approvalId: string | null;
-  readonly timeSensitive: boolean;
-}
-
-/** Sends one push; `gone` when the device takes no more pushes, such as after the app was removed. */
-export type Push = (
-  device: PushDevice,
-  message: PushMessage
-) => Promise<"sent" | "gone">;
-
-/** What a Live Activity shows: how the work for a person's message goes, and in which chat it is now. */
-export interface ActivityState {
-  readonly status: "working" | "waiting";
-  /** The chat that works now. */
-  readonly title: string;
-  /** How many chats work on it now. */
-  readonly chats: number;
-}
-
-/** Sends one update of a Live Activity to its push token; `gone` when the activity takes no more. */
-export type ActivityPush = (
-  environment: PushEnvironment,
-  token: string,
-  payload: object,
-  priority: 5 | 10
-) => Promise<"sent" | "gone">;
-
-/** A Live Activity on a person's iPhone that follows the work for their message in a chat. */
-export interface LiveActivity {
-  readonly token: string;
-  readonly userId: string;
-  readonly workspaceId: string;
-  readonly chatId: string;
-  readonly environment: PushEnvironment;
-  readonly startedAt: number;
-}
-
-export type NotificationWorkspaces = Pick<Workspaces, "list" | "requireMember">;
+export type NotificationWorkspaces = Pick<Workspaces, "requireMember">;
 
 /** The newest notifications an inbox shows. */
 const INBOX_SIZE = 100;
-/** The most of an answer a notification keeps; the chat has all of it. */
+/** The most of an answer a notification keeps; the thread has all of it. */
 const MAX_TEXT = 500;
-/** The most of a notification's text a push shows. */
-const MAX_PUSH_BODY = 180;
 const COLUMNS =
-  "id, workspace_id AS workspaceId, topic_id AS topicId, chat_id AS chatId, title, text, created_at AS createdAt, read_at AS readAt";
-const DEVICE_TOKEN = /^[0-9a-f]{64,200}$/i;
-/** A Live Activity's push token is longer than a device's. */
-const ACTIVITY_TOKEN = /^[0-9a-f]{64,512}$/i;
-/** A person keeps this many newest devices; an older one gets no more pushes. */
-const MAX_DEVICES = 10;
-/** iOS ends a Live Activity after 8 hours; Golem stops following it then. */
-const ACTIVITY_LIFETIME = 8 * 60 * 60_000;
-/** An activity that gets no update this long shows as out of date. */
-const ACTIVITY_STALE = 15 * 60_000;
-const ENVIRONMENTS: readonly string[] = [
-  "sandbox",
-  "production",
-] satisfies PushEnvironment[];
+  "id, workspace_id AS workspaceId, channel_id AS channelId, thread_id AS threadId, title, text, created_at AS createdAt, read_at AS readAt";
 
 /**
- * The inbox of each person, and the pushes to their devices. A person who has the chat open on a screen sees what
- * happens there, so a notification for that chat is read at once and sends no push.
+ * The inbox of each person. A person who has the thread open on a screen sees what happens there, so a notification
+ * for that thread is read at once.
  */
 export class Notifications {
-  /** How many open screens of each person show each chat, by `<user> <chat>`. */
+  /** How many open screens of each person show each thread, by `<user> <thread>`. */
   private readonly watching = new Map<string, number>();
 
   constructor(
     private readonly database: Database,
-    private readonly workspaces: NotificationWorkspaces,
-    private readonly push: Push | null,
-    private readonly activityPush: ActivityPush | null = null
+    private readonly workspaces: NotificationWorkspaces
   ) {}
 
   /**
-   * Puts a notification in a person's inbox and pushes it to their devices, unless they have the chat open.
+   * Puts a notification in a person's inbox, read at once when they have the thread open.
    *
    * @example
-   * notifications.notify({ workspaceId, userId: anna.id, topicId, chatId, title: "Flights", text: answer });
+   * notifications.notify({ workspaceId, userId: anna.id, channelId, threadId, title: "Flights", text: answer });
    */
   notify(input: NotificationInput): Notification {
     if (input.id) {
@@ -143,13 +70,13 @@ export class Notifications {
     }
     const now = Date.now();
     const seen =
-      input.chatId !== null &&
-      this.watching.has(watchKey(input.userId, input.chatId));
+      input.threadId !== null &&
+      this.watching.has(watchKey(input.userId, input.threadId));
     const notification: Notification = {
       id: input.id ?? Bun.randomUUIDv7(),
       workspaceId: input.workspaceId,
-      topicId: input.topicId,
-      chatId: input.chatId,
+      channelId: input.channelId,
+      threadId: input.threadId,
       title: input.title,
       text: truncate(plainText(input.text), MAX_TEXT),
       createdAt: now,
@@ -157,24 +84,19 @@ export class Notifications {
     };
     this.database
       .query(
-        "INSERT INTO notification (id, workspace_id, user_id, topic_id, chat_id, title, text, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO notification (id, workspace_id, user_id, channel_id, thread_id, title, text, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         notification.id,
         notification.workspaceId,
         input.userId,
-        notification.topicId,
-        notification.chatId,
+        notification.channelId,
+        notification.threadId,
         notification.title,
         notification.text,
         notification.createdAt,
         notification.readAt
       );
-    if (!seen) {
-      this.send(input, notification).catch((error: unknown) =>
-        console.error("push failed", error)
-      );
-    }
     return notification;
   }
 
@@ -190,21 +112,21 @@ export class Notifications {
         "SELECT count(*) AS unread FROM notification WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL"
       )
       .get(user.id, workspaceId) as { unread: number };
-    return { notifications, unread, badge: this.badge(user) };
+    return { notifications, unread };
   }
 
-  /** Gives the notifications of a chat the topic it moved to. */
-  /** Moves the notifications of topic `from` to topic `to`, as when one topic merges into another. */
-  moveTopic(from: string, to: string): void {
+  /** Gives the notifications of a thread the channel it moved to. */
+  /** Moves the notifications of channel `from` to channel `to`, as when one channel merges into another. */
+  moveChannel(from: string, to: string): void {
     this.database
-      .query("UPDATE notification SET topic_id = ? WHERE topic_id = ?")
+      .query("UPDATE notification SET channel_id = ? WHERE channel_id = ?")
       .run(to, from);
   }
 
-  moveWithChat(chatId: string, topicId: string): void {
+  moveWithThread(threadId: string, channelId: string): void {
     this.database
-      .query("UPDATE notification SET topic_id = ? WHERE chat_id = ?")
-      .run(topicId, chatId);
+      .query("UPDATE notification SET channel_id = ? WHERE thread_id = ?")
+      .run(channelId, threadId);
   }
 
   /** Marks one notification of the person read, or all of them in the workspace for a null `id`. */
@@ -230,17 +152,17 @@ export class Notifications {
   }
 
   /**
-   * Notes that a screen of the person shows a chat, and marks the chat's notifications read. Call the returned
+   * Notes that a screen of the person shows a thread, and marks the thread's notifications read. Call the returned
    * function when the screen closes or goes to the background.
    */
-  watch(user: User, chatId: string): () => void {
-    const key = watchKey(user.id, chatId);
+  watch(user: User, threadId: string): () => void {
+    const key = watchKey(user.id, threadId);
     this.watching.set(key, (this.watching.get(key) ?? 0) + 1);
     this.database
       .query(
-        "UPDATE notification SET read_at = ? WHERE user_id = ? AND chat_id = ? AND read_at IS NULL"
+        "UPDATE notification SET read_at = ? WHERE user_id = ? AND thread_id = ? AND read_at IS NULL"
       )
-      .run(Date.now(), user.id, chatId);
+      .run(Date.now(), user.id, threadId);
     let watching = true;
     return () => {
       if (!watching) {
@@ -254,233 +176,6 @@ export class Notifications {
         this.watching.set(key, count);
       }
     };
-  }
-
-  /** Sends the person's pushes to a device; a device that another person used before sends them no more. */
-  addDevice(user: User, token: unknown, environment: unknown): void {
-    if (typeof token !== "string" || !DEVICE_TOKEN.test(token)) {
-      throw new HttpError(400, "Send the device token in hex");
-    }
-    if (
-      typeof environment !== "string" ||
-      !ENVIRONMENTS.includes(environment)
-    ) {
-      throw new HttpError(400, "Environment must be sandbox or production");
-    }
-    const live = this.database
-      .query(
-        "SELECT user_id AS userId, environment FROM push_device WHERE token = ? AND deleted_at IS NULL"
-      )
-      .all(token) as { userId: string; environment: string }[];
-    if (
-      live.length === 1 &&
-      live[0]!.userId === user.id &&
-      live[0]!.environment === environment
-    ) {
-      return;
-    }
-    const now = Date.now();
-    this.database.transaction(() => {
-      this.database
-        .query(
-          "UPDATE push_device SET deleted_at = ? WHERE token = ? AND deleted_at IS NULL"
-        )
-        .run(now, token);
-      this.database
-        .query(
-          "INSERT INTO push_device (id, user_id, token, environment, created_at) VALUES (?, ?, ?, ?, ?)"
-        )
-        .run(Bun.randomUUIDv7(), user.id, token, environment, now);
-      this.database
-        .query(
-          `UPDATE push_device SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL AND id NOT IN (
-            SELECT id FROM push_device WHERE user_id = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT ${MAX_DEVICES}
-          )`
-        )
-        .run(now, user.id, user.id);
-    })();
-  }
-
-  /** Sends no more pushes to a device of the person, such as when they sign out on it. */
-  removeDevice(user: User, token: string): void {
-    this.database
-      .query(
-        "UPDATE push_device SET deleted_at = ? WHERE token = ? AND user_id = ? AND deleted_at IS NULL"
-      )
-      .run(Date.now(), token, user.id);
-  }
-
-  /**
-   * Follows the work for the person's message in a chat with a Live Activity of their iPhone, whose push token
-   * is `token`. An older activity of theirs for the same chat ends: the new one follows the newer message.
-   */
-  startActivity(
-    user: User,
-    workspaceId: string,
-    chatId: string,
-    token: unknown,
-    environment: unknown
-  ): void {
-    if (typeof token !== "string" || !ACTIVITY_TOKEN.test(token)) {
-      throw new HttpError(400, "Send the activity's push token in hex");
-    }
-    if (
-      typeof environment !== "string" ||
-      !ENVIRONMENTS.includes(environment)
-    ) {
-      throw new HttpError(400, "Environment must be sandbox or production");
-    }
-    for (const older of this.activities(workspaceId).filter(
-      (activity) =>
-        activity.userId === user.id &&
-        activity.chatId === chatId &&
-        activity.token !== token
-    )) {
-      this.endActivity(older);
-    }
-    this.database
-      .query(
-        "INSERT INTO live_activity (token, user_id, workspace_id, chat_id, environment, started_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (token) DO NOTHING"
-      )
-      .run(token, user.id, workspaceId, chatId, environment, Date.now());
-  }
-
-  /** The Live Activities that follow work in a workspace now; older ones than iOS keeps end here. */
-  activities(workspaceId: string): LiveActivity[] {
-    this.database
-      .query(
-        "UPDATE live_activity SET ended_at = ? WHERE workspace_id = ? AND ended_at IS NULL AND started_at < ?"
-      )
-      .run(Date.now(), workspaceId, Date.now() - ACTIVITY_LIFETIME);
-    return this.database
-      .query(
-        "SELECT token, user_id AS userId, workspace_id AS workspaceId, chat_id AS chatId, environment, started_at AS startedAt FROM live_activity WHERE workspace_id = ? AND ended_at IS NULL ORDER BY started_at"
-      )
-      .all(workspaceId) as LiveActivity[];
-  }
-
-  /**
-   * Pushes a new state to a Live Activity, unless it shows that state already. A wait for the person alerts them;
-   * other changes come quietly.
-   */
-  updateActivity(activity: LiveActivity, state: ActivityState): void {
-    const json = JSON.stringify(state);
-    const changed = this.database
-      .query(
-        "UPDATE live_activity SET state = ? WHERE token = ? AND ended_at IS NULL AND state IS NOT ?"
-      )
-      .run(json, activity.token, json).changes;
-    if (changed === 0) {
-      return;
-    }
-    const now = Date.now();
-    this.sendActivity(
-      activity,
-      {
-        aps: {
-          timestamp: Math.floor(now / 1000),
-          event: "update",
-          "content-state": state,
-          "stale-date": Math.floor((now + ACTIVITY_STALE) / 1000),
-          ...(state.status === "waiting"
-            ? { alert: { title: state.title, body: "Waiting for you" } }
-            : {}),
-        },
-      },
-      state.status === "waiting" ? 10 : 5
-    );
-  }
-
-  /** Ends a Live Activity and takes it off the Lock Screen at once: the answer's notification tells how it went. */
-  endActivity(activity: LiveActivity): void {
-    const ended = this.database
-      .query(
-        "UPDATE live_activity SET ended_at = ? WHERE token = ? AND ended_at IS NULL RETURNING state"
-      )
-      .get(Date.now(), activity.token) as { state: string | null } | null;
-    if (!ended) {
-      return;
-    }
-    // iOS ignores an end that has no content state it can decode.
-    const state: ActivityState = ended.state
-      ? JSON.parse(ended.state)
-      : { status: "working", title: "", chats: 0 };
-    const now = Math.floor(Date.now() / 1000);
-    this.sendActivity(
-      activity,
-      {
-        aps: {
-          timestamp: now,
-          event: "end",
-          "content-state": state,
-          "dismissal-date": now,
-        },
-      },
-      10
-    );
-  }
-
-  private sendActivity(
-    activity: LiveActivity,
-    payload: object,
-    priority: 5 | 10
-  ): void {
-    this.activityPush?.(activity.environment, activity.token, payload, priority)
-      .then((outcome) => {
-        if (outcome === "gone") {
-          this.database
-            .query(
-              "UPDATE live_activity SET ended_at = coalesce(ended_at, ?) WHERE token = ?"
-            )
-            .run(Date.now(), activity.token);
-        }
-      })
-      .catch((error: unknown) =>
-        console.error("a Live Activity push failed", error)
-      );
-  }
-
-  private async send(input: NotificationInput, notification: Notification) {
-    if (!this.push) {
-      return;
-    }
-    const devices = this.database
-      .query(
-        "SELECT id, token, environment FROM push_device WHERE user_id = ? AND deleted_at IS NULL"
-      )
-      .all(input.userId) as (PushDevice & { id: string })[];
-    if (devices.length === 0) {
-      return;
-    }
-    const message: PushMessage = {
-      notification,
-      body: truncate(notification.text, MAX_PUSH_BODY),
-      badge: this.badge({ id: input.userId, name: "", email: "" }),
-      approvalId: input.approvalId ?? null,
-      timeSensitive: input.timeSensitive ?? false,
-    };
-    await Promise.all(
-      devices.map(async (device) => {
-        if ((await this.push!(device, message)) === "gone") {
-          this.database
-            .query("UPDATE push_device SET deleted_at = ? WHERE id = ?")
-            .run(Date.now(), device.id);
-        }
-      })
-    );
-  }
-
-  private badge(user: User): number {
-    const ids = this.workspaces.list(user).map((workspace) => workspace.id);
-    if (ids.length === 0) {
-      return 0;
-    }
-    const { unread } = this.database
-      .query(
-        `SELECT count(*) AS unread FROM notification WHERE user_id = ? AND read_at IS NULL AND workspace_id IN (${ids.map(() => "?").join(", ")})`
-      )
-      .get(user.id, ...ids) as { unread: number };
-    return unread;
   }
 }
 
@@ -503,6 +198,6 @@ function truncate(text: string, length: number): string {
     : `${text.slice(0, length - 1).trimEnd()}…`;
 }
 
-function watchKey(userId: string, chatId: string): string {
-  return `${userId} ${chatId}`;
+function watchKey(userId: string, threadId: string): string {
+  return `${userId} ${threadId}`;
 }

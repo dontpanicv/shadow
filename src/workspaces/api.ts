@@ -1,7 +1,7 @@
 import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 
-/** Workspaces, their topics, and their members for the iOS app. */
+/** Workspaces, their channels, and their members for the web app. */
 export const workspaceApiRoutes: readonly Route[] = [
   [
     "GET",
@@ -56,7 +56,7 @@ export const workspaceApiRoutes: readonly Route[] = [
     api(async ({ app, user, params }) =>
       json({
         workspace: app.workspaces.requireMember(params.workspace!, user),
-        topics: app.workspaces.topics(params.workspace!, user),
+        channels: app.workspaces.channels(params.workspace!, user),
       })
     ),
   ],
@@ -69,10 +69,10 @@ export const workspaceApiRoutes: readonly Route[] = [
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/topics",
+    "/api/v1/workspaces/:workspace/channels",
     api(async ({ app, user, params, body }) =>
       json(
-        app.workspaces.createTopic(
+        app.workspaces.createChannel(
           params.workspace!,
           user,
           body.name as string,
@@ -83,13 +83,13 @@ export const workspaceApiRoutes: readonly Route[] = [
   ],
   [
     "PUT",
-    "/api/v1/workspaces/:workspace/topics/:topic",
+    "/api/v1/workspaces/:workspace/channels/:channel",
     api(async ({ app, user, params, body }) =>
       json(
-        app.workspaces.renameTopic(
+        app.workspaces.renameChannel(
           params.workspace!,
           user,
-          params.topic!,
+          params.channel!,
           body.name as string
         )
       )

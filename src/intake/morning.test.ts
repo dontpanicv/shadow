@@ -12,16 +12,16 @@ const input: MorningInput = {
   now: 0,
   updates: ["a", "b"].map((id) => ({
     id,
-    chatId: null,
+    threadId: null,
     proposedTitle: "Logs",
-    proposedTopicId: "work",
-    proposedNewTopic: null,
+    proposedChannelId: "work",
+    proposedNewChannel: null,
     message: "New logs",
     sourceIds: [],
   })),
   evidence: [],
-  chats: [{ id: "chat", topicId: "work", title: "Logs", context: "" }],
-  topics: [{ id: "work", name: "work", summary: null, private: false }],
+  threads: [{ id: "thread", channelId: "work", title: "Logs", context: "" }],
+  channels: [{ id: "work", name: "work", summary: null, private: false }],
   checks: [],
   nudges: [],
   reminders: [],
@@ -32,10 +32,10 @@ const input: MorningInput = {
 
 const matter = (change: Partial<MorningMatter> = {}): MorningMatter => ({
   updates: ["a", "b"],
-  chatId: "chat",
+  threadId: "thread",
   title: "Logs",
-  topicId: null,
-  newTopic: null,
+  channelId: null,
+  newChannel: null,
   message: "Both logs arrived [1][2].",
   ask: null,
   due: null,
@@ -53,12 +53,12 @@ const plan = (
   closed: [],
 });
 
-test("a morning plan places every update once, in a given chat or topic", () => {
+test("a morning plan places every update once, in a given thread or channel", () => {
   expect(validateMorningPlan(plan([matter()]), input).matters).toHaveLength(1);
   expect(
     validateMorningPlan(
       plan(
-        [matter({ updates: ["a"], chatId: null, topicId: "work" })],
+        [matter({ updates: ["a"], threadId: null, channelId: "work" })],
         [{ id: "b", reason: "Handled" }]
       ),
       input
@@ -74,14 +74,14 @@ test("a morning plan places every update once, in a given chat or topic", () => 
     validateMorningPlan(plan([matter({ updates: ["a", "b", "c"] })]), input)
   ).toThrow("places update c wrongly");
   expect(() =>
-    validateMorningPlan(plan([matter({ chatId: "another" })]), input)
+    validateMorningPlan(plan([matter({ threadId: "another" })]), input)
   ).toThrow("not given");
   expect(() =>
     validateMorningPlan(
-      plan([matter({ chatId: null, topicId: "elsewhere" })]),
+      plan([matter({ threadId: null, channelId: "elsewhere" })]),
       input
     )
-  ).toThrow("given or proposed topic");
+  ).toThrow("given or proposed channel");
   expect(() =>
     validateMorningPlan(plan([matter({ message: " " })]), input)
   ).toThrow("needs its message");
@@ -120,7 +120,7 @@ test("without a model plan every matter keeps its summary line and no nudge clos
 test("a morning plan leaves out a matter without updates, as Golem lists the nudges itself", () => {
   const due = {
     ...input,
-    nudges: [{ id: "n", chatId: "chat", text: "Reply", sourceIds: [] }],
+    nudges: [{ id: "n", threadId: "thread", text: "Reply", sourceIds: [] }],
   };
   const checked = validateMorningPlan(
     plan([matter(), matter({ updates: [], title: "Reply" })]),
@@ -133,7 +133,7 @@ test("a morning plan leaves out a matter without updates, as Golem lists the nud
 test("a morning plan closes only a nudge that is due, as resolved or stopped", () => {
   const due = {
     ...input,
-    nudges: [{ id: "n", chatId: null, text: "Reply", sourceIds: [] }],
+    nudges: [{ id: "n", threadId: null, text: "Reply", sourceIds: [] }],
   };
   const closed = (id: string, state: string) =>
     ({

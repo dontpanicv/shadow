@@ -5,11 +5,11 @@ import { request } from "../app/api.ts";
 import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
 import type {
-  ChatSummary,
+  Channel,
   Facts,
   Inbox,
   Member,
-  Topic,
+  ThreadSummary,
   User,
   Workspace,
 } from "../app/types.ts";
@@ -27,13 +27,13 @@ export function useMe() {
   return useQuery(meQuery).data!;
 }
 
-/** The topics and the chats of a workspace come in one response, which both collections read. */
-const loading = new Map<string, Promise<{ topics: Topic[] }>>();
+/** The channels and the threads of a workspace come in one response, which both collections read. */
+const loading = new Map<string, Promise<{ channels: Channel[] }>>();
 
 function workspaceState(workspaceId: string) {
   let pending = loading.get(workspaceId);
   if (!pending) {
-    pending = request<{ topics: Topic[] }>(
+    pending = request<{ channels: Channel[] }>(
       `/workspaces/${workspaceId}`
     ).finally(() => loading.delete(workspaceId));
     loading.set(workspaceId, pending);
@@ -41,45 +41,45 @@ function workspaceState(workspaceId: string) {
   return pending;
 }
 
-/** Loads the topics and chats of a workspace again, as agents start chats and topics while they work. */
+/** Loads the channels and threads of a workspace again, as agents start threads and channels while they work. */
 export function refreshWorkspace(workspaceId: string): Promise<void> {
   return queryClient.invalidateQueries({
-    queryKey: ["workspaces", workspaceId, "topics"],
+    queryKey: ["workspaces", workspaceId, "channels"],
   });
 }
 
 /**
- * Merges a topic into another: its chats, files, artifacts, and routines move there, and the empty topic goes.
- * Topics are never deleted.
+ * Merges a channel into another: its threads, files, artifacts, and routines move there, and the empty channel goes.
+ * Channels are never deleted.
  */
-export async function mergeTopic(
+export async function mergeChannel(
   workspaceId: string,
-  topicId: string,
+  channelId: string,
   into: string
 ): Promise<void> {
-  await request(`/workspaces/${workspaceId}/topics/${topicId}/merge`, {
+  await request(`/workspaces/${workspaceId}/channels/${channelId}/merge`, {
     method: "POST",
     body: { into },
   });
   await refreshWorkspace(workspaceId);
 }
 
-/** The topics of a workspace, in the server's order. Renaming one shows at once. */
-export const topicsOf = keyed((workspaceId: string) =>
+/** The channels of a workspace, in the server's order. Renaming one shows at once. */
+export const channelsOf = keyed((workspaceId: string) =>
   createCollection(
     queryCollectionOptions({
-      id: `topics:${workspaceId}`,
-      queryKey: ["workspaces", workspaceId, "topics", "list"],
+      id: `channels:${workspaceId}`,
+      queryKey: ["workspaces", workspaceId, "channels", "list"],
       queryClient,
       queryFn: async () =>
-        (await workspaceState(workspaceId)).topics.map(
-          ({ chats, ...topic }, order) => ({ ...topic, order })
+        (await workspaceState(workspaceId)).channels.map(
+          ({ threads, ...channel }, order) => ({ ...channel, order })
         ),
-      getKey: (topic) => topic.id,
+      getKey: (channel) => channel.id,
       // The collection loads again after it, with the name as the server keeps it.
       onUpdate: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(`/workspaces/${workspaceId}/topics/${mutation.key}`, {
+          await request(`/workspaces/${workspaceId}/channels/${mutation.key}`, {
             method: "PUT",
             body: { name: mutation.modified.name },
           });
@@ -89,28 +89,28 @@ export const topicsOf = keyed((workspaceId: string) =>
   )
 );
 
-/** The chats of every topic of a workspace. Settling or moving one shows at once. */
-export const chatsOf = keyed((workspaceId: string) =>
+/** The threads of every channel of a workspace. Settling or moving one shows at once. */
+export const threadsOf = keyed((workspaceId: string) =>
   createCollection(
     queryCollectionOptions({
-      id: `chats:${workspaceId}`,
-      queryKey: ["workspaces", workspaceId, "topics", "chats"],
+      id: `threads:${workspaceId}`,
+      queryKey: ["workspaces", workspaceId, "channels", "threads"],
       queryClient,
       queryFn: async () =>
-        (await workspaceState(workspaceId)).topics.flatMap(
-          (topic) => topic.chats
+        (await workspaceState(workspaceId)).channels.flatMap(
+          (channel) => channel.threads
         ),
-      getKey: (chat) => chat.id,
+      getKey: (thread) => thread.id,
       onUpdate: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
           await request(
-            mutation.changes.topicId
-              ? `/workspaces/${workspaceId}/chats/${mutation.key}/topic`
-              : `/workspaces/${workspaceId}/chats/${mutation.key}/settled`,
+            mutation.changes.channelId
+              ? `/workspaces/${workspaceId}/threads/${mutation.key}/channel`
+              : `/workspaces/${workspaceId}/threads/${mutation.key}/settled`,
             {
               method: "POST",
-              body: mutation.changes.topicId
-                ? { topicId: mutation.modified.topicId }
+              body: mutation.changes.channelId
+                ? { channelId: mutation.modified.channelId }
                 : { settled: mutation.modified.settledAt !== null },
             }
           );
@@ -129,19 +129,19 @@ export function inboxQuery(workspaceId: string) {
   });
 }
 
-/** Loads the inbox again: a run that ends or a chat that opens changes it. */
+/** Loads the inbox again: a run that ends or a thread that opens changes it. */
 export function refreshInbox(workspaceId: string): Promise<void> {
   return queryClient.invalidateQueries({
     queryKey: inboxQuery(workspaceId).queryKey,
   });
 }
 
-/** The workspace's chat that never ends; the first request makes it. */
+/** The workspace's thread that never ends; the first request makes it. */
 export function orchestratorQuery(workspaceId: string) {
   return queryOptions({
     queryKey: ["workspaces", workspaceId, "orchestrator"],
     queryFn: ({ signal }) =>
-      request<ChatSummary>(`/workspaces/${workspaceId}/orchestrator`, {
+      request<ThreadSummary>(`/workspaces/${workspaceId}/orchestrator`, {
         signal,
       }),
     staleTime: Number.POSITIVE_INFINITY,
@@ -178,51 +178,51 @@ export function factsQuery(workspaceId: string) {
   });
 }
 
-/** Settles a chat, or brings it back. */
+/** Settles a thread, or brings it back. */
 export function setSettled(
   workspaceId: string,
-  chatId: string,
+  threadId: string,
   settled: boolean
 ) {
-  return chatsOf(workspaceId).update(chatId, (draft) => {
+  return threadsOf(workspaceId).update(threadId, (draft) => {
     draft.settledAt = settled ? Date.now() : null;
   });
 }
 
 const OPENED = "golem-opened";
-const OPEN_TOPICS = "golem-open-topics";
+const OPEN_CHANNELS = "golem-open-channels";
 
-/** The ids of the topics whose chats this browser shows in the sidebar; the others start folded. */
-export function openTopics(): string[] {
+/** The ids of the channels whose threads this browser shows in the sidebar; the others start folded. */
+export function openChannels(): string[] {
   try {
-    return JSON.parse(localStorage.getItem(OPEN_TOPICS) ?? "[]");
+    return JSON.parse(localStorage.getItem(OPEN_CHANNELS) ?? "[]");
   } catch {
     return [];
   }
 }
 
-/** Remembers the open topics, so the sidebar shows their chats next time. */
-export function rememberOpenTopics(topicIds: string[]): void {
-  localStorage.setItem(OPEN_TOPICS, JSON.stringify(topicIds));
+/** Remembers the open channels, so the sidebar shows their threads next time. */
+export function rememberOpenChannels(channelIds: string[]): void {
+  localStorage.setItem(OPEN_CHANNELS, JSON.stringify(channelIds));
 }
 
-/** Remembers the topic or chat page, so the workspace opens on it next time. */
+/** Remembers the channel or thread page, so the workspace opens on it next time. */
 export function rememberOpened(path: string): void {
   localStorage.setItem(OPENED, path);
 }
 
-/** The workspace and the topic or chat id of the page `rememberOpened` saw last. */
+/** The workspace and the channel or thread id of the page `rememberOpened` saw last. */
 export function lastOpened():
-  | { workspaceId: string; topicId?: string; chatId?: string }
+  | { workspaceId: string; channelId?: string; threadId?: string }
   | undefined {
   const [, workspaceId, kind, id] =
     localStorage
       .getItem(OPENED)
-      ?.match(/^\/w\/([^/]+)\/(topic|chat)\/([^/]+)$/) ?? [];
+      ?.match(/^\/w\/([^/]+)\/(channel|thread)\/([^/]+)$/) ?? [];
   if (!workspaceId) {
     return undefined;
   }
-  return kind === "topic"
-    ? { workspaceId, topicId: id }
-    : { workspaceId, chatId: id };
+  return kind === "channel"
+    ? { workspaceId, channelId: id }
+    : { workspaceId, threadId: id };
 }

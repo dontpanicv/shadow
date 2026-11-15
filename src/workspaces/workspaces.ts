@@ -5,17 +5,17 @@ import type { Auth, User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
 
 /**
- * Whose private data a read sees besides what every member sees: a person's id, or `null` for none. A chat's agent
- * sees its chat's realm, so what it says in a topic every member reads never comes from a private topic.
+ * Whose private data a read sees besides what every member sees: a person's id, or `null` for none. A thread's agent
+ * sees its thread's realm, so what it says in a channel every member reads never comes from a private channel.
  */
 export type Realm = string | null;
 
 /**
- * What identifies a chat: its id, its workspace, its conversation in that workspace's session, and, for an
- * orchestrator, the person it belongs to; `ownerId` is null for a chat of a topic. `realm` is the person of an
- * orchestrator or of a private topic, and null for a chat of a topic every member sees.
+ * What identifies a thread: its id, its workspace, its conversation in that workspace's session, and, for an
+ * orchestrator, the person it belongs to; `ownerId` is null for a thread of a channel. `realm` is the person of an
+ * orchestrator or of a private channel, and null for a thread of a channel every member sees.
  */
-export interface ChatRef {
+export interface ThreadRef {
   readonly conversationId: number;
   readonly id: string;
   readonly ownerId: string | null;
@@ -28,23 +28,23 @@ export interface Workspace {
   /** The person's role: `owner` can rename and delete the workspace, `member` cannot. */
   readonly role: string;
 }
-export interface ChatSummary {
-  readonly topicId: string;
+export interface ThreadSummary {
+  readonly channelId: string;
   readonly id: string;
   readonly title: string;
   readonly updatedAt: number;
   readonly settledAt: number | null;
 }
-export interface Topic {
+export interface Channel {
   readonly id: string;
   readonly name: string;
-  /** The person a private topic belongs to, who alone sees it; null for a topic every member sees. */
+  /** The person a private channel belongs to, who alone sees it; null for a channel every member sees. */
   readonly ownerId: string | null;
-  /** What the topic is for and what goes on in it, as an agent last wrote it. */
+  /** What the channel is for and what goes on in it, as an agent last wrote it. */
   readonly summary: string | null;
-  /** An emoji for the topic, as the model last chose it. */
+  /** An emoji for the channel, as the model last chose it. */
   readonly icon: string | null;
-  readonly chats: readonly ChatSummary[];
+  readonly threads: readonly ThreadSummary[];
 }
 /** Facts about the family that its people write by hand; every agent of the workspace reads them. */
 export interface Facts {
@@ -65,9 +65,9 @@ const MAX_FACTS = 20_000;
 /** Leaves out the rows of deleted workspaces. */
 const LIVE =
   "workspace_id IN (SELECT id FROM organization WHERE deletedAt IS NULL)";
-/** The columns of a chat as `ChatSummary & ChatRef`, from `chat t JOIN topic c`. */
-const CHAT =
-  "t.id, t.workspace_id AS workspaceId, t.conversation_id AS conversationId, t.topic_id AS topicId, t.title, t.updated_at AS updatedAt, t.settled_at AS settledAt, CASE WHEN t.orchestrator = 1 THEN t.created_by END AS ownerId, CASE WHEN t.orchestrator = 1 THEN t.created_by ELSE c.owner_id END AS realm";
+/** The columns of a thread as `ThreadSummary & ThreadRef`, from `thread t JOIN channel c`. */
+const THREAD =
+  "t.id, t.workspace_id AS workspaceId, t.conversation_id AS conversationId, t.channel_id AS channelId, t.title, t.updated_at AS updatedAt, t.settled_at AS settledAt, CASE WHEN t.orchestrator = 1 THEN t.created_by END AS ownerId, CASE WHEN t.orchestrator = 1 THEN t.created_by ELSE c.owner_id END AS realm";
 
 /**
  * Workspaces are isolated: every read and write goes through a membership check, and nothing crosses
@@ -153,7 +153,7 @@ export class Workspaces {
       throw new HttpError(500, "Could not create the workspace");
     }
     const workspace = { id: created.id, name: created.name, role: "owner" };
-    this.createTopic(workspace.id, user, "general");
+    this.createChannel(workspace.id, user, "general");
     return workspace;
   }
 
@@ -166,57 +166,57 @@ export class Workspaces {
     return { ...workspace, name: trimmed };
   }
 
-  /** The topics the person sees: those of every member, and their own private ones. */
-  topics(workspaceId: string, user: User): Topic[] {
+  /** The channels the person sees: those of every member, and their own private ones. */
+  channels(workspaceId: string, user: User): Channel[] {
     this.requireMember(workspaceId, user);
-    return this.topicsIn(workspaceId, user.id);
+    return this.channelsIn(workspaceId, user.id);
   }
 
-  /** A topic of the person's workspace; not found when it is deleted or in another workspace. */
-  topic(workspaceId: string, topicId: string, user: User): Topic {
-    const topic = this.topics(workspaceId, user).find(
-      (candidate) => candidate.id === topicId
+  /** A channel of the person's workspace; not found when it is deleted or in another workspace. */
+  channel(workspaceId: string, channelId: string, user: User): Channel {
+    const channel = this.channels(workspaceId, user).find(
+      (candidate) => candidate.id === channelId
     );
-    if (!topic) {
+    if (!channel) {
       throw notFound();
     }
-    return topic;
+    return channel;
   }
 
-  /** The topics of a workspace that `realm` sees, with their chats, newest first, for agents. */
-  topicsIn(workspaceId: string, realm: Realm): Topic[] {
-    return this.allTopicsIn(workspaceId).filter(
-      (topic) => topic.ownerId === null || topic.ownerId === realm
+  /** The channels of a workspace that `realm` sees, with their threads, newest first, for agents. */
+  channelsIn(workspaceId: string, realm: Realm): Channel[] {
+    return this.allChannelsIn(workspaceId).filter(
+      (channel) => channel.ownerId === null || channel.ownerId === realm
     );
   }
 
-  /** Every topic of a workspace, private ones too, for background work that acts for no person. */
-  allTopicsIn(workspaceId: string): Topic[] {
-    const topics = this.database
+  /** Every channel of a workspace, private ones too, for background work that acts for no person. */
+  allChannelsIn(workspaceId: string): Channel[] {
+    const channels = this.database
       .query(
-        `SELECT id, name, owner_id AS ownerId, summary, icon FROM topic WHERE workspace_id = ? AND deleted_at IS NULL AND ${LIVE} ORDER BY created_at, rowid`
+        `SELECT id, name, owner_id AS ownerId, summary, icon FROM channel WHERE workspace_id = ? AND deleted_at IS NULL AND ${LIVE} ORDER BY created_at, rowid`
       )
-      .all(workspaceId) as Omit<Topic, "chats">[];
-    const chats = this.database
+      .all(workspaceId) as Omit<Channel, "threads">[];
+    const threads = this.database
       .query(
-        "SELECT id, topic_id AS topicId, title, updated_at AS updatedAt, settled_at AS settledAt FROM chat WHERE workspace_id = ? AND orchestrator = 0 ORDER BY updated_at DESC"
+        "SELECT id, channel_id AS channelId, title, updated_at AS updatedAt, settled_at AS settledAt FROM thread WHERE workspace_id = ? AND orchestrator = 0 ORDER BY updated_at DESC"
       )
-      .all(workspaceId) as ChatSummary[];
-    return topics.map((topic) => ({
-      ...topic,
-      chats: chats.filter((chat) => chat.topicId === topic.id),
+      .all(workspaceId) as ThreadSummary[];
+    return channels.map((channel) => ({
+      ...channel,
+      threads: threads.filter((thread) => thread.channelId === channel.id),
     }));
   }
 
-  /** Adds a topic; a `private` one is the person's own. */
-  createTopic(
+  /** Adds a channel; a `private` one is the person's own. */
+  createChannel(
     workspaceId: string,
     user: User,
     name: string,
     isPrivate = false
-  ): Topic {
+  ): Channel {
     this.requireMember(workspaceId, user);
-    return this.addTopic(
+    return this.addChannel(
       workspaceId,
       name,
       user.id,
@@ -225,55 +225,55 @@ export class Workspaces {
   }
 
   /**
-   * Adds a topic to a workspace; `createdBy` is a person's id, or `golem` for a topic an agent made, and `ownerId`
-   * the person of a private topic. Names are unique in the workspace, private ones too.
+   * Adds a channel to a workspace; `createdBy` is a person's id, or `golem` for a channel an agent made, and `ownerId`
+   * the person of a private channel. Names are unique in the workspace, private ones too.
    */
-  addTopic(
+  addChannel(
     workspaceId: string,
     name: string,
     createdBy: string,
     ownerId: Realm
-  ): Topic {
-    const slug = this.freeTopicName(workspaceId, name);
-    const topic = {
+  ): Channel {
+    const slug = this.freeChannelName(workspaceId, name);
+    const channel = {
       id: randomUUID(),
       name: slug,
       ownerId,
       summary: null,
       icon: null,
-      chats: [],
+      threads: [],
     };
     this.database
       .query(
-        "INSERT INTO topic (id, workspace_id, name, owner_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO channel (id, workspace_id, name, owner_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .run(topic.id, workspaceId, slug, ownerId, createdBy, Date.now());
-    return topic;
+      .run(channel.id, workspaceId, slug, ownerId, createdBy, Date.now());
+    return channel;
   }
 
-  /** Gives a topic that the person sees a new name; names stay unique in the workspace. */
-  renameTopic(
+  /** Gives a channel that the person sees a new name; names stay unique in the workspace. */
+  renameChannel(
     workspaceId: string,
     user: User,
-    topicId: string,
+    channelId: string,
     name: string
-  ): Topic {
-    const topic = this.topic(workspaceId, topicId, user);
-    const slug = this.freeTopicName(workspaceId, name, topicId);
+  ): Channel {
+    const channel = this.channel(workspaceId, channelId, user);
+    const slug = this.freeChannelName(workspaceId, name, channelId);
     this.database
-      .query("UPDATE topic SET name = ? WHERE id = ?")
-      .run(slug, topicId);
-    return { ...topic, name: slug };
+      .query("UPDATE channel SET name = ? WHERE id = ?")
+      .run(slug, channelId);
+    return { ...channel, name: slug };
   }
 
   /**
-   * A topic name as Golem keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words.
-   * `409` when another topic of the workspace has it.
+   * A channel name as Golem keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words.
+   * `409` when another channel of the workspace has it.
    */
-  private freeTopicName(
+  private freeChannelName(
     workspaceId: string,
     name: string,
-    topicId = ""
+    channelId = ""
   ): string {
     const slug = required(name, "Name")
       .normalize("NFC")
@@ -282,13 +282,13 @@ export class Workspaces {
       .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
       .replace(/^-|-$/g, "");
     if (!slug) {
-      throw new HttpError(400, "Use letters or numbers in the topic name");
+      throw new HttpError(400, "Use letters or numbers in the channel name");
     }
     const exists = this.database
       .query(
-        "SELECT 1 FROM topic WHERE workspace_id = ? AND name = ? AND id != ?"
+        "SELECT 1 FROM channel WHERE workspace_id = ? AND name = ? AND id != ?"
       )
-      .get(workspaceId, slug, topicId);
+      .get(workspaceId, slug, channelId);
     if (exists) {
       throw new HttpError(409, `#${slug} already exists`);
     }
@@ -296,55 +296,59 @@ export class Workspaces {
   }
 
   /**
-   * Deletes a topic that `realm` sees, once `Chats.merge` moved all it held to another topic. Nothing is removed: the topic and its chats
-   * stay in the database, hidden. Its name gets `~<id>`, which no topic name has, so a new topic can take the
-   * name. The orchestrators move to the first other topic that every member sees, so a workspace keeps one such
-   * topic at least.
+   * Deletes a channel that `realm` sees, once `Threads.merge` moved all it held to another channel. Nothing is removed: the channel and its threads
+   * stay in the database, hidden. Its name gets `~<id>`, which no channel name has, so a new channel can take the
+   * name. The orchestrators move to the first other channel that every member sees, so a workspace keeps one such
+   * channel at least.
    */
-  removeTopic(workspaceId: string, topicId: string, realm: Realm): Topic {
-    const topic = this.topicsIn(workspaceId, realm).find(
-      (candidate) => candidate.id === topicId
+  removeChannel(workspaceId: string, channelId: string, realm: Realm): Channel {
+    const channel = this.channelsIn(workspaceId, realm).find(
+      (candidate) => candidate.id === channelId
     );
-    if (!topic) {
+    if (!channel) {
       throw notFound();
     }
-    const next = this.topicsIn(workspaceId, null).find(
-      (candidate) => candidate.id !== topicId
+    const next = this.channelsIn(workspaceId, null).find(
+      (candidate) => candidate.id !== channelId
     );
     if (!next) {
-      throw new HttpError(409, "A workspace keeps one topic at least");
+      throw new HttpError(409, "A workspace keeps one channel at least");
     }
     this.database.transaction(() => {
       this.database
         .query(
-          "UPDATE chat SET topic_id = ? WHERE topic_id = ? AND orchestrator = 1"
+          "UPDATE thread SET channel_id = ? WHERE channel_id = ? AND orchestrator = 1"
         )
-        .run(next.id, topicId);
+        .run(next.id, channelId);
       this.database
         .query(
-          "UPDATE topic SET deleted_at = ?, name = name || '~' || id WHERE id = ?"
+          "UPDATE channel SET deleted_at = ?, name = name || '~' || id WHERE id = ?"
         )
-        .run(Date.now(), topicId);
+        .run(Date.now(), channelId);
     })();
-    return topic;
+    return channel;
   }
 
-  /** Replaces the summary of a topic, for an agent that acts for the workspace. */
-  setTopicSummary(workspaceId: string, topicId: string, summary: string): void {
+  /** Replaces the summary of a channel, for an agent that acts for the workspace. */
+  setChannelSummary(
+    workspaceId: string,
+    channelId: string,
+    summary: string
+  ): void {
     this.database
       .query(
-        "UPDATE topic SET summary = ? WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL"
+        "UPDATE channel SET summary = ? WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL"
       )
-      .run(summary.trim() || null, topicId, workspaceId);
+      .run(summary.trim() || null, channelId, workspaceId);
   }
 
-  /** Replaces the emoji of a topic, for an agent that acts for the workspace. */
-  setTopicIcon(workspaceId: string, topicId: string, icon: string): void {
+  /** Replaces the emoji of a channel, for an agent that acts for the workspace. */
+  setChannelIcon(workspaceId: string, channelId: string, icon: string): void {
     this.database
       .query(
-        "UPDATE topic SET icon = ? WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL"
+        "UPDATE channel SET icon = ? WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL"
       )
-      .run(icon, topicId, workspaceId);
+      .run(icon, channelId, workspaceId);
   }
 
   /** The facts that the people of the workspace wrote, such as names, birthdays, and places. */
@@ -379,196 +383,198 @@ export class Workspaces {
   }
 
   /**
-   * Adds a chat to a topic of the workspace. `Chats` checks who asks, names the chat, and creates its
-   * conversation; `createdBy` is a person's id, or `golem` for a chat an agent started. Each person has at most one
-   * `orchestrator` chat in a workspace, their own.
+   * Adds a thread to a channel of the workspace. `Threads` checks who asks, names the thread, and creates its
+   * conversation; `createdBy` is a person's id, or `golem` for a thread an agent started. Each person has at most one
+   * `orchestrator` thread in a workspace, their own.
    */
-  registerChat(
+  registerThread(
     workspaceId: string,
-    chat: {
-      readonly topicId: string;
+    thread: {
+      readonly channelId: string;
       readonly conversationId: number;
       readonly createdBy: string;
       readonly id: string;
       readonly orchestrator?: boolean;
       readonly title: string;
     }
-  ): ChatSummary {
-    const { topicId, conversationId, title } = chat;
-    const topic = this.database
+  ): ThreadSummary {
+    const { channelId, conversationId, title } = thread;
+    const channel = this.database
       .query(
-        "SELECT 1 FROM topic WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL"
+        "SELECT 1 FROM channel WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL"
       )
-      .get(topicId, workspaceId);
-    if (!topic) {
+      .get(channelId, workspaceId);
+    if (!channel) {
       throw notFound();
     }
     const now = Date.now();
     this.database
       .query(
-        "INSERT INTO chat (id, workspace_id, topic_id, title, conversation_id, created_by, created_at, updated_at, orchestrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO thread (id, workspace_id, channel_id, title, conversation_id, created_by, created_at, updated_at, orchestrator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
-        chat.id,
+        thread.id,
         workspaceId,
-        topicId,
+        channelId,
         title,
         conversationId,
-        chat.createdBy,
+        thread.createdBy,
         now,
         now,
-        chat.orchestrator ? 1 : 0
+        thread.orchestrator ? 1 : 0
       );
-    return { id: chat.id, topicId, title, updatedAt: now, settledAt: null };
+    return { id: thread.id, channelId, title, updatedAt: now, settledAt: null };
   }
 
   /**
-   * The chat if `user` is a member of its workspace; an orchestrator, or a chat of a private topic, only for its
+   * The thread if `user` is a member of its workspace; an orchestrator, or a thread of a private channel, only for its
    * own person.
    */
-  chat(chatId: string, user: User): ChatSummary & ChatRef {
-    const chat = this.database
+  thread(threadId: string, user: User): ThreadSummary & ThreadRef {
+    const thread = this.database
       .query(
-        `SELECT ${CHAT} FROM chat t JOIN member m ON m.organizationId = t.workspace_id JOIN topic c ON c.id = t.topic_id AND c.deleted_at IS NULL WHERE t.id = ? AND m.userId = ? AND (t.orchestrator = 0 OR t.created_by = m.userId) AND (c.owner_id IS NULL OR c.owner_id = m.userId) AND t.${LIVE}`
+        `SELECT ${THREAD} FROM thread t JOIN member m ON m.organizationId = t.workspace_id JOIN channel c ON c.id = t.channel_id AND c.deleted_at IS NULL WHERE t.id = ? AND m.userId = ? AND (t.orchestrator = 0 OR t.created_by = m.userId) AND (c.owner_id IS NULL OR c.owner_id = m.userId) AND t.${LIVE}`
       )
-      .get(chatId, user.id) as (ChatSummary & ChatRef) | null;
-    if (!chat) {
+      .get(threadId, user.id) as (ThreadSummary & ThreadRef) | null;
+    if (!thread) {
       throw notFound();
     }
-    return chat;
+    return thread;
   }
 
   /**
-   * The chats of a workspace that `realm` sees: those of its topics, and the orchestrator of its person. Those of
-   * deleted topics are left out.
+   * The threads of a workspace that `realm` sees: those of its channels, and the orchestrator of its person. Those of
+   * deleted channels are left out.
    */
-  chatsIn(workspaceId: string, realm: Realm): (ChatSummary & ChatRef)[] {
-    return this.allChatsIn(workspaceId).filter(
-      (chat) => chat.realm === null || chat.realm === realm
+  threadsIn(workspaceId: string, realm: Realm): (ThreadSummary & ThreadRef)[] {
+    return this.allThreadsIn(workspaceId).filter(
+      (thread) => thread.realm === null || thread.realm === realm
     );
   }
 
   /**
-   * Every chat of a workspace, every person's orchestrator and private topics too, but those of deleted topics,
+   * Every thread of a workspace, every person's orchestrator and private channels too, but those of deleted channels,
    * for background work that acts for no person.
    */
-  allChatsIn(workspaceId: string): (ChatSummary & ChatRef)[] {
+  allThreadsIn(workspaceId: string): (ThreadSummary & ThreadRef)[] {
     return this.database
       .query(
-        `SELECT ${CHAT} FROM chat t JOIN topic c ON c.id = t.topic_id AND c.deleted_at IS NULL WHERE t.workspace_id = ? AND t.${LIVE}`
+        `SELECT ${THREAD} FROM thread t JOIN channel c ON c.id = t.channel_id AND c.deleted_at IS NULL WHERE t.workspace_id = ? AND t.${LIVE}`
       )
-      .all(workspaceId) as (ChatSummary & ChatRef)[];
+      .all(workspaceId) as (ThreadSummary & ThreadRef)[];
   }
 
-  /** The chat of a conversation of the workspace, for the tools of its agent; null for one no chat has. */
-  chatOf(
+  /** The thread of a conversation of the workspace, for the tools of its agent; null for one no thread has. */
+  threadOf(
     workspaceId: string,
     conversationId: number
-  ): (ChatSummary & ChatRef) | null {
+  ): (ThreadSummary & ThreadRef) | null {
     return this.database
       .query(
-        `SELECT ${CHAT} FROM chat t JOIN topic c ON c.id = t.topic_id AND c.deleted_at IS NULL WHERE t.workspace_id = ? AND t.conversation_id = ? AND t.${LIVE}`
+        `SELECT ${THREAD} FROM thread t JOIN channel c ON c.id = t.channel_id AND c.deleted_at IS NULL WHERE t.workspace_id = ? AND t.conversation_id = ? AND t.${LIVE}`
       )
-      .get(workspaceId, conversationId) as (ChatSummary & ChatRef) | null;
+      .get(workspaceId, conversationId) as (ThreadSummary & ThreadRef) | null;
   }
 
-  /** The person's chat of the workspace that never ends, if they have one yet; `Chats.orchestrator` makes it. */
+  /** The person's thread of the workspace that never ends, if they have one yet; `Threads.orchestrator` makes it. */
   orchestratorOf(
     workspaceId: string,
     personId: string
-  ): (ChatSummary & ChatRef) | null {
+  ): (ThreadSummary & ThreadRef) | null {
     return this.database
       .query(
-        "SELECT id, workspace_id AS workspaceId, conversation_id AS conversationId, topic_id AS topicId, title, updated_at AS updatedAt, settled_at AS settledAt, created_by AS ownerId, created_by AS realm FROM chat WHERE workspace_id = ? AND created_by = ? AND orchestrator = 1"
+        "SELECT id, workspace_id AS workspaceId, conversation_id AS conversationId, channel_id AS channelId, title, updated_at AS updatedAt, settled_at AS settledAt, created_by AS ownerId, created_by AS realm FROM thread WHERE workspace_id = ? AND created_by = ? AND orchestrator = 1"
       )
-      .get(workspaceId, personId) as (ChatSummary & ChatRef) | null;
+      .get(workspaceId, personId) as (ThreadSummary & ThreadRef) | null;
   }
 
-  renameChat(chatId: string, title: string): void {
+  renameThread(threadId: string, title: string): void {
     this.database
-      .query("UPDATE chat SET title = ? WHERE id = ?")
-      .run(title, chatId);
+      .query("UPDATE thread SET title = ? WHERE id = ?")
+      .run(title, threadId);
   }
 
-  /** Moves the chat up in its topic, after a new message. */
-  /** Marks new activity in a chat; a settled chat opens again, so a new message never hides in the settled list. */
-  touchChat(chatId: string): void {
+  /** Moves the thread up in its channel, after a new message. */
+  /** Marks new activity in a thread; a settled thread opens again, so a new message never hides in the settled list. */
+  touchThread(threadId: string): void {
     this.database
-      .query("UPDATE chat SET updated_at = ?, settled_at = NULL WHERE id = ?")
-      .run(Date.now(), chatId);
+      .query("UPDATE thread SET updated_at = ?, settled_at = NULL WHERE id = ?")
+      .run(Date.now(), threadId);
   }
 
   /**
-   * Moves a chat of a topic that `realm` sees to another topic it sees; `Chats.move` moves what goes with it.
-   * Only the person who started a chat moves it into a private topic, which takes it from the others.
+   * Moves a thread of a channel that `realm` sees to another channel it sees; `Threads.move` moves what goes with it.
+   * Only the person who started a thread moves it into a private channel, which takes it from the others.
    */
-  moveChat(
+  moveThread(
     workspaceId: string,
     realm: Realm,
     personId: string,
-    chatId: string,
-    topicId: string
+    threadId: string,
+    channelId: string
   ): {
-    readonly chat: ChatSummary & ChatRef;
-    readonly from: Topic;
-    readonly to: Topic;
+    readonly thread: ThreadSummary & ThreadRef;
+    readonly from: Channel;
+    readonly to: Channel;
   } {
-    const chat = this.chatsIn(workspaceId, realm).find(
-      (candidate) => candidate.id === chatId
+    const thread = this.threadsIn(workspaceId, realm).find(
+      (candidate) => candidate.id === threadId
     );
-    const topics = this.topicsIn(workspaceId, realm);
-    const from = topics.find((candidate) => candidate.id === chat?.topicId);
-    const to = topics.find((candidate) => candidate.id === topicId);
-    if (!(chat && from && to)) {
+    const channels = this.channelsIn(workspaceId, realm);
+    const from = channels.find(
+      (candidate) => candidate.id === thread?.channelId
+    );
+    const to = channels.find((candidate) => candidate.id === channelId);
+    if (!(thread && from && to)) {
       throw notFound();
     }
-    if (chat.ownerId !== null) {
-      throw new HttpError(400, "This chat stays where it is");
+    if (thread.ownerId !== null) {
+      throw new HttpError(400, "This thread stays where it is");
     }
     if (from.id === to.id) {
-      return { chat, from, to };
+      return { thread, from, to };
     }
     const { createdBy } = this.database
-      .query("SELECT created_by AS createdBy FROM chat WHERE id = ?")
-      .get(chatId) as { createdBy: string };
+      .query("SELECT created_by AS createdBy FROM thread WHERE id = ?")
+      .get(threadId) as { createdBy: string };
     if (to.ownerId !== null && createdBy !== personId) {
       throw new HttpError(
         403,
-        "Only the person who started a chat moves it into a private topic"
+        "Only the person who started a thread moves it into a private channel"
       );
     }
     this.database
-      .query("UPDATE chat SET topic_id = ? WHERE id = ?")
-      .run(to.id, chatId);
+      .query("UPDATE thread SET channel_id = ? WHERE id = ?")
+      .run(to.id, threadId);
     return {
-      chat: { ...chat, topicId: to.id, realm: to.ownerId },
+      thread: { ...thread, channelId: to.id, realm: to.ownerId },
       from,
       to,
     };
   }
 
-  /** Moves a chat into or out of its topic's settled list. */
-  setChatSettled(
+  /** Moves a thread into or out of its channel's settled list. */
+  setThreadSettled(
     workspaceId: string,
-    chatId: string,
+    threadId: string,
     user: User,
     settled: boolean
-  ): ChatSummary {
+  ): ThreadSummary {
     this.requireMember(workspaceId, user);
-    const chat = this.chat(chatId, user);
-    if (chat.workspaceId !== workspaceId) {
+    const thread = this.thread(threadId, user);
+    if (thread.workspaceId !== workspaceId) {
       throw notFound();
     }
-    if (chat.ownerId !== null) {
-      throw new HttpError(400, "This chat stays open");
+    if (thread.ownerId !== null) {
+      throw new HttpError(400, "This thread stays open");
     }
-    if ((chat.settledAt !== null) === settled) {
-      return chat;
+    if ((thread.settledAt !== null) === settled) {
+      return thread;
     }
     this.database
-      .query("UPDATE chat SET settled_at = ? WHERE id = ?")
-      .run(settled ? Date.now() : null, chatId);
-    return this.chat(chatId, user);
+      .query("UPDATE thread SET settled_at = ? WHERE id = ?")
+      .run(settled ? Date.now() : null, threadId);
+    return this.thread(threadId, user);
   }
 
   members(workspaceId: string, user: User): Member[] {

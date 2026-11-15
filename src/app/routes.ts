@@ -2,18 +2,16 @@ import { accountApiRoutes } from "../accounts/api.ts";
 import { agendaApiRoutes } from "../agenda/api.ts";
 import { artifactApiRoutes } from "../artifacts/api.ts";
 import { artifactWebRoutes } from "../artifacts/web.ts";
-import { chatApiRoutes } from "../chats/api.ts";
 import { feedbackApiRoutes } from "../feedback/api.ts";
-import { handsApiRoutes } from "../hands/api.ts";
 import { intakeApiRoutes } from "../intake/api.ts";
 import { integrationApiRoutes } from "../integrations/api.ts";
 import { llmApiRoutes } from "../llm/api.ts";
 import { notificationApiRoutes } from "../notifications/api.ts";
-import { phoneApiRoutes } from "../phone/api.ts";
 import { placeApiRoutes } from "../places/api.ts";
 import { HttpError } from "../platform/errors.ts";
 import { routineApiRoutes } from "../routines/api.ts";
 import { searchApiRoutes } from "../search/api.ts";
+import { threadApiRoutes } from "../threads/api.ts";
 import { workspaceApiRoutes } from "../workspaces/api.ts";
 import { api } from "./api.ts";
 import type { Route } from "./http.ts";
@@ -29,8 +27,8 @@ const APP_PATHS = [
 ] as const;
 
 /**
- * Every route of the server: the JSON routes of each module (see docs/api.md), which the iOS app and the web app
- * both use, the web app itself, and the artifact links.
+ * Every route of the server: the JSON routes of each module (see docs/api.md), which the web app uses, the web app
+ * itself, and the artifact links.
  */
 export const allRoutes: readonly Route[] = [
   ["GET", "/assets/*", async ({ request }) => asset(request)],
@@ -39,18 +37,16 @@ export const allRoutes: readonly Route[] = [
   ...accountApiRoutes,
   ...workspaceApiRoutes,
   ...llmApiRoutes,
-  ...handsApiRoutes,
   ...integrationApiRoutes,
   ...intakeApiRoutes,
   ...placeApiRoutes,
   ...artifactApiRoutes,
   ...artifactWebRoutes,
   ...notificationApiRoutes,
-  ...chatApiRoutes,
+  ...threadApiRoutes,
   ...searchApiRoutes,
   ...routineApiRoutes,
   ...agendaApiRoutes,
-  ...phoneApiRoutes,
   ...feedbackApiRoutes,
   [
     "POST",

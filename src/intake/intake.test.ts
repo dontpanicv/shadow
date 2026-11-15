@@ -4,8 +4,8 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { HttpRouter } from "effect/http";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import { routes } from "../app/http.ts";
-import type { ChatMessages, LearnedItem } from "../chats/chats.ts";
 import type { WatchedItem } from "../integrations/integrations.ts";
+import type { LearnedItem, ThreadMessages } from "../threads/threads.ts";
 import { intakeApiRoutes } from "./api.ts";
 import {
   type Assessment,
@@ -14,7 +14,11 @@ import {
 } from "./assess.ts";
 import { Audit } from "./audit.ts";
 import { saveCheck } from "./future.ts";
-import { Intake, type IntakeChats, type IntakeIntegrations } from "./intake.ts";
+import {
+  Intake,
+  type IntakeIntegrations,
+  type IntakeThreads,
+} from "./intake.ts";
 import {
   MORNING_SYSTEM,
   type MorningInput,
@@ -27,7 +31,7 @@ const HOUR = 3_600_000;
 const START = Date.parse("2026-10-01T10:00:00+02:00");
 let app: TestApp;
 let intake: Intake;
-/** Runs right after an update is posted to a subject chat, as when the owner answers or a source fails then. */
+/** Runs right after an update is posted to a subject thread, as when the owner answers or a source fails then. */
 let postHook: (() => void) | undefined;
 afterEach(async () => {
   postHook = undefined;
@@ -41,7 +45,7 @@ async function setup(
     correction?: (text: string) => string;
     initialNotice?: "brief" | "now";
     quietTime?: boolean;
-    dialogue?: ChatMessages["messages"];
+    dialogue?: ThreadMessages["messages"];
     version?: string;
     target?: "private" | "shared";
     noticeReply?: boolean;
@@ -49,13 +53,13 @@ async function setup(
     decide?: (input: AssessmentInput) => Assessment[];
     source?: "google" | "slack" | "whatsapp";
     silent?: boolean;
-    failAfterChatStart?: boolean;
+    failAfterThreadStart?: boolean;
     plan?: (input: MorningInput) => MorningPlan;
     /** The person's reminders, as the morning review reads them. */
     reminders?: (ownerId: string) => unknown[];
     learned?: (ownerId: string) => LearnedItem[];
-    /** Fails a post to a chat, as when the conversation is not reachable. */
-    postFails?: (chatId: string) => boolean;
+    /** Fails a post to a thread, as when the conversation is not reachable. */
+    postFails?: (threadId: string) => boolean;
   } = {}
 ) {
   app = await startTestApp();
@@ -68,30 +72,30 @@ async function setup(
     (await app.app.workspaces.create(user, "Home"));
   const owner = { id: user.id, name: "Alice", email: "alice@example.com" };
   const workspaceId = home.id;
-  const targetTopic = options.target
-    ? app.app.workspaces.createTopic(
+  const targetChannel = options.target
+    ? app.app.workspaces.createChannel(
         workspaceId,
         owner,
         "flat-claims",
         options.target === "private"
       )
     : null;
-  const target = targetTopic
-    ? await app.app.chats.startAgentChat(
+  const target = targetChannel
+    ? await app.app.threads.startAgentThread(
         workspaceId,
-        targetTopic.id,
+        targetChannel.id,
         "Flat repair claim"
       )
     : null;
   const posts: {
-    chatId: string;
+    threadId: string;
     text: string;
     notify: boolean;
     files: readonly { id: string; name: string }[];
   }[] = [];
   const plans: MorningInput[] = [];
   const reviews: {
-    chatId: string;
+    threadId: string;
     requestId: string;
     text: string;
     files: readonly { id: string; name: string }[];
@@ -128,29 +132,29 @@ async function setup(
     attachment: async () =>
       new TextEncoder().encode("BEGIN:VCALENDAR\nEND:VCALENDAR"),
   };
-  let interruptCreation = options.failAfterChatStart ?? false;
-  const chats: IntakeChats = {
-    ...app.app.chats,
+  let interruptCreation = options.failAfterThreadStart ?? false;
+  const threads: IntakeThreads = {
+    ...app.app.threads,
     messages: async () => ({
       messages: options.dialogue ?? [],
       running: false,
       approvals: [],
     }),
-    observe: async (chat, text, requestId, observer, notify, files = []) => {
-      if (options.postFails?.(chat.id)) {
-        throw new Error("The chat is not reachable");
+    observe: async (thread, text, requestId, observer, notify, files = []) => {
+      if (options.postFails?.(thread.id)) {
+        throw new Error("The thread is not reachable");
       }
-      posts.push({ chatId: chat.id, text, notify, files });
-      // A post to a subject chat, not to the person's own Golem chat.
-      if (chat.ownerId === null) {
-        reviews.push({ chatId: chat.id, requestId, text, files });
+      posts.push({ threadId: thread.id, text, notify, files });
+      // A post to a subject thread, not to the person's own Golem thread.
+      if (thread.ownerId === null) {
+        reviews.push({ threadId: thread.id, requestId, text, files });
         if (!deliveries.some((each) => each.startsWith(requestId))) {
           deliveries.push(`${requestId} ${text}`);
         }
       }
       if (options.actualReview) {
-        await app.app.chats.observe(
-          chat,
+        await app.app.threads.observe(
+          thread,
           text,
           requestId,
           observer,
@@ -158,26 +162,26 @@ async function setup(
           files
         );
       }
-      if (chat.ownerId === null) {
+      if (thread.ownerId === null) {
         postHook?.();
       }
     },
-    file: app.app.chats.file.bind(app.app.chats),
-    orchestrator: app.app.chats.orchestrator.bind(app.app.chats),
+    file: app.app.threads.file.bind(app.app.threads),
+    orchestrator: app.app.threads.orchestrator.bind(app.app.threads),
     learnedFor: (_workspaceId, person) => options.learned?.(person.id) ?? [],
-    writeFile: app.app.chats.writeFile.bind(app.app.chats),
-    deleteFile: app.app.chats.deleteFile.bind(app.app.chats),
+    writeFile: app.app.threads.writeFile.bind(app.app.threads),
+    deleteFile: app.app.threads.deleteFile.bind(app.app.threads),
     realm: async () => owner.id,
     requester: async () => owner,
-    files: app.app.chats.files.bind(app.app.chats),
-    place: app.app.chats.place.bind(app.app.chats),
-    startAgentChat: async (...args) => {
-      const chat = await app.app.chats.startAgentChat(...args);
+    files: app.app.threads.files.bind(app.app.threads),
+    place: app.app.threads.place.bind(app.app.threads),
+    startAgentThread: async (...args) => {
+      const thread = await app.app.threads.startAgentThread(...args);
       if (interruptCreation) {
         interruptCreation = false;
-        throw new Error("Interrupted after chat creation");
+        throw new Error("Interrupted after thread creation");
       }
-      return chat;
+      return thread;
     },
   };
   const create = () =>
@@ -185,17 +189,17 @@ async function setup(
       app.app.database,
       app.app.workspaces,
       integrations,
-      chats,
+      threads,
       {
         search: async () => ({
           results: target
             ? [
                 {
-                  chatId: target.id,
-                  topicId: target.topicId,
+                  threadId: target.id,
+                  channelId: target.channelId,
                   title: target.title,
-                  uri: `chat:${target.id}`,
-                  kind: "chat",
+                  uri: `thread:${target.id}`,
+                  kind: "thread",
                   modality: "text",
                   loc: null,
                   score: 1,
@@ -230,13 +234,14 @@ async function setup(
             return JSON.stringify({ decisions: [] });
           }
           const answer: Assessment = {
-            chatId:
+            threadId:
               target?.id ??
-              input.chats.find((chat) => chat.title === "Balcony claim")?.id ??
+              input.threads.find((thread) => thread.title === "Balcony claim")
+                ?.id ??
               null,
-            startChat: false,
-            topicId: null,
-            newTopic: null,
+            startThread: false,
+            channelId: null,
+            newChannel: null,
             title: "Balcony claim",
             summary: "A response is pending",
             attention: "none",
@@ -323,9 +328,9 @@ async function setup(
           if (options.silent) {
             answer.notification = null;
           }
-          if (answer.attention !== "none" && answer.chatId === null) {
-            answer.startChat = true;
-            Object.assign(answer, newChatPlace(input));
+          if (answer.attention !== "none" && answer.threadId === null) {
+            answer.startThread = true;
+            Object.assign(answer, newThreadPlace(input));
           }
           return JSON.stringify({ decisions: [answer] });
         },
@@ -367,16 +372,16 @@ async function setup(
   };
 }
 
-/** Where the scripted judge starts a new chat: a given private topic, or a new private one when there is none. */
-function newChatPlace(input: { topics: { id: string }[] }) {
-  const [topic] = input.topics;
-  return topic
-    ? { topicId: topic.id, newTopic: null }
-    : { topicId: null, newTopic: { name: "sources", summary: "Sources" } };
+/** Where the scripted judge starts a new thread: a given private channel, or a new private one when there is none. */
+function newThreadPlace(input: { channels: { id: string }[] }) {
+  const [channel] = input.channels;
+  return channel
+    ? { channelId: channel.id, newChannel: null }
+    : { channelId: null, newChannel: { name: "sources", summary: "Sources" } };
 }
 
 /**
- * A judge for the tests of what a chat's agent read: the new reply's normal assessment does nothing, and the read's
+ * A judge for the tests of what a thread's agent read: the new reply's normal assessment does nothing, and the read's
  * own check resolves every check from the reply.
  */
 function resolvesOnlyRead(input: AssessmentInput): Assessment[] {
@@ -388,11 +393,11 @@ function resolvesOnlyRead(input: AssessmentInput): Assessment[] {
   )!;
   return [
     {
-      chatId: input.chats[0]!.id,
-      startChat: false,
-      topicId: null,
-      newTopic: null,
-      title: input.chats[0]!.title,
+      threadId: input.threads[0]!.id,
+      startThread: false,
+      channelId: null,
+      newChannel: null,
+      title: input.threads[0]!.title,
       summary: "",
       attention: "none",
       notification: null,
@@ -408,16 +413,16 @@ function resolvesOnlyRead(input: AssessmentInput): Assessment[] {
   ];
 }
 
-/** The person's subject chats, without their own Golem chat that the morning summary starts. */
-function subjectChats(run: { workspaceId: string; owner: { id: string } }) {
+/** The person's subject threads, without their own Golem thread that the morning summary starts. */
+function subjectThreads(run: { workspaceId: string; owner: { id: string } }) {
   return app.app.workspaces
-    .chatsIn(run.workspaceId, run.owner.id)
-    .filter((chat) => chat.ownerId === null);
+    .threadsIn(run.workspaceId, run.owner.id)
+    .filter((thread) => thread.ownerId === null);
 }
 
 /**
  * The morning plan of the scripted model: it drops every update once the owner handled the matter or the awaited
- * reply arrived, and else puts the updates of one chat or one proposed title into one matter.
+ * reply arrived, and else puts the updates of one thread or one proposed title into one matter.
  */
 function morningPlan(input: MorningInput): MorningPlan {
   const handled = input.evidence.some(
@@ -436,26 +441,26 @@ function morningPlan(input: MorningInput): MorningPlan {
       closed: [],
     };
   }
-  const place = newChatPlace(input);
+  const place = newThreadPlace(input);
   return {
     summary: "Good morning",
     matters: [
       ...Map.groupBy(
         input.updates,
-        (update) => update.chatId ?? update.proposedTitle
+        (update) => update.threadId ?? update.proposedTitle
       ).values(),
     ].map((updates) => ({
       updates: updates.map((update) => update.id),
-      chatId: updates[0]!.chatId,
+      threadId: updates[0]!.threadId,
       title: updates[0]!.proposedTitle ?? "",
-      topicId:
-        updates[0]!.chatId || updates[0]!.proposedNewTopic
+      channelId:
+        updates[0]!.threadId || updates[0]!.proposedNewChannel
           ? null
-          : (updates[0]!.proposedTopicId ?? place.topicId),
-      newTopic: updates[0]!.chatId
+          : (updates[0]!.proposedChannelId ?? place.channelId),
+      newChannel: updates[0]!.threadId
         ? null
-        : (updates[0]!.proposedNewTopic ??
-          (updates[0]!.proposedTopicId ? null : place.newTopic)),
+        : (updates[0]!.proposedNewChannel ??
+          (updates[0]!.proposedChannelId ? null : place.newChannel)),
       message: updates.map((update) => update.message).join(" "),
       ask: null,
       // A deadline keeps the matter in the summary, with no ask to follow.
@@ -489,13 +494,13 @@ function item(
   };
 }
 
-function chatUpdate(input: AssessmentInput): Assessment {
+function threadUpdate(input: AssessmentInput): Assessment {
   return {
-    chatId: input.chats[0]!.id,
-    startChat: false,
-    topicId: null,
-    newTopic: null,
-    title: input.chats[0]!.title,
+    threadId: input.threads[0]!.id,
+    startThread: false,
+    channelId: null,
+    newChannel: null,
+    title: input.threads[0]!.title,
     summary: "The source discussion is available",
     attention: "now",
     notification: null,
@@ -530,7 +535,7 @@ test("a queued source read survives restart and a partial answer revises only th
     )!;
     return [
       {
-        ...chatUpdate(input),
+        ...threadUpdate(input),
         attention: "none",
         message: "",
         checks: [
@@ -650,7 +655,7 @@ test.each(["slack", "whatsapp", "google"] as const)(
       source,
       target: "private",
       actualReview: true,
-      decide: (input) => [chatUpdate(input)],
+      decide: (input) => [threadUpdate(input)],
     });
     const incoming = {
       ...item("draft", "Can you review the draft?", false, START),
@@ -659,8 +664,8 @@ test.each(["slack", "whatsapp", "google"] as const)(
     run.items([incoming]);
     await intake.tick(START + 1000);
     expect(run.reviews).toHaveLength(1);
-    // The update is posted in the chat, and no agent starts on it.
-    const last = (await app.app.chats.messages(run.target!)).messages.at(-1)!;
+    // The update is posted in the thread, and no agent starts on it.
+    const last = (await app.app.threads.messages(run.target!)).messages.at(-1)!;
     expect(last).toMatchObject({ observation: true });
     expect(last.text).toContain("Keep the useful context");
     expect(
@@ -691,7 +696,7 @@ test("an owner reply after the update is posted suppresses a proposed push and k
     target: "private",
     actualReview: true,
     decide: (input) => {
-      const update = chatUpdate(input);
+      const update = threadUpdate(input);
       const reply = input.evidence.find(
         (source) => source.text === "Here is the repair plan."
       );
@@ -714,11 +719,14 @@ test("an owner reply after the update is posted suppresses a proposed push and k
     chat: "claim-discussion",
   };
   run.items([reply]);
-  // The owner answers right after the update reaches the chat, before the push is checked.
+  // The owner answers right after the update reaches the thread, before the push is checked.
   postHook = () =>
     run.items([
       reply,
-      { ...item("handled", "Handled", true, START + 1000), chat: reply.chat },
+      {
+        ...item("handled", "Handled", true, START + 1000),
+        chat: reply.chat,
+      },
     ]);
   await intake.tick(START + 1000);
   const recheck = run.snapshots.find(
@@ -733,7 +741,7 @@ test("an owner reply after the update is posted suppresses a proposed push and k
     app.app.notifications.inbox(run.workspaceId, run.owner).notifications
   ).toHaveLength(0);
   expect(
-    (await app.app.chats.messages(run.target!)).messages.at(-1)
+    (await app.app.threads.messages(run.target!)).messages.at(-1)
   ).toMatchObject({ observation: true });
   expect(
     intake.audit.database
@@ -771,7 +779,7 @@ test("a source outage after the update is posted postpones the push; restart ret
     target: "private",
     actualReview: true,
     decide: (input) => {
-      const update = chatUpdate(input);
+      const update = threadUpdate(input);
       const reply = input.evidence.find(
         (source) => source.text === "Here is the repair plan."
       )!;
@@ -807,7 +815,7 @@ test("a source outage after the update is posted postpones the push; restart ret
   expect(
     app.app.notifications.inbox(run.workspaceId, run.owner).notifications
   ).toHaveLength(1);
-  const { messages } = await app.app.chats.messages(run.target!);
+  const { messages } = await app.app.threads.messages(run.target!);
   expect(messages.filter((message) => message.observation)).toHaveLength(1);
   await intake.tick(START + 32 * 60_000);
   expect(
@@ -816,15 +824,15 @@ test("a source outage after the update is posted postpones the push; restart ret
 });
 
 test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
-  "a new conference gets a subject chat and source files in a private topic of the owner (%s)",
+  "a new conference gets a subject thread and source files in a private channel of the owner (%s)",
   async (destination) => {
     const run = await setup({
       actualReview: true,
       decide: (input) => {
-        const chat = input.chats.find(
+        const thread = input.threads.find(
           (each) => each.title === "Autumn conference"
         );
-        const topic = input.topics.find(
+        const channel = input.channels.find(
           (each) => each.name === "events" && destination !== "shared-name"
         );
         const invitation = input.evidence.find((each) =>
@@ -846,11 +854,11 @@ test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
         }
         return [
           {
-            chatId: chat?.id ?? null,
-            startChat: !chat,
-            topicId: chat ? null : (topic?.id ?? null),
-            newTopic:
-              chat || topic
+            threadId: thread?.id ?? null,
+            startThread: !thread,
+            channelId: thread ? null : (channel?.id ?? null),
+            newChannel:
+              thread || channel
                 ? null
                 : {
                     name: "events",
@@ -880,7 +888,7 @@ test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
     const previous =
       destination === "new"
         ? null
-        : app.app.workspaces.createTopic(
+        : app.app.workspaces.createChannel(
             run.workspaceId,
             destination === "hidden-name" ? bob : run.owner,
             "events",
@@ -912,24 +920,27 @@ test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
     run.items([invitation]);
     await intake.tick(START + 1000);
     expect(run.reviews).toHaveLength(1);
-    const chat = app.app.workspaces.chat(run.reviews[0]!.chatId, run.owner);
-    const topic = app.app.workspaces.topic(
+    const thread = app.app.workspaces.thread(
+      run.reviews[0]!.threadId,
+      run.owner
+    );
+    const channel = app.app.workspaces.channel(
       run.workspaceId,
-      chat.topicId,
+      thread.channelId,
       run.owner
     );
     if (destination === "private") {
-      expect(topic.id).toBe(previous!.id);
+      expect(channel.id).toBe(previous!.id);
     } else {
-      // A topic that others see is never offered for a new matter of the owner's sources.
-      expect(topic.ownerId).toBe(run.owner.id);
-      expect(topic.name).toBe(destination === "new" ? "events" : "events-2");
-      expect(topic.summary).toBe("Events, programmes, and tickets");
+      // A channel that others see is never offered for a new matter of the owner's sources.
+      expect(channel.ownerId).toBe(run.owner.id);
+      expect(channel.name).toBe(destination === "new" ? "events" : "events-2");
+      expect(channel.summary).toBe("Events, programmes, and tickets");
       expect(
-        run.snapshots[0]!.topics.some((each) => each.id === previous?.id)
+        run.snapshots[0]!.channels.some((each) => each.id === previous?.id)
       ).toBe(false);
     }
-    const source = (await app.app.chats.messages(chat)).messages.find(
+    const source = (await app.app.threads.messages(thread)).messages.find(
       (message) => message.observation
     )!;
     expect(source.files).toHaveLength(2);
@@ -937,10 +948,10 @@ test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
       source.files.some((file) => file.name.endsWith("programme.ics"))
     ).toBe(true);
     const archived = app.app.database
-      .query("SELECT chat_id FROM intake_item WHERE source_id='invitation'")
-      .get() as { chat_id: string };
-    expect(archived.chat_id).toBe(chat.id);
-    const { path } = await app.app.chats.file(
+      .query("SELECT thread_id FROM intake_item WHERE source_id='invitation'")
+      .get() as { thread_id: string };
+    expect(archived.thread_id).toBe(thread.id);
+    const { path } = await app.app.threads.file(
       run.workspaceId,
       run.owner,
       source.files[0]!.id
@@ -949,15 +960,15 @@ test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
       "Your ticket is in an earlier email"
     );
     await expect(
-      app.app.chats.file(run.workspaceId, bob, source.files[0]!.id)
+      app.app.threads.file(run.workspaceId, bob, source.files[0]!.id)
     ).rejects.toThrow();
     expect(
       app.app.notifications.inbox(run.workspaceId, run.owner).notifications
-    ).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    ).toEqual([expect.objectContaining({ threadId: thread.id })]);
     expect(
       app.app.notifications.inbox(run.workspaceId, bob).notifications
     ).toHaveLength(0);
-    const count = app.app.workspaces.chatsIn(
+    const count = app.app.workspaces.threadsIn(
       run.workspaceId,
       run.owner.id
     ).length;
@@ -980,18 +991,18 @@ test.each(["private", "shared", "new", "hidden-name", "shared-name"] as const)(
     ]);
     await intake.tick(START + 32 * 60_000);
     expect(
-      run.snapshots.at(-1)!.chats.some((each) => each.id === chat.id)
+      run.snapshots.at(-1)!.threads.some((each) => each.id === thread.id)
     ).toBe(true);
-    expect(run.reviews.map((review) => review.chatId)).toEqual([
-      chat.id,
-      chat.id,
+    expect(run.reviews.map((review) => review.threadId)).toEqual([
+      thread.id,
+      thread.id,
     ]);
     expect(
-      app.app.workspaces.chatsIn(run.workspaceId, run.owner.id)
+      app.app.workspaces.threadsIn(run.workspaceId, run.owner.id)
     ).toHaveLength(count);
     expect(
       app.app.workspaces
-        .topicsIn(run.workspaceId, run.owner.id)
+        .channelsIn(run.workspaceId, run.owner.id)
         .some((each) => each.name.startsWith("sources-"))
     ).toBe(false);
   }
@@ -1076,23 +1087,23 @@ test("an earlier update does not consume the future deadline notification", asyn
 
 test("passive observations start no model and retry without duplicate messages or notifications", async () => {
   const run = await setup();
-  const chat = await app.app.chats.orchestrator(run.workspaceId, run.owner);
+  const thread = await app.app.threads.orchestrator(run.workspaceId, run.owner);
   const before = app.faux.state.callCount;
-  await app.app.chats.observe(
-    chat,
+  await app.app.threads.observe(
+    thread,
     "The response period passed.",
     "stable-finding",
     run.owner,
     true
   );
-  await app.app.chats.observe(
-    chat,
+  await app.app.threads.observe(
+    thread,
     "The response period passed.",
     "stable-finding",
     run.owner,
     true
   );
-  const state = await app.app.chats.messages(chat);
+  const state = await app.app.threads.messages(thread);
   expect(state.messages.filter((message) => message.observation)).toHaveLength(
     1
   );
@@ -1106,14 +1117,14 @@ test("passive observations start no model and retry without duplicate messages o
 test("a source observation can start a shared family subject without running a model or sending a notification", async () => {
   const run = await setup({ target: "shared" });
   const before = app.faux.state.callCount;
-  await app.app.chats.observe(
+  await app.app.threads.observe(
     run.target!,
     "A new source concerns this family subject.",
     "shared-source",
     run.owner,
     false
   );
-  const state = await app.app.chats.messages(run.target!);
+  const state = await app.app.threads.messages(run.target!);
   expect(state.messages.filter((message) => message.observation)).toHaveLength(
     1
   );
@@ -1136,13 +1147,13 @@ test("private source reads and corrections require membership and never return a
     )
     .run("bob-member", run.workspaceId, bob.id, Date.now());
   expect(intake.status(run.workspaceId, bob).evidence).toHaveLength(0);
-  const privateChat = await app.app.chats.orchestrator(
+  const privateThread = await app.app.threads.orchestrator(
     run.workspaceId,
     run.owner
   );
   await expect(
-    app.app.chats.observe(
-      privateChat,
+    app.app.threads.observe(
+      privateThread,
       "Private source",
       "foreign-source",
       bob,
@@ -1209,23 +1220,23 @@ test("current recall replaces an edited source and retains its earlier version f
   ).toMatchObject({ n: 1 });
 });
 
-test("the morning review posts one message to the chat without an agent run, then a summary that notifies", async () => {
+test("the morning review posts one message to the thread without an agent run, then a summary that notifies", async () => {
   const run = await setup({ initialNotice: "brief" });
   await intake.tick(START + 1000);
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
-  // The one post to the chat; no agent runs.
+  // The one post to the thread; no agent runs.
   expect(run.reviews).toHaveLength(1);
   expect(run.plans).toHaveLength(1);
   const [post, summary] = run.posts;
   expect(post).toMatchObject({ notify: false });
   expect(post!.text).toContain("repair claim");
   expect(post!.files).toHaveLength(1);
-  const orchestrator = await app.app.chats.orchestrator(
+  const orchestrator = await app.app.threads.orchestrator(
     run.workspaceId,
     run.owner
   );
-  expect(summary).toMatchObject({ chatId: orchestrator.id, notify: true });
-  expect(summary!.text).toContain(`(chat:${post!.chatId})`);
+  expect(summary).toMatchObject({ threadId: orchestrator.id, notify: true });
+  expect(summary!.text).toContain(`(thread:${post!.threadId})`);
   expect(
     app.app.database.query("SELECT delivered_at FROM intake_delivery").get()
   ).toMatchObject({ delivered_at: expect.any(Number) });
@@ -1235,7 +1246,7 @@ test("the morning review posts one message to the chat without an agent run, the
   expect(run.plans).toHaveLength(1);
 });
 
-test("the morning review puts the updates of one matter into one new chat, starts no agent, and nudges what it asks every 2 days until it is handled", async () => {
+test("the morning review puts the updates of one matter into one new thread, starts no agent, and nudges what it asks every 2 days until it is handled", async () => {
   const run = await setup({
     decide: (input) =>
       input.newEvidenceIds.map((id, index) => ({
@@ -1253,9 +1264,9 @@ test("the morning review puts the updates of one matter into one new chat, start
           : [
               {
                 updates: input.updates.map((update) => update.id),
-                chatId: null,
+                threadId: null,
                 title: "OpenSearch incident",
-                ...newChatPlace(input),
+                ...newThreadPlace(input),
                 message: "Francisco sent the logs and the memory peaks [1][2].",
                 ask: "Reply to Francisco about the diagnostics",
                 due: null,
@@ -1271,12 +1282,14 @@ test("the morning review puts the updates of one matter into one new chat, start
     item("peaks", "Memory peaks attached.", false, START),
   ]);
   await intake.tick(START);
-  expect(subjectChats(run)).toHaveLength(0);
+  expect(subjectThreads(run)).toHaveLength(0);
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
-  const chats = subjectChats(run);
-  expect(chats.map((chat) => chat.title)).toEqual(["OpenSearch incident"]);
+  const threads = subjectThreads(run);
+  expect(threads.map((thread) => thread.title)).toEqual([
+    "OpenSearch incident",
+  ]);
   expect(run.reviews).toHaveLength(1);
-  expect(run.reviews[0]).toMatchObject({ chatId: chats[0]!.id });
+  expect(run.reviews[0]).toMatchObject({ threadId: threads[0]!.id });
   expect(run.reviews[0]!.text).toContain("Francisco sent the logs");
   expect(run.reviews[0]!.files).toHaveLength(2);
   const summary = run.posts.at(-1)!;
@@ -1293,7 +1306,7 @@ test("the morning review puts the updates of one matter into one new chat, start
   await intake.tick(Date.parse("2026-10-04T08:00:00+02:00"));
   expect(run.posts).toHaveLength(posted + 1);
   expect(run.posts.at(-1)!.text).toContain(
-    `[OpenSearch incident](chat:${chats[0]!.id}): Reply to Francisco about the diagnostics`
+    `[OpenSearch incident](thread:${threads[0]!.id}): Reply to Francisco about the diagnostics`
   );
   expect(run.posts.at(-1)!.notify).toBe(true);
 
@@ -1333,9 +1346,9 @@ test("the judge reads the family's facts and what Golem learned, in every assess
         ...entry,
         id,
         kind: entry.kind as LearnedItem["kind"],
-        topicId: null,
+        channelId: null,
         realm: null,
-        chatId: null,
+        threadId: null,
         updatedAt: 0,
       })),
   });
@@ -1364,11 +1377,11 @@ test("a morning plan that leaves an update out changes nothing and is tried agai
         ? [
             {
               updates: [input.updates[0]!.id],
-              chatId: input.updates[0]!.chatId,
+              threadId: input.updates[0]!.threadId,
               title: input.updates[0]!.proposedTitle ?? "Balcony claim",
-              ...(input.updates[0]!.chatId
-                ? { topicId: null, newTopic: null }
-                : newChatPlace(input)),
+              ...(input.updates[0]!.threadId
+                ? { channelId: null, newChannel: null }
+                : newThreadPlace(input)),
               message: "The claim waits.",
               ask: null,
               due: "2026-12-01T09:00:00+01:00",
@@ -1414,11 +1427,11 @@ test("a morning summary that failed is sent at the next try, once", async () => 
   let reachable = false;
   const run = await setup({
     initialNotice: "brief",
-    postFails: (chatId) =>
+    postFails: (threadId) =>
       !reachable &&
       app.app.workspaces
-        .chatsIn(run.workspaceId, run.owner.id)
-        .some((chat) => chat.id === chatId && chat.ownerId !== null),
+        .threadsIn(run.workspaceId, run.owner.id)
+        .some((thread) => thread.id === threadId && thread.ownerId !== null),
   });
   await intake.tick(START + 1000);
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
@@ -1426,7 +1439,7 @@ test("a morning summary that failed is sent at the next try, once", async () => 
   reachable = true;
   await intake.tick(Date.parse("2026-10-02T08:16:00+02:00"));
   expect(run.posts.map((post) => post.notify)).toEqual([false, true]);
-  expect(run.posts[1]!.text).toContain(`(chat:${run.posts[0]!.chatId})`);
+  expect(run.posts[1]!.text).toContain(`(thread:${run.posts[0]!.threadId})`);
   await intake.tick(Date.parse("2026-10-02T08:32:00+02:00"));
   expect(run.posts).toHaveLength(2);
 });
@@ -1475,7 +1488,7 @@ test("the overview shows a waiting update, takes feedback for the judge, and can
     run.workspaceId,
     run.owner,
     `update:${update!.id}`,
-    "Updates about this claim can go to the chat at once"
+    "Updates about this claim can go to the thread at once"
   );
   expect(
     intake.following.overview(run.workspaceId, run.owner).feedback
@@ -1506,7 +1519,7 @@ test("the overview shows a waiting update, takes feedback for the judge, and can
 test("deleting a waiting update blocks its sender, deletes what intake read from them, and reads nothing more from them", async () => {
   const run = await setup({
     target: "shared",
-    decide: (input) => [{ ...chatUpdate(input), attention: "brief" }],
+    decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
   run.items([
     {
@@ -1576,7 +1589,7 @@ test("deleting a chat update from a contact with no name blocks only that chat, 
   const run = await setup({
     source: "whatsapp",
     target: "shared",
-    decide: (input) => [{ ...chatUpdate(input), attention: "brief" }],
+    decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
   run.items([
     {
@@ -1605,19 +1618,19 @@ test("deleting a chat update from a contact with no name blocks only that chat, 
   );
 });
 
-test("the owner's own message in a shared chat takes its waiting update once; another member's does not", async () => {
+test("the owner's own message in a shared thread takes its waiting update once; another member's does not", async () => {
   const run = await setup({
     target: "shared",
-    decide: (input) => [{ ...chatUpdate(input), attention: "brief" }],
+    decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
   await intake.tick(START + 1000);
-  const chatId = run.target!.id;
+  const threadId = run.target!.id;
   const waiting = () =>
     app.app.database
       .query(
-        "SELECT count(*) AS n FROM intake_delivery WHERE chat_id=? AND delivered_at IS NULL"
+        "SELECT count(*) AS n FROM intake_delivery WHERE thread_id=? AND delivered_at IS NULL"
       )
-      .get(chatId) as { n: number };
+      .get(threadId) as { n: number };
   expect(waiting().n).toBe(1);
   const otherToken = await app.signIn("Bob", "bob@example.com");
   const other = (await (
@@ -1629,12 +1642,12 @@ test("the owner's own message in a shared chat takes its waiting update once; an
     )
     .run("claim-bob", run.workspaceId, other.user.id, Date.now());
   expect(
-    intake.contextFor(run.workspaceId, chatId, other.user.id, true)
+    intake.contextFor(run.workspaceId, threadId, other.user.id, true)
   ).not.toContain("30 days");
   expect(waiting().n).toBe(1);
   const context = intake.contextFor(
     run.workspaceId,
-    chatId,
+    threadId,
     run.owner.id,
     true
   );
@@ -1643,15 +1656,15 @@ test("the owner's own message in a shared chat takes its waiting update once; an
   // Taken, but delivered only once the turn answers: a turn that fails or starts again takes it again.
   expect(waiting().n).toBe(1);
   expect(
-    intake.contextFor(run.workspaceId, chatId, run.owner.id, true)
+    intake.contextFor(run.workspaceId, threadId, run.owner.id, true)
   ).toContain("newFromWatchedAccounts");
   // No delivery posts it while the turn runs.
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
   expect(run.deliveries).toHaveLength(0);
-  intake.finishClaims(run.workspaceId, chatId, run.owner.id);
+  intake.finishClaims(run.workspaceId, threadId, run.owner.id);
   expect(waiting().n).toBe(0);
   expect(
-    intake.contextFor(run.workspaceId, chatId, run.owner.id, true)
+    intake.contextFor(run.workspaceId, threadId, run.owner.id, true)
   ).not.toContain("newFromWatchedAccounts");
 });
 
@@ -1752,7 +1765,7 @@ test("a context-only revision keeps the original stated time and evidence", asyn
       id: check!.id,
       workspaceId: run.workspaceId,
       ownerId: run.owner.id,
-      chatId: null,
+      threadId: null,
       checkAt: START + 3 * DAY,
       now: START + DAY,
     }
@@ -1794,22 +1807,22 @@ test("an agent draft is retrieval context and does not become a new source event
       },
     ],
   });
-  const topic = app.app.workspaces.createTopic(
+  const channel = app.app.workspaces.createChannel(
     run.workspaceId,
     run.owner,
     "private-drafts",
     true
   );
-  await app.app.chats.startAgentChat(
+  await app.app.threads.startAgentThread(
     run.workspaceId,
-    topic.id,
+    channel.id,
     "Automatic draft"
   );
   await intake.tick(START + 1000);
   expect(
     app.app.database
       .query(
-        "SELECT count(*) n FROM intake_item WHERE credential_id LIKE 'chat:%'"
+        "SELECT count(*) n FROM intake_item WHERE credential_id LIKE 'thread:%'"
       )
       .get()
   ).toMatchObject({ n: 0 });
@@ -1821,9 +1834,9 @@ test("retrieval retains a queued subject after newer unrelated subjects replace 
   const subject = run.target!;
   app.app.database.query("UPDATE intake_check SET state='resolved'").run();
   for (let i = 0; i < 13; i += 1) {
-    const chat = await app.app.chats.startAgentChat(
+    const thread = await app.app.threads.startAgentThread(
       run.workspaceId,
-      subject.topicId,
+      subject.channelId,
       `Unrelated subject ${i}`
     );
     app.app.database
@@ -1831,7 +1844,7 @@ test("retrieval retains a queued subject after newer unrelated subjects replace 
       .run(
         run.workspaceId,
         run.owner.id,
-        chat.id,
+        thread.id,
         "Unrelated",
         "[]",
         START + i + 1
@@ -1849,28 +1862,28 @@ test("retrieval retains a queued subject after newer unrelated subjects replace 
     },
   ]);
   await intake.tick(START + DAY);
-  expect(run.snapshots.at(-1)!.chats.map((chat) => chat.id)).toContain(
+  expect(run.snapshots.at(-1)!.threads.map((thread) => thread.id)).toContain(
     subject.id
   );
 });
 
-test("retrieval keeps search rank instead of the workspace's chat order", async () => {
+test("retrieval keeps search rank instead of the workspace's thread order", async () => {
   const run = await setup();
-  const topic = app.app.workspaces.createTopic(
+  const channel = app.app.workspaces.createChannel(
     run.workspaceId,
     run.owner,
     "private-context",
     true
   );
   for (let i = 0; i < 3; i += 1) {
-    await app.app.chats.startAgentChat(
+    await app.app.threads.startAgentThread(
       run.workspaceId,
-      topic.id,
+      channel.id,
       `Matter ${i}`
     );
   }
   const ranked = app.app.workspaces
-    .chatsIn(run.workspaceId, run.owner.id)
+    .threadsIn(run.workspaceId, run.owner.id)
     .slice()
     .reverse();
   const recall = new IntakeRecall(
@@ -1887,12 +1900,12 @@ test("retrieval keeps search rank instead of the workspace's chat order", async 
     {
       search: async () => ({
         semantic: false,
-        results: ranked.map((chat) => ({
-          chatId: chat.id,
-          title: chat.title,
-          uri: `chat:${chat.id}`,
-          kind: "chat",
-          topicId: chat.topicId,
+        results: ranked.map((thread) => ({
+          threadId: thread.id,
+          title: thread.title,
+          uri: `thread:${thread.id}`,
+          kind: "thread",
+          channelId: thread.channelId,
           loc: null,
           modality: "text",
           score: 1,
@@ -1919,14 +1932,16 @@ test("retrieval keeps search rank instead of the workspace's chat order", async 
     ],
     []
   );
-  expect(context.map((chat) => chat.id)).toEqual(ranked.map((chat) => chat.id));
+  expect(context.map((thread) => thread.id)).toEqual(
+    ranked.map((thread) => thread.id)
+  );
 });
 
 for (const target of ["private", "shared"] as const) {
-  test(`a developer email is posted to the existing ${target} claim chat with its files, and notifies its owner once`, async () => {
+  test(`a developer email is posted to the existing ${target} claim thread with its files, and notifies its owner once`, async () => {
     const run = await setup({ target, noticeReply: true, actualReview: true });
     await intake.tick(START + 1000);
-    const count = app.app.workspaces.chatsIn(
+    const count = app.app.workspaces.threadsIn(
       run.workspaceId,
       run.owner.id
     ).length;
@@ -1948,19 +1963,19 @@ for (const target of ["private", "shared"] as const) {
     ]);
     await intake.tick(START + DAY);
     expect(
-      app.app.workspaces.chatsIn(run.workspaceId, run.owner.id)
+      app.app.workspaces.threadsIn(run.workspaceId, run.owner.id)
     ).toHaveLength(count);
-    expect(run.reviews.map((review) => review.chatId)).toEqual([
+    expect(run.reviews.map((review) => review.threadId)).toEqual([
       run.target!.id,
     ]);
-    const state = await app.app.chats.messages(run.target!);
+    const state = await app.app.threads.messages(run.target!);
     const prompt = state.messages.find((message) => message.observation)!;
     expect(prompt.text).toContain("The developer replied");
     expect(prompt.files).toHaveLength(2);
     expect(prompt.files.some((file) => file.name.endsWith("repair.ics"))).toBe(
       true
     );
-    const { path } = await app.app.chats.file(
+    const { path } = await app.app.threads.file(
       run.workspaceId,
       run.owner,
       prompt.files[0]!.id
@@ -1979,12 +1994,12 @@ for (const target of ["private", "shared"] as const) {
       .run("reader-bob", run.workspaceId, bob.id, Date.now());
     if (target === "shared") {
       expect(
-        (await app.app.chats.file(run.workspaceId, bob, prompt.files[0]!.id))
+        (await app.app.threads.file(run.workspaceId, bob, prompt.files[0]!.id))
           .path
       ).toBe(path);
     } else {
       await expect(
-        app.app.chats.file(run.workspaceId, bob, prompt.files[0]!.id)
+        app.app.threads.file(run.workspaceId, bob, prompt.files[0]!.id)
       ).rejects.toThrow();
     }
     expect(
@@ -1992,7 +2007,7 @@ for (const target of ["private", "shared"] as const) {
     ).toHaveLength(0);
     expect(
       app.app.notifications.inbox(run.workspaceId, run.owner).notifications
-    ).toEqual([expect.objectContaining({ chatId: run.target!.id })]);
+    ).toEqual([expect.objectContaining({ threadId: run.target!.id })]);
     const calls = app.faux.state.callCount;
     await intake.tick(START + DAY + 16 * 60_000);
     expect(app.faux.state.callCount).toBe(calls);
@@ -2003,7 +2018,7 @@ for (const target of ["private", "shared"] as const) {
       app.app.notifications.inbox(run.workspaceId, run.owner).notifications
     ).toHaveLength(1);
     expect(
-      (await app.app.chats.messages(run.target!)).messages.filter(
+      (await app.app.threads.messages(run.target!)).messages.filter(
         (message) => message.observation
       )
     ).toHaveLength(1);
@@ -2071,7 +2086,7 @@ test("a failed judge batch does not stop other conversations or retry on every m
   expect(run.assessments()).toBe(2);
 });
 
-test("a pinned review retains its subject even when search returns other chats", async () => {
+test("a pinned review retains its subject even when search returns other threads", async () => {
   const run = await setup({ target: "private" });
   await intake.tick(START);
   const recall = new IntakeRecall(
@@ -2082,7 +2097,7 @@ test("a pinned review retains its subject even when search returns other chats",
       watch: async () => [],
       attachment: async () => new Uint8Array(),
     },
-    app.app.chats,
+    app.app.threads,
     {
       search: async () => {
         throw new Error(
@@ -2123,7 +2138,7 @@ test("a pinned review retains its subject even when search returns other chats",
   ).toHaveLength(0);
 });
 
-test("bounded recall keeps the latest chat message before older summaries", async () => {
+test("bounded recall keeps the latest thread message before older summaries", async () => {
   const run = await setup({ target: "private", decide: () => [] });
   const recall = new IntakeRecall(
     app.app.database,
@@ -2180,7 +2195,7 @@ test("bounded recall keeps the latest chat message before older summaries", asyn
   expect(context[0]!.context.length).toBeLessThanOrEqual(2400);
 });
 
-test("source-read reassessment visits every check in a busy chat in bounded calls", async () => {
+test("source-read reassessment visits every check in a busy thread in bounded calls", async () => {
   const options: Parameters<typeof setup>[0] = { target: "private" };
   const run = await setup(options);
   await intake.tick(START);
@@ -2201,7 +2216,7 @@ test("source-read reassessment visits every check in a busy chat in bounded call
         id: `question-${index}`,
         workspaceId: run.workspaceId,
         ownerId: run.owner.id,
-        chatId: run.target!.id,
+        threadId: run.target!.id,
         checkAt: START + DAY,
         now: START,
       }
@@ -2263,7 +2278,7 @@ test("rereading the same source reassesses a later revised check without duplica
       id: "remaining",
       workspaceId: run.workspaceId,
       ownerId: run.owner.id,
-      chatId: run.target!.id,
+      threadId: run.target!.id,
       checkAt: START + DAY,
       now: START + 90_000,
     }
@@ -2297,9 +2312,9 @@ function proposedSubject(
   attention: Assessment["attention"] = "brief"
 ): Assessment {
   return {
-    chatId: null,
-    startChat: true,
-    ...newChatPlace(input),
+    threadId: null,
+    startThread: true,
+    ...newThreadPlace(input),
     title,
     summary: "A repair matter needs review",
     attention,
@@ -2313,24 +2328,24 @@ function proposedSubject(
   };
 }
 
-test("passive filing creates no subject chat even if the judge proposes one", async () => {
+test("passive filing creates no subject thread even if the judge proposes one", async () => {
   const run = await setup({
     decide: (input) => [
       {
         ...proposedSubject(input, "Repair notes", "none"),
-        topicId: null,
-        newTopic: { name: "housing", summary: "Housing" },
+        channelId: null,
+        newChannel: { name: "housing", summary: "Housing" },
       },
     ],
   });
   await intake.tick(START);
   expect(
-    app.app.workspaces.chatsIn(run.workspaceId, run.owner.id)
+    app.app.workspaces.threadsIn(run.workspaceId, run.owner.id)
   ).toHaveLength(0);
   expect(
     app.app.workspaces
-      .topicsIn(run.workspaceId, run.owner.id)
-      .some((topic) => topic.name === "housing")
+      .channelsIn(run.workspaceId, run.owner.id)
+      .some((channel) => channel.name === "housing")
   ).toBe(false);
   expect(
     app.app.database.query("SELECT count(*) n FROM intake_delivery").get()
@@ -2343,21 +2358,23 @@ test("a new morning subject stays a proposal until due, survives restart, and cr
     decide: (input) => [
       {
         ...proposedSubject(input, "Flat repairs"),
-        topicId: null,
-        newTopic: { name: "housing", summary: "Housing matters" },
+        channelId: null,
+        newChannel: { name: "housing", summary: "Housing matters" },
       },
     ],
   });
   await intake.tick(START);
-  expect(subjectChats(run)).toHaveLength(0);
+  expect(subjectThreads(run)).toHaveLength(0);
   expect(
     app.app.workspaces
-      .topicsIn(run.workspaceId, run.owner.id)
-      .map((topic) => topic.name)
+      .channelsIn(run.workspaceId, run.owner.id)
+      .map((channel) => channel.name)
   ).toEqual(["general"]);
   expect(
-    app.app.database.query("SELECT chat_id,subject FROM intake_delivery").get()
-  ).toMatchObject({ chat_id: null, subject: expect.any(String) });
+    app.app.database
+      .query("SELECT thread_id,subject FROM intake_delivery")
+      .get()
+  ).toMatchObject({ thread_id: null, subject: expect.any(String) });
   expect(
     app.app.database
       .query("SELECT count(*) n FROM intake_item WHERE archived_id IS NOT NULL")
@@ -2366,26 +2383,27 @@ test("a new morning subject stays a proposal until due, survives restart, and cr
   await run.restart();
   const morning = Date.parse("2026-10-02T08:00:00+02:00");
   await intake.tick(morning);
-  const chats = subjectChats(run);
-  expect(chats).toHaveLength(1);
-  expect(run.posts.map((post) => post.chatId)).toEqual([
-    chats[0]!.id,
-    (await app.app.chats.orchestrator(run.workspaceId, run.owner)).id,
+  const threads = subjectThreads(run);
+  expect(threads).toHaveLength(1);
+  expect(run.posts.map((post) => post.threadId)).toEqual([
+    threads[0]!.id,
+    (await app.app.threads.orchestrator(run.workspaceId, run.owner)).id,
   ]);
   expect(
     app.app.workspaces
-      .topicsIn(run.workspaceId, run.owner.id)
+      .channelsIn(run.workspaceId, run.owner.id)
       .some(
-        (topic) => topic.name === "housing" && topic.ownerId === run.owner.id
+        (channel) =>
+          channel.name === "housing" && channel.ownerId === run.owner.id
       )
   ).toBe(true);
   expect(run.posts[0]!.files).toHaveLength(1);
   await intake.tick(morning + 60_000);
   expect(run.posts).toHaveLength(2);
-  expect(subjectChats(run)).toHaveLength(1);
+  expect(subjectThreads(run)).toHaveLength(1);
 });
 
-test("an owner reply cancels a queued new subject without leaving a topic, chat, or files", async () => {
+test("an owner reply cancels a queued new subject without leaving a channel, thread, or files", async () => {
   const run = await setup({
     decide: (input) => {
       const handled = input.evidence.some(
@@ -2395,8 +2413,8 @@ test("an owner reply cancels a queued new subject without leaving a topic, chat,
         return [
           {
             ...proposedSubject(input, "Flat repairs", "none"),
-            startChat: false,
-            topicId: null,
+            startThread: false,
+            channelId: null,
             summary: "",
             message: "",
           },
@@ -2405,8 +2423,8 @@ test("an owner reply cancels a queued new subject without leaving a topic, chat,
       return [
         {
           ...proposedSubject(input, "Flat repairs"),
-          topicId: null,
-          newTopic: { name: "housing", summary: "Housing" },
+          channelId: null,
+          newChannel: { name: "housing", summary: "Housing" },
         },
       ];
     },
@@ -2421,12 +2439,12 @@ test("an owner reply cancels a queued new subject without leaving a topic, chat,
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
   expect(run.reviews).toHaveLength(0);
   expect(
-    app.app.workspaces.chatsIn(run.workspaceId, run.owner.id)
+    app.app.workspaces.threadsIn(run.workspaceId, run.owner.id)
   ).toHaveLength(0);
   expect(
     app.app.workspaces
-      .topicsIn(run.workspaceId, run.owner.id)
-      .map((topic) => topic.name)
+      .channelsIn(run.workspaceId, run.owner.id)
+      .map((channel) => channel.name)
   ).toEqual(["general"]);
   expect(
     app.app.database
@@ -2438,22 +2456,22 @@ test("an owner reply cancels a queued new subject without leaving a topic, chat,
   ).toMatchObject({ cancelled_at: expect.any(Number) });
 });
 
-test("the morning review reuses a differently titled chat created after queuing", async () => {
+test("the morning review reuses a differently titled thread created after queuing", async () => {
   const run = await setup({
     decide: (input) => [proposedSubject(input, "Developer claim")],
     plan: (input) => {
-      const existing = input.chats.find(
-        (chat) => chat.title === "Balcony repairs"
+      const existing = input.threads.find(
+        (thread) => thread.title === "Balcony repairs"
       )!;
       return {
         summary: "Morning",
         matters: [
           {
             updates: input.updates.map((update) => update.id),
-            chatId: existing.id,
+            threadId: existing.id,
             title: existing.title,
-            topicId: null,
-            newTopic: null,
+            channelId: null,
+            newChannel: null,
             message: "The developer answered about the balcony.",
             ask: null,
             due: null,
@@ -2466,32 +2484,35 @@ test("the morning review reuses a differently titled chat created after queuing"
     },
   });
   await intake.tick(START);
-  const topic = app.app.workspaces.topicsIn(run.workspaceId, run.owner.id)[0]!;
-  const existing = await app.app.chats.startAgentChat(
+  const channel = app.app.workspaces.channelsIn(
     run.workspaceId,
-    topic.id,
+    run.owner.id
+  )[0]!;
+  const existing = await app.app.threads.startAgentThread(
+    run.workspaceId,
+    channel.id,
     "Balcony repairs"
   );
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
-  expect(run.posts[0]!.chatId).toBe(existing.id);
-  expect(subjectChats(run)).toHaveLength(1);
+  expect(run.posts[0]!.threadId).toBe(existing.id);
+  expect(subjectThreads(run)).toHaveLength(1);
 });
 
-test("two proposals for the same matter reuse the first destination and produce one chat review", async () => {
+test("two proposals for the same matter reuse the first destination and produce one thread review", async () => {
   const run = await setup({
     decide: (input) => {
       if (input.trigger === "destination") {
-        const existing = input.chats.find(
-          (chat) => chat.title === "Identity review"
+        const existing = input.threads.find(
+          (thread) => thread.title === "Identity review"
         );
         return [
           {
             ...proposedSubject(input, "Identity review", "now"),
-            chatId: existing?.id ?? null,
-            startChat: !existing,
+            threadId: existing?.id ?? null,
+            startThread: !existing,
             ...(existing
-              ? { topicId: null, newTopic: null }
-              : newChatPlace(input)),
+              ? { channelId: null, newChannel: null }
+              : newThreadPlace(input)),
           },
         ];
       }
@@ -2514,27 +2535,29 @@ test("two proposals for the same matter reuse the first destination and produce 
     run.snapshots.filter((input) => input.trigger === "destination")
   ).toHaveLength(2);
   expect(
-    app.app.workspaces.chatsIn(run.workspaceId, run.owner.id)
+    app.app.workspaces.threadsIn(run.workspaceId, run.owner.id)
   ).toHaveLength(1);
   expect(run.reviews).toHaveLength(1);
   expect(run.reviews[0]!.files).toHaveLength(2);
   expect(run.reviews[0]!.text).toContain("Review the repair matter");
 });
 
-test("a failure after chat creation resumes the saved proposal without another chat", async () => {
-  const run = await setup({ initialNotice: "now", failAfterChatStart: true });
+test("a failure after thread creation resumes the saved proposal without another thread", async () => {
+  const run = await setup({ initialNotice: "now", failAfterThreadStart: true });
   await intake.tick(START);
   expect(run.reviews).toHaveLength(0);
-  const created = app.app.workspaces.chatsIn(run.workspaceId, run.owner.id);
+  const created = app.app.workspaces.threadsIn(run.workspaceId, run.owner.id);
   expect(created).toHaveLength(1);
   await run.restart();
   await intake.tick(START + 60_000);
   expect(
     app.app.workspaces
-      .chatsIn(run.workspaceId, run.owner.id)
-      .map((chat) => chat.id)
+      .threadsIn(run.workspaceId, run.owner.id)
+      .map((thread) => thread.id)
   ).toEqual([created[0]!.id]);
-  expect(run.reviews.map((review) => review.chatId)).toEqual([created[0]!.id]);
+  expect(run.reviews.map((review) => review.threadId)).toEqual([
+    created[0]!.id,
+  ]);
 });
 
 test("two unrelated matters in one email keep separate queued subjects and destinations", async () => {
@@ -2555,12 +2578,12 @@ test("two unrelated matters in one email keep separate queued subjects and desti
   ).toEqual({ n: 2 });
   expect(
     app.app.workspaces
-      .chatsIn(run.workspaceId, run.owner.id)
-      .map((chat) => chat.title)
+      .threadsIn(run.workspaceId, run.owner.id)
+      .map((thread) => thread.title)
       .toSorted((left, right) => left.localeCompare(right))
   ).toEqual(["Conference preparation", "Flat repair claim"]);
   expect(run.reviews).toHaveLength(2);
-  expect(new Set(run.reviews.map((review) => review.chatId)).size).toBe(2);
+  expect(new Set(run.reviews.map((review) => review.threadId)).size).toBe(2);
 });
 
 test("Following keeps stops distinct from resolution, cancels work, and can undo or reopen", async () => {
@@ -2734,20 +2757,20 @@ test("the person's answered turn marks the update that it took as delivered", as
   const home =
     app.app.workspaces.list(owner)[0] ??
     (await app.app.workspaces.create(owner, "Home"));
-  const [general] = app.app.workspaces.topics(home.id, owner);
+  const [general] = app.app.workspaces.channels(home.id, owner);
   app.faux.setResponses(
     Array.from({ length: 40 }, () => fauxAssistantMessage("Ok."))
   );
-  const { id: chatId } = await app.app.chats.create(
+  const { id: threadId } = await app.app.threads.create(
     home.id,
     owner,
     general!.id,
     "The balcony claim"
   );
-  const chat = app.app.workspaces.chat(chatId, owner);
+  const thread = app.app.workspaces.thread(threadId, owner);
   const settled = () =>
     until(
-      () => app.app.chats.messages(chat),
+      () => app.app.threads.messages(thread),
       (state) => !state.running && state.messages.at(-1)?.agent === true
     );
   await settled();
@@ -2769,16 +2792,16 @@ test("the person's answered turn marks the update that it took as delivered", as
     );
   app.app.database
     .query(
-      "INSERT INTO intake_delivery(id,workspace_id,owner_id,chat_id,body,attention,check_ids,evidence_ids,created_at) VALUES('update',?,?,?,'The developer answered.','brief','[]','[\"reply\"]',?)"
+      "INSERT INTO intake_delivery(id,workspace_id,owner_id,thread_id,body,attention,check_ids,evidence_ids,created_at) VALUES('update',?,?,?,'The developer answered.','brief','[]','[\"reply\"]',?)"
     )
-    .run(home.id, owner.id, chatId, now);
+    .run(home.id, owner.id, threadId, now);
   const delivered = () =>
     (
       app.app.database
         .query("SELECT delivered_at FROM intake_delivery WHERE id='update'")
         .get() as { delivered_at: number | null }
     ).delivered_at;
-  await app.app.chats.send(chatId, owner, "What did the developer say?");
+  await app.app.threads.send(threadId, owner, "What did the developer say?");
   await until(
     async () => delivered(),
     (at) => at !== null
@@ -2786,7 +2809,7 @@ test("the person's answered turn marks the update that it took as delivered", as
   expect(delivered()).toBeNumber();
 });
 
-test("a message that a chat's agent reads before intake polls it still gets the normal assessment", async () => {
+test("a message that a thread's agent reads before intake polls it still gets the normal assessment", async () => {
   const run = await setup({ target: "private" });
   await intake.tick(START);
   const invoice = item(
@@ -2814,7 +2837,7 @@ test("a message that a chat's agent reads before intake polls it still gets the 
   ).toBe(true);
 });
 
-test("old messages that a chat's agent looks up are not assessed as new", async () => {
+test("old messages that a thread's agent looks up are not assessed as new", async () => {
   const run = await setup({ target: "private" });
   await intake.tick(START);
   const march = item(
@@ -2848,10 +2871,13 @@ const REQUEST =
 test("the morning plan reads the owner's later reply, also when newer messages fill the conversation", async () => {
   const run = await setup({ initialNotice: "brief" });
   await intake.tick(START + 1000);
-  const chat = "conversation-request";
+  const thread = "conversation-request";
   run.items([
     item("request", REQUEST, true, START),
-    { ...item("answer", "Answered on the call.", true, START + HOUR), chat },
+    {
+      ...item("answer", "Answered on the call.", true, START + HOUR),
+      chat: thread,
+    },
     ...Array.from({ length: 30 }, (_, index) => ({
       ...item(
         `note-${index}`,
@@ -2859,7 +2885,7 @@ test("the morning plan reads the owner's later reply, also when newer messages f
         false,
         START + 2 * HOUR + index
       ),
-      chat,
+      thread,
     })),
   ]);
   await intake.tick(START + 3 * HOUR);
@@ -2914,9 +2940,9 @@ test("a morning plan closes a due nudge that a reminder covers, and keeps what i
             summary: "Two matters",
             matters: input.updates.map((update, index) => ({
               updates: [update.id],
-              chatId: null,
+              threadId: null,
               title: asks[index]!,
-              ...newChatPlace(input),
+              ...newThreadPlace(input),
               message: asks[index]!,
               ask: asks[index]!,
               due: null,
@@ -2951,7 +2977,7 @@ test("a morning plan closes a due nudge that a reminder covers, and keeps what i
   ).not.toContain("Buy the balcony lights");
 });
 
-test("a morning matter that needs nothing stays in its chat and out of the summary", async () => {
+test("a morning matter that needs nothing stays in its thread and out of the summary", async () => {
   const run = await setup({
     initialNotice: "brief",
     plan: (input) => ({
@@ -2959,9 +2985,9 @@ test("a morning matter that needs nothing stays in its chat and out of the summa
       matters: [
         {
           updates: input.updates.map((update) => update.id),
-          chatId: null,
+          threadId: null,
           title: "Plane model",
-          ...newChatPlace(input),
+          ...newThreadPlace(input),
           message: "Another tip for the gift",
           ask: null,
           due: null,

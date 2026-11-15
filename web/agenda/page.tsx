@@ -20,7 +20,7 @@ import {
   weekdayTime,
 } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
-import { topicsOf } from "../workspaces/data.ts";
+import { channelsOf } from "../workspaces/data.ts";
 import { PanelHeader } from "../workspaces/shell.tsx";
 import {
   type AgendaItem,
@@ -35,22 +35,22 @@ import {
 
 const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId");
 
-/** The names of the workspace's topics, which routine rows show. */
-const TopicNames = createContext<ReadonlyMap<string, string>>(new Map());
+/** The names of the workspace's channels, which routine rows show. */
+const ChannelNames = createContext<ReadonlyMap<string, string>>(new Map());
 
 /** What Golem runs for the person and what waits for them, in groups from what needs them to what is paused. */
 export function UpcomingPage() {
   const { workspaceId } = workspaceRoute.useParams();
   const { data: upcoming } = useQuery(upcomingQuery(workspaceId));
   const groups = upcoming ? agendaGroups(upcoming, Date.now()) : [];
-  const { data: topics = [] } = useLiveQuery({
-    query: (q) => q.from({ topic: topicsOf(workspaceId) }),
+  const { data: channels = [] } = useLiveQuery({
+    query: (q) => q.from({ channel: channelsOf(workspaceId) }),
   });
   return (
     <section className="conversation">
       <PanelHeader title="Upcoming" />
-      <TopicNames
-        value={new Map(topics.map((topic) => [topic.id, topic.name]))}
+      <ChannelNames
+        value={new Map(channels.map((channel) => [channel.id, channel.name]))}
       >
         <div className="page">
           <div className="page-content">
@@ -75,7 +75,7 @@ export function UpcomingPage() {
             ))}
           </div>
         </div>
-      </TopicNames>
+      </ChannelNames>
     </section>
   );
 }
@@ -116,7 +116,7 @@ function AgendaRow({
           label={item.approval.text}
           lead={<Icon name="key" />}
         >
-          <OpenChat chatId={item.chatId} workspaceId={workspaceId} />
+          <OpenThread threadId={item.threadId} workspaceId={workspaceId} />
         </SettingsRow>
       );
     case "failed":
@@ -181,7 +181,7 @@ function AgendaRow({
   }
 }
 
-/** A routine: its time and topic, a switch that pauses it, and its chat. */
+/** A routine: its time and channel, a switch that pauses it, and its thread. */
 function RoutineRow({
   workspaceId,
   routine,
@@ -193,7 +193,7 @@ function RoutineRow({
   when?: string;
   children?: ReactNode;
 }) {
-  const topic = useContext(TopicNames).get(routine.topicId);
+  const channel = useContext(ChannelNames).get(routine.channelId);
   const enabled = useRoutineEnabled(workspaceId);
   return (
     <SettingsRow
@@ -203,7 +203,7 @@ function RoutineRow({
           (routine.place
             ? placeWords(routine.place)
             : scheduleWords(routine.schedule ?? "")),
-        topic && `#${topic}`,
+        channel && `#${channel}`,
       ]
         .filter(Boolean)
         .join(" · ")}
@@ -221,8 +221,8 @@ function RoutineRow({
           enabled.mutate({ id: routine.id, enabled: checked })
         }
       />
-      {routine.chatId ? (
-        <OpenChat chatId={routine.chatId} workspaceId={workspaceId} />
+      {routine.threadId ? (
+        <OpenThread threadId={routine.threadId} workspaceId={workspaceId} />
       ) : null}
     </SettingsRow>
   );
@@ -258,22 +258,22 @@ function ReminderRow({
   );
 }
 
-function OpenChat({
+function OpenThread({
   workspaceId,
-  chatId,
+  threadId,
 }: {
   workspaceId: string;
-  chatId: string;
+  threadId: string;
 }) {
   const navigate = useNavigate();
   return (
     <Button
       icon="forward"
-      label="Open chat"
+      label="Open thread"
       onClick={() =>
         navigate({
-          to: "/w/$workspaceId/chat/$chatId",
-          params: { workspaceId, chatId },
+          to: "/w/$workspaceId/thread/$threadId",
+          params: { workspaceId, threadId },
         })
       }
       size="icon"

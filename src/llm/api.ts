@@ -41,12 +41,14 @@ export const llmApiRoutes: readonly Route[] = [
       const workspace = app.workspaces.requireMember(params.workspace!, user);
       const days = Number(new URL(request.url).searchParams.get("days"));
       const report = app.llm.usage(workspace.id, user, days);
-      // Titles only of the chats the person sees; the owner's totals still count the others.
+      // Titles only of the threads the person sees; the owner's totals still count the others.
       const titles = new Map(
         app.workspaces
-          .chatsIn(workspace.id, user.id)
-          .filter((chat) => chat.ownerId === null || chat.ownerId === user.id)
-          .map((chat) => [chat.id, chat.title])
+          .threadsIn(workspace.id, user.id)
+          .filter(
+            (thread) => thread.ownerId === null || thread.ownerId === user.id
+          )
+          .map((thread) => [thread.id, thread.title])
       );
       const names = new Map(
         app.workspaces
@@ -55,9 +57,9 @@ export const llmApiRoutes: readonly Route[] = [
       );
       return json({
         ...report,
-        chats: report.chats.flatMap((row) =>
-          titles.has(row.chatId)
-            ? [{ ...row, title: titles.get(row.chatId)! }]
+        threads: report.threads.flatMap((row) =>
+          titles.has(row.threadId)
+            ? [{ ...row, title: titles.get(row.threadId)! }]
             : []
         ),
         people:

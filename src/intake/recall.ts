@@ -5,9 +5,9 @@ import { notFound } from "../platform/errors.ts";
 import type { AssessmentInput, Evidence, FutureCheck } from "./assess.ts";
 import type { Audit } from "./audit.ts";
 import type {
-  IntakeChats,
   IntakeIntegrations,
   IntakeSearch,
+  IntakeThreads,
   IntakeWorkspaces,
 } from "./intake.ts";
 
@@ -23,7 +23,7 @@ export interface ItemRow {
   read_at: number | null;
   reading: string | null;
   assessed_at: number | null;
-  chat_id: string | null;
+  thread_id: string | null;
   archived_id: string | null;
   superseded_at: number | null;
   /** When the person deleted it, as with its blocked sender; reads leave it out. */
@@ -40,7 +40,7 @@ export interface SourceRow {
 }
 interface CheckRow {
   id: string;
-  chat_id: string | null;
+  thread_id: string | null;
   text: string;
   source_ids: string;
   explicit_time: number;
@@ -67,7 +67,7 @@ export class IntakeRecall {
     private readonly database: Database,
     private readonly workspaces: IntakeWorkspaces,
     private readonly integrations: IntakeIntegrations,
-    private readonly chats: Pick<IntakeChats, "messages">,
+    private readonly threads: Pick<IntakeThreads, "messages">,
     private readonly search: IntakeSearch,
     private readonly audit: Audit
   ) {}
@@ -79,20 +79,20 @@ export class IntakeRecall {
     checks: FutureCheck[],
     subjectId?: string,
     includeRecent = false
-  ): Promise<AssessmentInput["chats"]> {
+  ): Promise<AssessmentInput["threads"]> {
     this.workspaces.requireMember(workspaceId, owner);
     const available = new Map(
       this.workspaces
-        .chatsIn(workspaceId, owner.id)
-        .map((chat) => [chat.id, chat])
+        .threadsIn(workspaceId, owner.id)
+        .map((thread) => [thread.id, thread])
     );
     const ids = new Set<string>();
     if (includeRecent && !subjectId) {
       const recent = [...available.values()]
         .toSorted((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 12);
-      for (const chat of recent) {
-        ids.add(chat.id);
+      for (const thread of recent) {
+        ids.add(thread.id);
       }
     }
     if (subjectId) {
@@ -117,14 +117,14 @@ export class IntakeRecall {
       2400,
       Math.floor(6000 / Math.max(1, candidates.length))
     );
-    const result: AssessmentInput["chats"] = [];
-    for (const chat of candidates) {
-      const state = await this.chats.messages(chat);
+    const result: AssessmentInput["threads"] = [];
+    for (const thread of candidates) {
+      const state = await this.threads.messages(thread);
       const known = this.database
         .query(
-          "SELECT summary FROM intake_context WHERE workspace_id=? AND owner_id=? AND chat_id=?"
+          "SELECT summary FROM intake_context WHERE workspace_id=? AND owner_id=? AND thread_id=?"
         )
-        .get(workspaceId, owner.id, chat.id) as { summary: string } | null;
+        .get(workspaceId, owner.id, thread.id) as { summary: string } | null;
       const context = [
         "Latest messages first:",
         ...state.messages
@@ -136,9 +136,9 @@ export class IntakeRecall {
         .join("\n")
         .slice(0, budget);
       result.push({
-        id: chat.id,
-        topicId: chat.topicId,
-        title: chat.title,
+        id: thread.id,
+        channelId: thread.channelId,
+        title: thread.title,
         context,
       });
     }
@@ -153,14 +153,14 @@ export class IntakeRecall {
   ): Promise<Set<string>> {
     return new Set([
       ...evidence.flatMap((item) =>
-        item.url?.startsWith("chat:") ? [item.url.slice(7)] : []
+        item.url?.startsWith("thread:") ? [item.url.slice(7)] : []
       ),
       ...[
         ...this.conversationRows(workspaceId, owner, evidence),
         ...this.matches(workspaceId, owner, evidence),
-      ].flatMap((row) => (row.chat_id ? [row.chat_id] : [])),
+      ].flatMap((row) => (row.thread_id ? [row.thread_id] : [])),
       ...(await this.searchIds(workspaceId, owner, evidence)),
-      ...checks.flatMap((check) => (check.chatId ? [check.chatId] : [])),
+      ...checks.flatMap((check) => (check.threadId ? [check.threadId] : [])),
     ]);
   }
 
@@ -187,7 +187,7 @@ export class IntakeRecall {
         query,
         4,
         owner.id,
-        "chat"
+        "thread"
       );
       this.audit.record(
         `search:${new Bun.CryptoHasher("sha256").update(query).digest("hex")}`,
@@ -197,7 +197,7 @@ export class IntakeRecall {
         { query, results: found.results }
       );
       result.push(
-        ...found.results.flatMap((hit) => (hit.chatId ? [hit.chatId] : []))
+        ...found.results.flatMap((hit) => (hit.threadId ? [hit.threadId] : []))
       );
     }
     return result;
@@ -207,7 +207,7 @@ export class IntakeRecall {
     workspaceId: string,
     owner: User,
     evidence: Evidence[],
-    chatIds: string[]
+    threadIds: string[]
   ): FutureCheck[] {
     const sourceIds = new Set([
       ...evidence.map((item) => item.id),
@@ -217,7 +217,7 @@ export class IntakeRecall {
     return this.checks(workspaceId, owner)
       .filter(
         (check) =>
-          (check.chatId !== null && chatIds.includes(check.chatId)) ||
+          (check.threadId !== null && threadIds.includes(check.threadId)) ||
           check.sourceIds.some(
             (id) =>
               sourceIds.has(id) ||
@@ -241,18 +241,18 @@ export class IntakeRecall {
   }
 
   /**
-   * The topics where a new matter of the person's sources may start: only their private ones, so their mail and
-   * chats reach a topic that others see only as a visible update to an existing matching chat there.
+   * The channels where a new matter of the person's sources may start: only their private ones, so their mail and
+   * threads reach a channel that others see only as a visible update to an existing matching thread there.
    */
-  topics(workspaceId: string, owner: User): AssessmentInput["topics"] {
+  channels(workspaceId: string, owner: User): AssessmentInput["channels"] {
     this.workspaces.requireMember(workspaceId, owner);
     return this.workspaces
-      .topicsIn(workspaceId, owner.id)
-      .filter((topic) => topic.ownerId === owner.id)
-      .map((topic) => ({
-        id: topic.id,
-        name: topic.name,
-        summary: topic.summary,
+      .channelsIn(workspaceId, owner.id)
+      .filter((channel) => channel.ownerId === owner.id)
+      .map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        summary: channel.summary,
         private: true,
       }));
   }
@@ -310,7 +310,7 @@ export class IntakeRecall {
 
   /**
    * What each conversation said after its earliest given source: the newest messages of the owner and of the others,
-   * so a reply shows that a request is handled. Each conversation has its own limit, as a busy chat must not hide the
+   * so a reply shows that a request is handled. Each conversation has its own limit, as a busy thread must not hide the
    * answer in another.
    */
   private laterMessages(
@@ -428,7 +428,7 @@ export class IntakeRecall {
       .filter((row) => this.visibleCheck(workspaceId, owner, row))
       .map((row) => ({
         id: row.id,
-        chatId: row.chat_id,
+        threadId: row.thread_id,
         text: row.text,
         sourceIds: JSON.parse(row.source_ids),
         checkAt: row.check_at,
@@ -528,8 +528,8 @@ export class IntakeRecall {
         )
         .map((each) => each.id),
       ...this.workspaces
-        .chatsIn(workspaceId, owner.id)
-        .map((each) => `chat:${each.id}`),
+        .threadsIn(workspaceId, owner.id)
+        .map((each) => `thread:${each.id}`),
     ]);
   }
 
@@ -539,10 +539,10 @@ export class IntakeRecall {
     check: CheckRow
   ): boolean {
     if (
-      check.chat_id &&
+      check.thread_id &&
       !this.workspaces
-        .chatsIn(workspaceId, owner.id)
-        .some((chat) => chat.id === check.chat_id)
+        .threadsIn(workspaceId, owner.id)
+        .some((thread) => thread.id === check.thread_id)
     ) {
       return false;
     }

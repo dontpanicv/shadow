@@ -2,19 +2,19 @@ import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 
 /**
- * The artifacts of a topic, and the workspace's own, for the iOS app. Agents make and change them; people open them,
- * change who sees them, and delete them or their data. The app runs an artifact's `content` in a web view whose
- * `golem` calls go to `rpc`.
+ * The artifacts of a channel, and the workspace's own, for the web app. Agents make and change them; people open them,
+ * change who sees them, and delete them or their data. The app shows an artifact in a frame of its link page, whose
+ * `golem` calls go to `/a/:artifact/rpc`.
  */
 export const artifactApiRoutes: readonly Route[] = [
   [
     "GET",
-    "/api/v1/workspaces/:workspace/topics/:topic/artifacts",
+    "/api/v1/workspaces/:workspace/channels/:channel/artifacts",
     api(async ({ app, user, params }) =>
       json({
         artifacts: app.artifacts.inPlace(
           params.workspace!,
-          params.topic!,
+          params.channel!,
           user
         ),
       })
@@ -35,7 +35,6 @@ export const artifactApiRoutes: readonly Route[] = [
       return json({
         artifact,
         records: app.artifacts.dataFor(artifact.id, user),
-        content: app.artifacts.content(artifact.id),
       });
     }),
   ],
@@ -53,20 +52,6 @@ export const artifactApiRoutes: readonly Route[] = [
       app.artifacts.delete(params.artifact!, user);
       return new Response(null, { status: 204 });
     }),
-  ],
-  [
-    "POST",
-    "/api/v1/artifacts/:artifact/rpc",
-    api(async ({ app, user, params, body }) =>
-      json({
-        result: app.artifacts.call(
-          params.artifact!,
-          { user },
-          body.op,
-          body.args
-        ),
-      })
-    ),
   ],
   [
     "DELETE",

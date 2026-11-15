@@ -110,7 +110,7 @@ function gzipped(path: string): Promise<Uint8Array> {
 /**
  * Requests that change something must come from this site: browsers send `Origin` on them. Compare with `base_url`,
  * not the request URL: behind a TLS proxy the request arrives as `http` while the browser sends an `https` origin.
- * The iOS app sends no `Origin`.
+ * A client that is not a browser sends no `Origin`.
  */
 export function rejectCrossOrigin({ app, request }: RouteInput): void {
   const origin = request.headers.get("origin");

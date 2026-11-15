@@ -31,7 +31,7 @@ export function ArtifactList({
         .orderBy(({ artifact }) => artifact.createdAt, "desc"),
   });
   return (
-    <div className="chat-files">
+    <div className="thread-files">
       {artifacts.length > 0 ? (
         <div className="list">
           {artifacts.map((artifact) => (
@@ -117,12 +117,12 @@ export function ArtifactPreview({
             },
             {
               kind: "action",
-              label: "Open chat",
+              label: "Open thread",
               icon: "compose",
               onSelect: () =>
                 navigate({
-                  to: "/w/$workspaceId/chat/$chatId",
-                  params: { workspaceId, chatId: artifact.chatId },
+                  to: "/w/$workspaceId/thread/$threadId",
+                  params: { workspaceId, threadId: artifact.threadId },
                 }),
             },
             {

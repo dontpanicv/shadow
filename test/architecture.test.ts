@@ -8,19 +8,17 @@ const MODULES = [
   "accounts",
   "workspaces",
   "llm",
-  "hands",
   "integrations",
   "places",
   "artifacts",
   "browser",
   "notifications",
-  "chats",
+  "threads",
   "search",
   "routines",
   "reminders",
   "agenda",
   "intake",
-  "phone",
   "feedback",
 ];
 /** The files of a module that route or render; the other files are its service. */
@@ -87,9 +85,9 @@ function isServiceFile(path: string): boolean {
 }
 
 test("the rules catch a module that reaches past its neighbours", () => {
-  expect(allowed("workspaces/workspaces.ts", "chats/chats.ts")).toBe(false);
-  expect(allowed("chats/chats.ts", "workspaces/workspaces.ts")).toBe(true);
-  expect(allowed("search/search.ts", "chats/pages.ts")).toBe(false);
+  expect(allowed("workspaces/workspaces.ts", "threads/threads.ts")).toBe(false);
+  expect(allowed("threads/threads.ts", "workspaces/workspaces.ts")).toBe(true);
+  expect(allowed("search/search.ts", "threads/pages.ts")).toBe(false);
   expect(allowed("artifacts/web.ts", "workspaces/pages.ts")).toBe(true);
   expect(allowed("routines/api.ts", "llm/web.ts")).toBe(false);
   expect(allowed("llm/llm.ts", "app/web.ts")).toBe(false);
@@ -107,12 +105,11 @@ const WEB_MODULES = [
   "accounts",
   "workspaces",
   "llm",
-  "hands",
   "integrations",
   "places",
   "artifacts",
   "notifications",
-  "chats",
+  "threads",
   "search",
   "routines",
   "agenda",
@@ -160,9 +157,11 @@ function webAllowed(file: string, target: string): boolean {
 }
 
 test("the web rules catch a module that reaches past its neighbours", () => {
-  expect(webAllowed("chats/pages.tsx", "workspaces/shell.tsx")).toBe(true);
-  expect(webAllowed("workspaces/shell.tsx", "chats/data.ts")).toBe(false);
+  expect(webAllowed("threads/pages.tsx", "workspaces/shell.tsx")).toBe(true);
+  expect(webAllowed("workspaces/shell.tsx", "threads/data.ts")).toBe(false);
   expect(webAllowed("ui/components.tsx", "app/api.ts")).toBe(false);
   expect(webAllowed("app/query.ts", "ui/toast.tsx")).toBe(true);
-  expect(webAllowed("chats/data.ts", "../src/chats/chats.ts")).toBe(false);
+  expect(webAllowed("threads/data.ts", "../src/threads/threads.ts")).toBe(
+    false
+  );
 });

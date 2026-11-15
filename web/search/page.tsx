@@ -19,11 +19,11 @@ import { Empty } from "../ui/components.tsx";
 import { previewLink } from "../ui/file-preview.tsx";
 import { day, dayTime } from "../ui/format.ts";
 import { Icon, type IconName } from "../ui/icon.tsx";
-import { topicsOf, useMe } from "../workspaces/data.ts";
+import { channelsOf, useMe } from "../workspaces/data.ts";
 import { FloatingSidebarButton } from "../workspaces/shell.tsx";
 
 const KIND_ICONS: Record<SearchKind, IconName> = {
-  chat: "compose",
+  thread: "compose",
   artifact: "artifact",
   note: "file",
   file: "file",
@@ -78,8 +78,8 @@ export function SearchPage() {
   const workspace = useMe().workspaces.find(
     (candidate) => candidate.id === workspaceId
   );
-  const { data: topics = [] } = useLiveQuery({
-    query: (builder) => builder.from({ topic: topicsOf(workspaceId) }),
+  const { data: channels = [] } = useLiveQuery({
+    query: (builder) => builder.from({ channel: channelsOf(workspaceId) }),
   });
   const { data: recent } = useQuery(searchesQuery(workspaceId));
   const { data: response, isPlaceholderData } = useQuery({
@@ -101,7 +101,7 @@ export function SearchPage() {
     const timer = setTimeout(() => saveSearch(workspaceId, debounced), 1000);
     return () => clearTimeout(timer);
   }, [query, debounced, isPlaceholderData, response, workspaceId]);
-  const names = new Map(topics.map((topic) => [topic.id, topic.name]));
+  const names = new Map(channels.map((channel) => [channel.id, channel.name]));
   return (
     <section className="conversation">
       <FloatingSidebarButton />
@@ -142,11 +142,11 @@ export function SearchPage() {
               {response.results.length > 0 ? (
                 response.results.map((result) => (
                   <ResultRow
+                    channelName={
+                      result.channelId ? names.get(result.channelId) : undefined
+                    }
                     key={result.uri}
                     result={result}
-                    topicName={
-                      result.topicId ? names.get(result.topicId) : undefined
-                    }
                     workspaceId={workspaceId}
                   />
                 ))
@@ -188,14 +188,16 @@ export function SearchPage() {
 function ResultRow({
   workspaceId,
   result,
-  topicName,
+  channelName,
 }: {
   workspaceId: string;
   result: SearchResult;
-  topicName: string | undefined;
+  channelName: string | undefined;
 }) {
   const when = day(result.updatedAt);
-  const place = result.topicId ? `#${topicName ?? "topic"} · ${when}` : when;
+  const place = result.channelId
+    ? `#${channelName ?? "channel"} · ${when}`
+    : when;
   const body = (
     <>
       <Icon name={MEDIA_ICONS[result.modality] ?? KIND_ICONS[result.kind]} />
@@ -212,13 +214,13 @@ function ResultRow({
   );
   const target = resultTarget(result);
   if (target.kind === "artifact") {
-    // An artifact opens in its topic, or in the orchestrator when it is the workspace's own.
-    return target.topicId ? (
+    // An artifact opens in its channel, or in the orchestrator when it is the workspace's own.
+    return target.channelId ? (
       <Link
         className="search-row list-row"
-        params={{ workspaceId, topicId: target.topicId }}
+        params={{ workspaceId, channelId: target.channelId }}
         search={{ artifact: target.id }}
-        to="/w/$workspaceId/topic/$topicId"
+        to="/w/$workspaceId/channel/$channelId"
       >
         {body}
       </Link>
@@ -243,12 +245,12 @@ function ResultRow({
       </a>
     );
   }
-  if (target.kind === "chat") {
+  if (target.kind === "thread") {
     return (
       <Link
         className="search-row list-row"
-        params={{ workspaceId, chatId: target.id }}
-        to="/w/$workspaceId/chat/$chatId"
+        params={{ workspaceId, threadId: target.id }}
+        to="/w/$workspaceId/thread/$threadId"
       >
         {body}
       </Link>
@@ -257,25 +259,29 @@ function ResultRow({
   return <div className="search-row list-row">{body}</div>;
 }
 
-/** What a result opens: an artifact, a file that Golem saved, a chat, or nothing. */
+/** What a result opens: an artifact, a file that Golem saved, a thread, or nothing. */
 export function resultTarget(
-  result: Pick<SearchResult, "kind" | "uri" | "topicId" | "chatId">
+  result: Pick<SearchResult, "kind" | "uri" | "channelId" | "threadId">
 ):
-  | { kind: "artifact"; id: string; topicId: string | null }
-  | { kind: "file" | "chat"; id: string }
+  | { kind: "artifact"; id: string; channelId: string | null }
+  | { kind: "file" | "thread"; id: string }
   | { kind: "none" } {
   if (result.kind === "artifact") {
     return {
       kind: "artifact",
       id: result.uri.slice("artifact:".length),
-      topicId: result.topicId,
+      channelId: result.channelId,
     };
   }
-  const file = /^(?:topics\/[^/]+\/)?files\/([0-9a-f-]{36})-/.exec(result.uri);
+  const file = /^(?:channels\/[^/]+\/)?files\/([0-9a-f-]{36})-/.exec(
+    result.uri
+  );
   if (file) {
     return { kind: "file", id: file[1]! };
   }
-  return result.chatId ? { kind: "chat", id: result.chatId } : { kind: "none" };
+  return result.threadId
+    ? { kind: "thread", id: result.threadId }
+    : { kind: "none" };
 }
 
 function useDebouncedValue<Value>(value: Value, milliseconds: number): Value {

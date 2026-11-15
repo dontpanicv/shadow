@@ -14,11 +14,11 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { authDatabase } from "../../test/database.ts";
 import { until } from "../../test/harness.ts";
-import { Chats } from "../chats/chats.ts";
 import type { NotificationInput } from "../notifications/notifications.ts";
 import { migrate, setSetting, setting } from "../platform/database.ts";
 import { HttpError } from "../platform/errors.ts";
 import { Secrets } from "../platform/secrets.ts";
+import { Threads } from "../threads/threads.ts";
 import { Llm, SqliteCredentialStore } from "./llm.ts";
 
 /** The server's owner, who alone changes the login, the model, and the effort. */
@@ -431,22 +431,12 @@ const hooks = {
   picture: async () => null,
   tools: async () => [],
 };
-const noMachines = {
-  destructive: async () => null,
-  file: () => Promise.reject(new Error("No machines are paired.")),
-  put: () => Promise.reject(new Error("No machines are paired.")),
-  machineNamed: () => {
-    throw new Error("No machines are paired.");
-  },
-  tools: () => [],
-  section: () => ({ key: "machines", render: () => undefined }),
-};
 const noIntegrations = { tools: async () => [], namespaces: () => [] };
 const noArtifacts = {
   content: () => "",
   inWorkspace: () => [],
-  moveTopic: () => undefined,
-  moveWithChat: () => undefined,
+  moveChannel: () => undefined,
+  moveWithThread: () => undefined,
   tools: () => [],
 };
 const noNotifications = {
@@ -456,12 +446,8 @@ const noNotifications = {
     createdAt: 0,
     readAt: null,
   }),
-  activities: () => [],
-  moveTopic: () => undefined,
-  moveWithChat: () => undefined,
-  startActivity: () => undefined,
-  updateActivity: () => undefined,
-  endActivity: () => undefined,
+  moveChannel: () => undefined,
+  moveWithThread: () => undefined,
 };
 const noBrowser = {
   pdf: () => Promise.reject(new Error("There is no browser.")),
@@ -470,23 +456,23 @@ const noBrowser = {
   tools: () => [],
 };
 
-/** Chats over a registry in memory, with the registry methods that creating and sending use. */
-function chatsOver(dataDirectory: string, llm: Llm) {
+/** Threads over a registry in memory, with the registry methods that creating and sending use. */
+function threadsOver(dataDirectory: string, llm: Llm) {
   const registered = new Map<
     string,
     {
       id: string;
       workspaceId: string;
       conversationId: number;
-      topicId: string;
+      channelId: string;
       title: string;
       ownerId: null;
       realm: null;
     }
   >();
   const listed = () =>
-    [...registered.values()].map((chat) => ({
-      ...chat,
+    [...registered.values()].map((thread) => ({
+      ...thread,
       updatedAt: 0,
       settledAt: null,
     }));
@@ -496,83 +482,83 @@ function chatsOver(dataDirectory: string, llm: Llm) {
       name: "Family",
       role: "owner",
     }),
-    registerChat: (
+    registerThread: (
       workspaceId: string,
-      chat: {
+      thread: {
         id: string;
-        topicId: string;
+        channelId: string;
         title: string;
         conversationId: number;
       }
     ) => {
-      registered.set(chat.id, {
-        ...chat,
+      registered.set(thread.id, {
+        ...thread,
         workspaceId,
         ownerId: null,
         realm: null,
       });
-      return { ...chat, updatedAt: 0, settledAt: null };
+      return { ...thread, updatedAt: 0, settledAt: null };
     },
-    chat: (chatId: string) => ({
-      ...registered.get(chatId)!,
+    thread: (threadId: string) => ({
+      ...registered.get(threadId)!,
       updatedAt: 0,
       settledAt: null,
     }),
-    chatsIn: () => listed(),
-    allChatsIn: () => listed(),
-    chatOf: (_workspaceId: string, conversationId: number) =>
-      listed().find((chat) => chat.conversationId === conversationId) ?? null,
-    topic: (_workspaceId: string, topicId: string) => ({
-      id: topicId,
-      name: topicId,
+    threadsIn: () => listed(),
+    allThreadsIn: () => listed(),
+    threadOf: (_workspaceId: string, conversationId: number) =>
+      listed().find((thread) => thread.conversationId === conversationId) ??
+      null,
+    channel: (_workspaceId: string, channelId: string) => ({
+      id: channelId,
+      name: channelId,
       ownerId: null,
       summary: null,
       icon: null,
-      chats: [],
+      threads: [],
     }),
-    topicsIn: () => [],
-    allTopicsIn: () => [],
+    channelsIn: () => [],
+    allChannelsIn: () => [],
     orchestratorOf: () => null,
-    addTopic: () => {
-      throw new Error("No topics here");
+    addChannel: () => {
+      throw new Error("No channels here");
     },
-    removeTopic: () => {
-      throw new Error("No topics here");
+    removeChannel: () => {
+      throw new Error("No channels here");
     },
-    setTopicSummary: () => undefined,
-    setTopicIcon: () => undefined,
+    setChannelSummary: () => undefined,
+    setChannelIcon: () => undefined,
     factsOf: () => "",
-    touchChat: () => undefined,
-    setChatSettled: () => {
+    touchThread: () => undefined,
+    setThreadSettled: () => {
       throw new Error("No settling here");
     },
-    renameChat: (chatId: string, title: string) => {
-      registered.set(chatId, { ...registered.get(chatId)!, title });
+    renameThread: (threadId: string, title: string) => {
+      registered.set(threadId, { ...registered.get(threadId)!, title });
     },
     agentMember: () => ({ id: "user-1", name: "Alice", email: "" }),
     members: () => [],
-    moveChat: () => {
+    moveThread: () => {
       throw new Error("No moves here");
     },
   };
-  const chats = new Chats(
+  const threads = new Threads(
     dataDirectory,
     llm,
     registry,
-    noMachines,
     noIntegrations,
     noArtifacts,
     noBrowser,
     noNotifications,
     hooks
   );
-  return { chats, registry, chat: (id: string) => registry.chat(id) };
+  return { threads, registry, thread: (id: string) => registry.thread(id) };
 }
 
-describe("Chats with the Llm", () => {
+describe("Threads with the Llm", () => {
   const user = { id: "user-1", name: "Alice", email: "alice@example.com" };
 
-  test("a chat follows the model chosen in settings, also after it changes", async () => {
+  test("a thread follows the model chosen in settings, also after it changes", async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "golem-llm-"));
     const faux = twoModels();
     const llm = new Llm(
@@ -585,7 +571,7 @@ describe("Chats with the Llm", () => {
       },
       OWNER.email
     );
-    const { chats, chat } = chatsOver(dataDirectory, llm);
+    const { threads, thread } = threadsOver(dataDirectory, llm);
     const used: string[] = [];
     const answer =
       (text: string) =>
@@ -600,7 +586,7 @@ describe("Chats with the Llm", () => {
       };
     faux.setResponses([answer("First"), answer("Second")]);
     try {
-      const { id } = await chats.create(
+      const { id } = await threads.create(
         "workspace-1",
         user,
         "general",
@@ -608,12 +594,12 @@ describe("Chats with the Llm", () => {
       );
       const answered = (count: number) =>
         until(
-          () => chats.messages(chat(id)),
+          () => threads.messages(thread(id)),
           (current) => current.messages.length === count && !current.running
         );
       await answered(2);
       llm.setModel(OWNER, "deep");
-      await chats.send(id, user, "Think harder");
+      await threads.send(id, user, "Think harder");
       const state = await answered(4);
       expect(used).toEqual(["fast", "deep"]);
       expect(state.messages.map((message) => message.text)).toEqual([
@@ -623,12 +609,12 @@ describe("Chats with the Llm", () => {
         "Second",
       ]);
     } finally {
-      await chats.closeAll();
+      await threads.closeAll();
       await rm(dataDirectory, { recursive: true, force: true });
     }
   });
 
-  test("the fast model names a new chat for the subject of its first message", async () => {
+  test("the fast model names a new thread for the subject of its first message", async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "golem-llm-"));
     const faux = twoModels();
     const llm = new Llm(
@@ -642,7 +628,7 @@ describe("Chats with the Llm", () => {
       },
       OWNER.email
     );
-    const { chats, chat } = chatsOver(dataDirectory, llm);
+    const { threads, thread } = threadsOver(dataDirectory, llm);
     const answer = (
       _context: unknown,
       _options: unknown,
@@ -654,7 +640,7 @@ describe("Chats with the Llm", () => {
       );
     faux.setResponses([answer, answer]);
     try {
-      const { id, title } = await chats.create(
+      const { id, title } = await threads.create(
         "family",
         user,
         "food",
@@ -664,21 +650,21 @@ describe("Chats with the Llm", () => {
         "Could we cook something with the kids on Saturday evening?"
       );
       const named = await until(
-        async () => chat(id),
+        async () => thread(id),
         (current) => current.title !== title
       );
       expect(named.title).toBe("Saturday dinner plans");
       await until(
-        () => chats.messages(named),
+        () => threads.messages(named),
         (current) => current.messages.length === 2 && !current.running
       );
     } finally {
-      await chats.closeAll();
+      await threads.closeAll();
       await rm(dataDirectory, { recursive: true, force: true });
     }
   });
 
-  test("the chats of a workspace are separate conversations in one session file, also after a restart", async () => {
+  test("the threads of a workspace are separate conversations in one session file, also after a restart", async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "golem-llm-"));
     const faux = twoModels();
     const llm = new Llm(
@@ -696,32 +682,32 @@ describe("Chats with the Llm", () => {
       fauxAssistantMessage("Saturday"),
       fauxAssistantMessage("Sunday"),
     ]);
-    const first = chatsOver(dataDirectory, llm);
-    const texts = async (chats: Chats, id: string, count: number) =>
+    const first = threadsOver(dataDirectory, llm);
+    const texts = async (threads: Threads, id: string, count: number) =>
       (
         await until(
-          () => chats.messages(first.chat(id)),
+          () => threads.messages(first.thread(id)),
           (state) => state.messages.length === count && !state.running
         )
       ).messages.map((message) => message.text);
     try {
-      const dinner = await first.chats.create(
+      const dinner = await first.threads.create(
         "family",
         user,
         "food",
         "Dinner?"
       );
-      expect(await texts(first.chats, dinner.id, 2)).toEqual([
+      expect(await texts(first.threads, dinner.id, 2)).toEqual([
         "Dinner?",
         "Pasta",
       ]);
-      const trip = await first.chats.create(
+      const trip = await first.threads.create(
         "family",
         user,
         "travel",
         "When do we go?"
       );
-      expect(await texts(first.chats, trip.id, 2)).toEqual([
+      expect(await texts(first.threads, trip.id, 2)).toEqual([
         "When do we go?",
         "Saturday",
       ]);
@@ -731,18 +717,17 @@ describe("Chats with the Llm", () => {
       );
       expect(
         await Bun.file(
-          join(workspace, "chats", dinner.id, "session.sqlite")
+          join(workspace, "threads", dinner.id, "session.sqlite")
         ).exists()
       ).toBe(false);
-      const before = await first.chats.version(first.chat(trip.id));
-      await first.chats.closeAll();
+      const before = await first.threads.version(first.thread(trip.id));
+      await first.threads.closeAll();
 
-      // A new process opens the same file and finds each chat's own transcript.
-      const reopened = new Chats(
+      // A new process opens the same file and finds each thread's own transcript.
+      const reopened = new Threads(
         dataDirectory,
         llm,
         first.registry,
-        noMachines,
         noIntegrations,
         noArtifacts,
         noBrowser,
@@ -758,7 +743,7 @@ describe("Chats with the Llm", () => {
           "When do we go?",
           "Saturday",
         ]);
-        expect(await reopened.version(first.chat(trip.id))).toBe(before);
+        expect(await reopened.version(first.thread(trip.id))).toBe(before);
         await reopened.send(trip.id, user, "Or later?");
         expect(await texts(reopened, trip.id, 4)).toEqual([
           "When do we go?",
@@ -766,12 +751,12 @@ describe("Chats with the Llm", () => {
           "Or later?",
           "Sunday",
         ]);
-        expect(await reopened.version(first.chat(trip.id))).not.toBe(before);
+        expect(await reopened.version(first.thread(trip.id))).not.toBe(before);
       } finally {
         await reopened.closeAll();
       }
     } finally {
-      await first.chats.closeAll();
+      await first.threads.closeAll();
       await rm(dataDirectory, { recursive: true, force: true });
     }
   });

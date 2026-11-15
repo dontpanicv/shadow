@@ -21,7 +21,7 @@ async function setup(integration = "google") {
   const workspace =
     app.app.workspaces.list(owner)[0] ??
     (await app.app.workspaces.create(owner, "Home"));
-  const topic = app.app.workspaces.createTopic(
+  const channel = app.app.workspaces.createChannel(
     workspace.id,
     owner,
     "sources",
@@ -47,19 +47,19 @@ async function setup(integration = "google") {
       return new TextEncoder().encode("Attachment");
     },
   };
-  const make = (chats = app.app.chats) =>
+  const make = (threads = app.app.threads) =>
     new IntakeArchives(
       app.app.database,
       app.app.workspaces,
       integrations,
-      chats,
+      threads,
       app.app.intake.audit,
       new AbortController().signal
     );
   const archives = make();
   const put = (
     id: string,
-    chat: string,
+    thread: string,
     at: number,
     body: string,
     extra: Partial<WatchedItem> = {}
@@ -70,7 +70,7 @@ async function setup(integration = "google") {
     const item: WatchedItem = {
       id,
       kind: "message",
-      chat,
+      chat: thread,
       chatName: "Conversation",
       group: false,
       sender: "Sender",
@@ -104,13 +104,15 @@ async function setup(integration = "google") {
       .get(rowId) as ItemRow;
   };
   const files = () =>
-    app.app.chats.files(app.app.chats.place(workspace.id, topic.id, owner));
+    app.app.threads.files(
+      app.app.threads.place(workspace.id, channel.id, owner)
+    );
   const text = async (id: string) =>
-    Bun.file((await app.app.chats.file(workspace.id, owner, id)).path).text();
+    Bun.file((await app.app.threads.file(workspace.id, owner, id)).path).text();
   return {
     owner,
     workspace,
-    topic,
+    channel,
     credential,
     archives,
     make,
@@ -125,20 +127,20 @@ test.each(["google", "slack"])(
   "%s conversations keep one file and a stable id across days, edits, and retries",
   async (integration) => {
     const run = await setup(integration);
-    const chat = integration === "slack" ? "channel/root" : "mail-thread";
-    const first = run.put("one", chat, START, "First question");
+    const thread = integration === "slack" ? "channel/root" : "mail-thread";
+    const first = run.put("one", thread, START, "First question");
     const [initial] = await run.archives.save(
       run.workspace.id,
-      run.topic.id,
+      run.channel.id,
       run.owner,
       [first]
     );
-    const second = run.put("two", chat, START + DAY, "The reply", {
+    const second = run.put("two", thread, START + DAY, "The reply", {
       fromOwner: true,
     });
     const [updated] = await run.archives.save(
       run.workspace.id,
-      run.topic.id,
+      run.channel.id,
       run.owner,
       [second, first]
     );
@@ -148,10 +150,10 @@ test.each(["google", "slack"])(
     ).toHaveLength(1);
     expect(await run.text(updated!.id)).toContain("First question");
     expect(await run.text(updated!.id)).toContain("The reply");
-    const edited = run.put("two", chat, START + DAY, "The corrected reply", {
+    const edited = run.put("two", thread, START + DAY, "The corrected reply", {
       fromOwner: true,
     });
-    await run.archives.save(run.workspace.id, run.topic.id, run.owner, [
+    await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
       edited,
     ]);
     const body = await run.text(updated!.id);
@@ -159,7 +161,7 @@ test.each(["google", "slack"])(
     expect(body).not.toContain("The reply");
     expect(body.match(/Source message: two/g)).toHaveLength(1);
     const [stored] = await run.files();
-    await run.archives.save(run.workspace.id, run.topic.id, run.owner, [
+    await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
       second,
     ]);
     expect((await run.files())[0]!.time).toBe(stored!.time);
@@ -167,18 +169,18 @@ test.each(["google", "slack"])(
 );
 
 test.each(["whatsapp", "slack"])(
-  "%s long-running chats have one file per local calendar day",
+  "%s long-running threads have one file per local calendar day",
   async (integration) => {
     const run = await setup(integration);
-    const chat = integration === "slack" ? "group-direct" : "family@g.us";
+    const thread = integration === "slack" ? "group-direct" : "family@g.us";
     const rows = [
-      run.put("one", chat, START, "Morning", { group: true }),
-      run.put("two", chat, START + 1000, "Later", { group: true }),
-      run.put("three", chat, START + DAY, "Tomorrow", { group: true }),
+      run.put("one", thread, START, "Morning", { group: true }),
+      run.put("two", thread, START + 1000, "Later", { group: true }),
+      run.put("three", thread, START + DAY, "Tomorrow", { group: true }),
     ];
     const saved = await run.archives.save(
       run.workspace.id,
-      run.topic.id,
+      run.channel.id,
       run.owner,
       rows
     );
@@ -207,7 +209,7 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
   });
   const [file] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [initial]
   );
@@ -220,7 +222,7 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
   );
   const [updated] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [later]
   );
@@ -235,25 +237,35 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
     "Newest complete summary",
     { kind: "document" }
   );
-  await run.archives.save(run.workspace.id, run.topic.id, run.owner, [
+  await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
     refreshed,
   ]);
-  await run.archives.save(run.workspace.id, run.topic.id, run.owner, [later]);
+  await run.archives.save(run.workspace.id, run.channel.id, run.owner, [later]);
   expect(await run.text(file!.id)).toContain("Newest complete summary");
   expect(await run.text(file!.id)).not.toContain("\n\nComplete summary");
 });
 
 test("a shared review receives only selected messages from a private daily conversation", async () => {
   const run = await setup("whatsapp");
-  const shared = app.app.workspaces.createTopic(
+  const shared = app.app.workspaces.createChannel(
     run.workspace.id,
     run.owner,
     "flat",
     false
   );
-  const secret = run.put("private", "chat", START, "Private unrelated matter");
-  const relevant = run.put("repair", "chat", START + 1000, "Repair confirmed");
-  await run.archives.save(run.workspace.id, run.topic.id, run.owner, [
+  const secret = run.put(
+    "private",
+    "thread",
+    START,
+    "Private unrelated matter"
+  );
+  const relevant = run.put(
+    "repair",
+    "thread",
+    START + 1000,
+    "Repair confirmed"
+  );
+  await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
     secret,
     relevant,
   ]);
@@ -275,23 +287,23 @@ test("attachments are reused across message edits and linked from the conversati
     type: "application/pdf",
     size: 10,
   };
-  const row = run.put("mail", "chat", START, "Ticket", {
+  const row = run.put("mail", "thread", START, "Ticket", {
     attachments: [attachment],
   });
   const saved = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [row]
   );
   expect(saved).toHaveLength(2);
   expect(await run.text(saved[0]!.id)).toContain(`file:${saved[1]!.id}`);
-  const edited = run.put("mail", "chat", START, "Updated ticket details", {
+  const edited = run.put("mail", "thread", START, "Updated ticket details", {
     attachments: [attachment],
   });
   const updated = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [edited]
   );
@@ -301,8 +313,8 @@ test("attachments are reused across message edits and linked from the conversati
 
 test("an interrupted source write resumes without an extra file", async () => {
   const run = await setup();
-  const row = run.put("mail", "chat", START, "Original source");
-  const { chats } = app.app;
+  const row = run.put("mail", "thread", START, "Original source");
+  const { threads } = app.app;
   const partial = new IntakeArchives(
     app.app.database,
     app.app.workspaces,
@@ -312,12 +324,12 @@ test("an interrupted source write resumes without an extra file", async () => {
       attachment: async () => new Uint8Array(),
     },
     {
-      file: chats.file.bind(chats),
-      files: chats.files.bind(chats),
-      place: chats.place.bind(chats),
-      deleteFile: chats.deleteFile.bind(chats),
+      file: threads.file.bind(threads),
+      files: threads.files.bind(threads),
+      place: threads.place.bind(threads),
+      deleteFile: threads.deleteFile.bind(threads),
       writeFile: async (...args) => {
-        await chats.writeFile(...args);
+        await threads.writeFile(...args);
         throw new Error("Interrupted");
       },
     },
@@ -325,7 +337,7 @@ test("an interrupted source write resumes without an extra file", async () => {
     new AbortController().signal
   );
   await expect(
-    partial.save(run.workspace.id, run.topic.id, run.owner, [row])
+    partial.save(run.workspace.id, run.channel.id, run.owner, [row])
   ).rejects.toThrow("Interrupted");
   const [file] = await run.files();
   await run.archives.maintain(run.workspace.id, run.owner);
@@ -334,24 +346,24 @@ test("an interrupted source write resumes without an extra file", async () => {
 
 test("later messages preserve notes added to a generated conversation file", async () => {
   const run = await setup();
-  const first = run.put("one", "chat", START, "Original message");
+  const first = run.put("one", "thread", START, "Original message");
   const [file] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [first]
   );
-  await app.app.chats.writeFile(
+  await app.app.threads.writeFile(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     new File(["My own notes"], file!.name),
     file!.id
   );
-  const next = run.put("two", "chat", START + 1000, "New message");
+  const next = run.put("two", "thread", START + 1000, "New message");
   const [updated] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [next]
   );
@@ -361,7 +373,7 @@ test("later messages preserve notes added to a generated conversation file", asy
   expect(await run.text(updated!.id)).toContain("New message");
   const [repeated] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [next]
   );
@@ -382,7 +394,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
   });
   const [spamFile, spamAttachment] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [spam]
   );
@@ -390,7 +402,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
   const second = run.put("second", "repair", START + 1000, "Buy a prize now");
   const [repair] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [first, second]
   );
@@ -421,7 +433,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
   );
   const [again] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [reply]
   );
@@ -432,7 +444,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
 
 test("an attachment that the source no longer gives is skipped, and the conversation is still saved", async () => {
   const run = await setup();
-  const row = run.put("mail", "chat", START, "See the attached ticket", {
+  const row = run.put("mail", "thread", START, "See the attached ticket", {
     attachments: [
       { id: "gone", name: "ticket.pdf", type: "application/pdf", size: 10 },
       {
@@ -445,7 +457,7 @@ test("an attachment that the source no longer gives is skipped, and the conversa
   });
   const saved = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [row]
   );
@@ -460,11 +472,11 @@ test("a deleted conversation keeps its file when the person edited it", async ()
   const spam = run.put("spam", "prizes", START, "You won a prize");
   const [file] = await run.archives.save(
     run.workspace.id,
-    run.topic.id,
+    run.channel.id,
     run.owner,
     [spam]
   );
-  const { path } = await app.app.chats.file(
+  const { path } = await app.app.threads.file(
     run.workspace.id,
     run.owner,
     file!.id

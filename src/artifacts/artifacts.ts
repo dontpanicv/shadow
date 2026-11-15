@@ -4,20 +4,20 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { User } from "../platform/auth.ts";
 import type { Config } from "../platform/config.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
-import type { ChatRef, Realm, Workspaces } from "../workspaces/workspaces.ts";
+import type { Realm, ThreadRef, Workspaces } from "../workspaces/workspaces.ts";
 import { artifactTools } from "./tools.ts";
 
 export type Visibility = "public" | "members";
 
 /**
- * A page or small app that an agent made. It belongs to a topic, or to the workspace when `topicId` is null, as the
- * orchestrator's do, and stays when its chat is settled. Its HTML runs in a sandbox and keeps data through `golem`.
+ * A page or small app that an agent made. It belongs to a channel, or to the workspace when `channelId` is null, as the
+ * orchestrator's do, and stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `golem`.
  */
 export interface Artifact {
   readonly id: string;
-  readonly topicId: string | null;
-  /** The chat that made it. */
-  readonly chatId: string;
+  readonly channelId: string | null;
+  /** The thread that made it. */
+  readonly threadId: string;
   readonly title: string;
   readonly visibility: Visibility;
   /** The link people share: `<share_url>/<id>` when public and Golem has a public host, else `<base_url>/a/<id>`. */
@@ -60,7 +60,12 @@ export interface Me {
 
 export type ArtifactWorkspaces = Pick<
   Workspaces,
-  "allTopicsIn" | "topic" | "topicsIn" | "requireMember" | "chatOf" | "chatsIn"
+  | "allChannelsIn"
+  | "channel"
+  | "channelsIn"
+  | "requireMember"
+  | "threadOf"
+  | "threadsIn"
 >;
 
 const MAX_TITLE = 200;
@@ -85,13 +90,12 @@ const WORDS =
   );
 const VISIBILITIES: readonly Visibility[] = ["public", "members"];
 
-/** The `golem` object that Golem adds to every artifact. Web and iOS both answer its messages. */
+/** The `golem` object that Golem adds to every artifact. The web app answers its messages. */
 const BRIDGE = `(() => {
   const pending = new Map();
   let next = 0;
-  const native = window.webkit?.messageHandlers?.golem;
-  // On the web, the link's page gives a port only to the first page of the frame.
-  const port = native ? null : new Promise((resolve) => addEventListener("message", (event) => {
+  // The link's page gives a port only to the first page of the frame.
+  const port = new Promise((resolve) => addEventListener("message", (event) => {
     const [given] = event.ports;
     if (event.source !== parent || event.data?.golem !== 1 || !given) return;
     given.onmessage = (reply) => receive(reply.data);
@@ -101,7 +105,7 @@ const BRIDGE = `(() => {
     const id = ++next;
     pending.set(id, { resolve, reject });
     const message = { golem: 1, id, op, args };
-    if (native) native.postMessage(message); else port.then((given) => given.postMessage(message));
+    port.then((given) => given.postMessage(message));
   });
   const receive = (data) => {
     const call = data?.golem === 1 && pending.get(data.id);
@@ -109,7 +113,6 @@ const BRIDGE = `(() => {
     pending.delete(data.id);
     if (data.error) call.reject(new Error(data.error)); else call.resolve(data.result);
   };
-  window.__golemReceive = receive;
   const scope = (name) => ({
     get: (key) => send("get", { scope: name, key }),
     set: (key, value) => send("set", { scope: name, key, value }),
@@ -150,8 +153,8 @@ export const CONTENT_POLICY = [
 interface ArtifactRow {
   readonly id: string;
   readonly workspaceId: string;
-  readonly topicId: string | null;
-  readonly chatId: string;
+  readonly channelId: string | null;
+  readonly threadId: string;
   readonly title: string;
   readonly visibility: Visibility;
   readonly visitors: number;
@@ -160,10 +163,10 @@ interface ArtifactRow {
 }
 
 const ARTIFACT_COLUMNS =
-  "id, workspace_id AS workspaceId, topic_id AS topicId, chat_id AS chatId, title, visibility, created_at AS createdAt, updated_at AS updatedAt, (SELECT count(*) FROM artifact_visitor v WHERE v.artifact_id = artifact.id AND v.deleted_at IS NULL) AS visitors";
+  "id, workspace_id AS workspaceId, channel_id AS channelId, thread_id AS threadId, title, visibility, created_at AS createdAt, updated_at AS updatedAt, (SELECT count(*) FROM artifact_visitor v WHERE v.artifact_id = artifact.id AND v.deleted_at IS NULL) AS visitors";
 
 /**
- * The artifacts of every topic, and the runtime their pages call. A visitor writes only their own records; members
+ * The artifacts of every channel, and the runtime their pages call. A visitor writes only their own records; members
  * and agents also write the shared ones. Everyone who may open an artifact may read all of its records.
  */
 export class Artifacts {
@@ -187,12 +190,12 @@ export class Artifacts {
   }
 
   /**
-   * Makes an artifact in a chat, for a topic of its workspace or, for a null `topicId`, for the workspace. The
+   * Makes an artifact in a thread, for a channel of its workspace or, for a null `channelId`, for the workspace. The
    * same `requestKey` again returns the artifact it made before.
    */
   create(
-    chat: ChatRef,
-    topicId: string | null,
+    thread: ThreadRef,
+    channelId: string | null,
     input: ArtifactInput & { readonly requestKey: string }
   ): Artifact {
     const title = checkedTitle(input.title);
@@ -206,13 +209,13 @@ export class Artifacts {
     }
     this.database
       .query(
-        "INSERT INTO artifact (id, workspace_id, topic_id, chat_id, title, html, visibility, request_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'golem', ?, ?)"
+        "INSERT INTO artifact (id, workspace_id, channel_id, thread_id, title, html, visibility, request_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'golem', ?, ?)"
       )
       .run(
         this.newName(),
-        chat.workspaceId,
-        topicId,
-        chat.id,
+        thread.workspaceId,
+        channelId,
+        thread.id,
         title,
         html,
         checkedVisibility(input.visibility ?? "members"),
@@ -223,7 +226,7 @@ export class Artifacts {
     const row = this.database
       .query(`SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE request_key = ?`)
       .get(input.requestKey) as ArtifactRow;
-    this.changed(chat.workspaceId);
+    this.changed(thread.workspaceId);
     return this.artifact(row);
   }
 
@@ -254,19 +257,22 @@ export class Artifacts {
     return this.artifact(this.row(id)!);
   }
 
-  /** The artifacts of a workspace that `realm` sees, newest first: the workspace's own and those of its topics. */
+  /** The artifacts of a workspace that `realm` sees, newest first: the workspace's own and those of its channels. */
   inWorkspace(workspaceId: string, realm: Realm): Artifact[] {
-    const topics = new Set(
-      this.workspaces.topicsIn(workspaceId, realm).map((topic) => topic.id)
+    const channels = new Set(
+      this.workspaces
+        .channelsIn(workspaceId, realm)
+        .map((channel) => channel.id)
     );
     return this.allInWorkspace(workspaceId).filter(
-      (artifact) => artifact.topicId === null || topics.has(artifact.topicId)
+      (artifact) =>
+        artifact.channelId === null || channels.has(artifact.channelId)
     );
   }
 
-  /** Every live artifact of a workspace, private topics' too, newest first, for background work such as search. */
+  /** Every live artifact of a workspace, private channels' too, newest first, for background work such as search. */
   allInWorkspace(workspaceId: string): Artifact[] {
-    const topics = this.liveTopics(workspaceId);
+    const channels = this.liveChannels(workspaceId);
     return (
       this.database
         .query(
@@ -274,42 +280,46 @@ export class Artifacts {
         )
         .all(workspaceId) as ArtifactRow[]
     )
-      .filter((row) => row.topicId === null || topics.has(row.topicId))
+      .filter((row) => row.channelId === null || channels.has(row.channelId))
       .map((row) => this.artifact(row));
   }
 
-  /** Moves the artifacts that a chat made in its topic to the topic it moved to. */
-  /** Moves every artifact of topic `from` to topic `to`, as when one topic merges into another. */
-  moveTopic(from: string, to: string): void {
+  /** Moves the artifacts that a thread made in its channel to the channel it moved to. */
+  /** Moves every artifact of channel `from` to channel `to`, as when one channel merges into another. */
+  moveChannel(from: string, to: string): void {
     this.database
-      .query("UPDATE artifact SET topic_id = ? WHERE topic_id = ?")
+      .query("UPDATE artifact SET channel_id = ? WHERE channel_id = ?")
       .run(to, from);
   }
 
-  moveWithChat(chatId: string, from: string, to: string): void {
+  moveWithThread(threadId: string, from: string, to: string): void {
     this.database
       .query(
-        "UPDATE artifact SET topic_id = ? WHERE chat_id = ? AND topic_id = ?"
+        "UPDATE artifact SET channel_id = ? WHERE thread_id = ? AND channel_id = ?"
       )
-      .run(to, chatId, from);
+      .run(to, threadId, from);
   }
 
   /**
-   * The artifacts of a topic of the person's workspace from every chat, settled or not, or the workspace's own for
-   * a null `topicId`; newest first.
+   * The artifacts of a channel of the person's workspace from every thread, settled or not, or the workspace's own for
+   * a null `channelId`; newest first.
    */
-  inPlace(workspaceId: string, topicId: string | null, user: User): Artifact[] {
-    if (topicId === null) {
+  inPlace(
+    workspaceId: string,
+    channelId: string | null,
+    user: User
+  ): Artifact[] {
+    if (channelId === null) {
       this.workspaces.requireMember(workspaceId, user);
     } else {
-      this.workspaces.topic(workspaceId, topicId, user);
+      this.workspaces.channel(workspaceId, channelId, user);
     }
     return (
       this.database
         .query(
-          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE workspace_id = ? AND topic_id IS ? AND deleted_at IS NULL ORDER BY created_at DESC`
+          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE workspace_id = ? AND channel_id IS ? AND deleted_at IS NULL ORDER BY created_at DESC`
         )
-        .all(workspaceId, topicId) as ArtifactRow[]
+        .all(workspaceId, channelId) as ArtifactRow[]
     ).map((row) => this.artifact(row));
   }
 
@@ -323,11 +333,11 @@ export class Artifacts {
     return this.artifact(row);
   }
 
-  /** Not found unless the person is a member and sees the artifact's topic, which a private topic's owner alone does. */
+  /** Not found unless the person is a member and sees the artifact's channel, which a private channel's owner alone does. */
   private requireSeen(row: ArtifactRow, user: User): void {
     this.workspaces.requireMember(row.workspaceId, user);
-    if (row.topicId !== null) {
-      this.workspaces.topic(row.workspaceId, row.topicId, user);
+    if (row.channelId !== null) {
+      this.workspaces.channel(row.workspaceId, row.channelId, user);
     }
   }
 
@@ -640,8 +650,8 @@ export class Artifacts {
   }
 
   /**
-   * A live artifact: not deleted, and not in a deleted topic or workspace. The workspace's own artifacts have no
-   * topic; a live workspace keeps one topic at least, and a deleted one has none.
+   * A live artifact: not deleted, and not in a deleted channel or workspace. The workspace's own artifacts have no
+   * channel; a live workspace keeps one channel at least, and a deleted one has none.
    */
   private row(id: string): ArtifactRow | null {
     const row = this.database
@@ -652,15 +662,19 @@ export class Artifacts {
     if (!row) {
       return null;
     }
-    const topics = this.liveTopics(row.workspaceId);
-    return (row.topicId === null ? topics.size > 0 : topics.has(row.topicId))
+    const channels = this.liveChannels(row.workspaceId);
+    return (
+      row.channelId === null
+        ? channels.size > 0
+        : channels.has(row.channelId)
+    )
       ? row
       : null;
   }
 
-  private liveTopics(workspaceId: string): Set<string> {
+  private liveChannels(workspaceId: string): Set<string> {
     return new Set(
-      this.workspaces.allTopicsIn(workspaceId).map((topic) => topic.id)
+      this.workspaces.allChannelsIn(workspaceId).map((channel) => channel.id)
     );
   }
 

@@ -75,9 +75,6 @@ beforeAll(async () => {
         clientId: "test-client.apps.googleusercontent.com",
         clientSecret: "test-secret",
       },
-      iosAppId: null,
-      android: null,
-      apns: null,
     },
     { provider: faux.provider, name: "Test model", defaultModel: model.id },
     Secrets.forTests(),
@@ -202,11 +199,11 @@ test("search covers one workspace and never another, also through the agent's re
   ]);
   await app.indexer.scan(family.id);
   await app.indexer.scan(work.id);
-  const topic = app.workspaces.topics(family.id, anna.user)[0]!;
-  await app.chats.create(
+  const channel = app.workspaces.channels(family.id, anna.user)[0]!;
+  await app.threads.create(
     family.id,
     anna.user,
-    topic.id,
+    channel.id,
     "When is the dentist?"
   );
   for (let attempt = 0; attempt < 100 && !recalled; attempt += 1) {
@@ -219,8 +216,8 @@ test("search covers one workspace and never another, also through the agent's re
   const found = await app.indexer.search(family.id, "dentist", 20, null);
   expect(found.semantic).toBe(true);
   expect(found.results.map((result) => result.kind).sort()).toEqual([
-    "chat",
     "note",
+    "thread",
   ]);
   expect(found.results.some((result) => result.title === "Payroll")).toBe(
     false
@@ -308,8 +305,8 @@ function mediaWord(input: object): string {
   return "image" in input ? "picture" : "sound";
 }
 
-const prose = (topic: string) =>
-  `The family wrote this note about the ${topic} for the whole week`;
+const prose = (channel: string) =>
+  `The family wrote this note about the ${channel} for the whole week`;
 
 async function sync(
   index: WorkspaceIndex,
@@ -429,13 +426,13 @@ test("a picture without a vector is read again until the model gives one, and ag
   index.close();
 });
 
-test("a topic file that moves to another topic keeps its segments and vectors", async () => {
+test("a channel file that moves to another channel keeps its segments and vectors", async () => {
   const index = new WorkspaceIndex(":memory:", "model");
-  const file = (topicId: string) => ({
-    uri: `topics/${topicId}/files/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b-plan.txt`,
+  const file = (channelId: string) => ({
+    uri: `channels/${channelId}/files/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b-plan.txt`,
     kind: "file" as const,
     title: "plan",
-    topicId,
+    channelId,
     version: "1700000000000:42",
     updatedAt: 0,
   });
@@ -454,7 +451,7 @@ test("a topic file that moves to another topic keeps its segments and vectors", 
   expect(
     index
       .search("holiday", bagOfWords(prose("holiday")), 5, all)
-      .map((result) => [result.uri, result.topicId])
+      .map((result) => [result.uri, result.channelId])
   ).toEqual([[file("work").uri, "work"]]);
   index.close();
 });
@@ -564,28 +561,28 @@ test("a query of 500 words uses only its first 32 terms", async () => {
 
 test("with many vectors, meaning is measured against the index's own spread", async () => {
   const index = new WorkspaceIndex(":memory:", "model");
-  const topics = Array.from(
+  const channels = Array.from(
     { length: 60 },
     (_, number) =>
-      `topic${String.fromCharCode(97 + (number % 26), 97 + Math.floor(number / 26))}`
+      `channel${String.fromCharCode(97 + (number % 26), 97 + Math.floor(number / 26))}`
   );
-  for (const topic of topics) {
+  for (const channel of channels) {
     await sync(
       index,
-      `notes/${topic}.md`,
+      `notes/${channel}.md`,
       "1",
-      [{ key: "0", text: prose(topic) }],
-      topic
+      [{ key: "0", text: prose(channel) }],
+      channel
     );
   }
   embedWaiting(index);
   const results = index.search(
     "which note",
-    bagOfWords(prose("topicqb")),
+    bagOfWords(prose("channelqb")),
     5,
     all
   );
-  expect(results[0]?.title).toBe("topicqb");
+  expect(results[0]?.title).toBe("channelqb");
   expect(results[0]?.modality).toBe("text");
   index.close();
 });

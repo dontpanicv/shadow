@@ -21,27 +21,6 @@ export interface Config {
   readonly allowedEmails: readonly string[];
   /** The Google OAuth client for sign-in; see google-sign-in.md. */
   readonly google: OAuthClient;
-  /**
-   * The iOS app, as `<team id>.<bundle id>`, which `/.well-known/apple-app-site-association` names so that its Google
-   * sign-in can return to this server's https address; `null` serves no such file.
-   */
-  readonly iosAppId: string | null;
-  /**
-   * The Android app, which `/.well-known/assetlinks.json` names so that its Google sign-in can return to this server's
-   * https address; `null` serves no such file.
-   */
-  readonly android: {
-    readonly package: string;
-    /** The SHA-256 fingerprints of the keys that sign the app, as `keytool -list` prints them. */
-    readonly certSha256: readonly string[];
-  } | null;
-  /** The APNs key that sends pushes to the iOS app, kept in `config/apns.p8`; `null` sends none. */
-  readonly apns: {
-    readonly keyId: string;
-    readonly teamId: string;
-    /** The iOS app's bundle id. */
-    readonly topic: string;
-  } | null;
 }
 
 export interface OAuthClient {
@@ -71,22 +50,6 @@ allowed_emails = []
 [google]
 client_id = ""
 client_secret = ""
-
-# The iOS app, as <team id>.<bundle id>, for example "ABCDE12345.dev.golem.app". Its Google sign-in returns to the
-# https address of base_url, so that address must name the app; leave it empty without the iOS app.
-ios_app_id = ""
-
-# The Android app: its package and the SHA-256 fingerprints of the keys that sign it. Its Google sign-in returns to
-# the https address of base_url, so that address must name the app; leave it out without the Android app.
-# [android]
-# package = "dev.golem.android"
-# cert_sha256 = ["AB:CD:..."]
-
-# The Apple Push Notification service key that sends notifications to the iOS app. Put the key in config/apns.p8.
-# [apns]
-# key_id = "ABC123DEFG"
-# team_id = "DEF123GHIJ"
-# topic = "dev.golem.app"
 `;
 
 /** Reads `config/golem.toml`, creating `config/` and `data/` with defaults on first start. */
@@ -106,8 +69,6 @@ export async function readConfig(
   }
   const values = Bun.TOML.parse(await file.text()) as Record<string, unknown>;
   const google = (values.google ?? {}) as Record<string, unknown>;
-  const apns = values.apns as Record<string, unknown> | undefined;
-  const android = values.android as Record<string, unknown> | undefined;
   return {
     configDirectory,
     dataDirectory,
@@ -125,20 +86,6 @@ export async function readConfig(
       clientId: text(google.client_id, "google.client_id"),
       clientSecret: text(google.client_secret, "google.client_secret"),
     },
-    iosAppId: values.ios_app_id ? text(values.ios_app_id, "ios_app_id") : null,
-    android: android
-      ? {
-          package: text(android.package, "android.package"),
-          certSha256: list(android.cert_sha256, "android.cert_sha256"),
-        }
-      : null,
-    apns: apns
-      ? {
-          keyId: text(apns.key_id, "apns.key_id"),
-          teamId: text(apns.team_id, "apns.team_id"),
-          topic: text(apns.topic, "apns.topic"),
-        }
-      : null,
   };
 }
 

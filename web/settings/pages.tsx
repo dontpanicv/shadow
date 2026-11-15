@@ -4,12 +4,11 @@ import { useRef } from "react";
 import { signOut } from "../accounts/login.tsx";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
-import { LearnedSection } from "../chats/learned.tsx";
-import { MachinesSection } from "../hands/machines.tsx";
 import { IntegrationsSection } from "../integrations/section.tsx";
 import { LlmCard, llmQuery } from "../llm/card.tsx";
 import { UsageSection } from "../llm/usage.tsx";
 import { PlacesSection } from "../places/section.tsx";
+import { LearnedSection } from "../threads/learned.tsx";
 import {
   Avatar,
   Button,
@@ -29,7 +28,7 @@ import { FloatingSidebarButton, Shell } from "../workspaces/shell.tsx";
 
 const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId/settings");
 
-/** A workspace's facts, members, and name, most used first; each person's machines, integrations, and places are in Settings. */
+/** A workspace's facts, members, and name, most used first; each person's integrations and places are in Settings. */
 export function WorkspaceSettingsPage() {
   const { workspaceId } = workspaceRoute.useParams();
   const workspace = useMe().workspaces.find(
@@ -55,7 +54,7 @@ export function WorkspaceSettingsPage() {
   );
 }
 
-/** The person's integrations, places, what Golem learned, machines, usage, the LLM provider, and the account, most used first. The sidebar keeps the last workspace, so settings feel like part of the app. */
+/** The person's integrations, places, what Golem learned, usage, the LLM provider, and the account, most used first. The sidebar keeps the last workspace, so settings feel like part of the app. */
 export function SettingsPage() {
   const { user, workspaces } = useMe();
   const { data: llm } = useQuery(llmQuery);
@@ -78,9 +77,6 @@ export function SettingsPage() {
               </PageSection>
               <PageSection title="What Golem learned">
                 <LearnedSection workspaceId={workspace.id} />
-              </PageSection>
-              <PageSection title="Machines">
-                <MachinesSection workspaceId={workspace.id} />
               </PageSection>
               <PageSection title="Usage">
                 <UsageSection workspaceId={workspace.id} />
