@@ -100,13 +100,16 @@ export class Sources {
   private async pullAll(): Promise<void> {
     await mkdir(this.directory, { recursive: true });
     let changed = false;
-    for (const source of this.sources) {
-      try {
-        changed = (await this.pullOne(source)) || changed;
-      } catch (error) {
-        console.error(`pulling the source ${source.name} failed`, error);
-      }
-    }
+    // Together, so a large repository never holds back the small ones.
+    await Promise.all(
+      this.sources.map(async (source) => {
+        try {
+          changed = (await this.pullOne(source)) || changed;
+        } catch (error) {
+          console.error(`pulling the source ${source.name} failed`, error);
+        }
+      })
+    );
     if (changed) {
       this.changes += 1;
     }
@@ -128,6 +131,8 @@ export class Sources {
           "clone",
           "--quiet",
           "--single-branch",
+          // Only the newest files come now; older versions come when sources_history shows them.
+          "--filter=blob:none",
           ...(source.branch ? ["--branch", source.branch] : []),
           source.url,
           partial,
@@ -312,7 +317,7 @@ export class Sources {
           options.commit,
           ...paths,
         ],
-        {},
+        this.envFor(source!),
         copy
       );
       return shown.length > MAX_CHARACTERS
