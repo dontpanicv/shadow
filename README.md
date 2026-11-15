@@ -160,6 +160,11 @@ one.
 | --- | --- | --- |
 | Google (Gmail, Calendar, Drive, Docs, Sheets) | Search and read mail, draft, send after approval, calendar, files | Google sign-in, through [gog](https://github.com/openclaw/gogcli) |
 | Slack | Search and read, draft, send after approval | A request of the Slack web app, pasted as cURL, through [slackcli](https://github.com/shaharia-lab/slackcli) |
+| Notion | Search and read pages and databases, create and change them | Notion's MCP server |
+| Linear | Find and read issues and projects, create and change issues | Linear's MCP server |
+| Jira | Search and read Jira issues and Confluence pages, create and change them | Atlassian's Rovo MCP server |
+| HubSpot | Search and read the CRM | HubSpot's MCP server, with a client that an admin sets |
+| Pipes and Engage | Read configuration, profiles, events, and performance; propose changes that the person approves in Pipes | The MCP server of the person's Pipes instance |
 | Plaud | Recordings and their meeting notes | Plaud's MCP server |
 | T3 Code | Start and follow coding threads in a project on the person's machine | The MCP server of their own T3 Code |
 

@@ -10,16 +10,16 @@ member. A routine's script cannot send.
 Settings shows the steps that set up each integration: click ⓘ on it. The steps are the `guide` of its connector, in
 `src/integrations/`.
 
-Shadow has four integrations: Google, Slack, Plaud, and T3 Code, and the company's Slack bot, which an admin connects
-in Company settings.
+Shadow has nine integrations: Google, Slack, Notion, Linear, Jira, HubSpot, Pipes, Plaud, and T3 Code, and the
+company's Slack bot, which an admin connects in Company settings.
 
-Google needs an OAuth client of your own, which an admin sets with **Client** on the integration; the next sign-in
-uses it at once. Until then, only admins see it. Google also needs `gog` on the Shadow machine, and Slack `slackcli`,
+Google and HubSpot need an OAuth client of your own, which an admin sets with **Client** on the integration; the next
+sign-in uses it at once. Until then, only admins see it. Google also needs `gog` on the Shadow machine, and Slack `slackcli`,
 in the `PATH` of the Shadow service; install them, for example with `brew install gogcli` and
 `brew install shaharia-lab/tap/slackcli`. Then click **Reload** on Configuration in Settings. Shadow does not show
 these integrations without them.
 
-The sign-in pages of Google, Plaud, and T3 Code end at `https://localhost/shadow-sign-in?code=…`. Nothing answers at
+The sign-in pages of every integration but Slack end at `https://localhost/shadow-sign-in?code=…`. Nothing answers at
 that address, so the browser shows an error page. Copy the address from the address bar and paste it into Shadow.
 
 ## Google: Gmail, Calendar, and Drive
@@ -75,6 +75,31 @@ for 10 minutes reads each new or changed message once. Each person's own Slack a
 Agents search and read messages, channels, threads, unread messages, and canvases, find people, make drafts that you
 send from Slack, and send messages after you allow each one. Each command runs in a home of its own, which Shadow
 removes after it.
+
+## Notion, Linear, and Jira
+
+Each is the service's own MCP server: Notion at `https://mcp.notion.com/mcp`, Linear at `https://mcp.linear.app/mcp`,
+and Atlassian's Rovo MCP server at `https://mcp.atlassian.com/v1/mcp` for Jira and Confluence. Click **Connect**, sign
+in, and paste the address where the sign-in ends; Shadow registers itself with the server, so nobody makes an app.
+Agents get the server's tools with what your account may see and do: they search and read, and they create or change
+pages and issues when you ask. Tools that only post a comment for other people are hidden, because an MCP server's tool
+cannot wait for your approval. When the Atlassian sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server
+for the site.
+
+## HubSpot
+
+HubSpot's MCP server, `https://mcp.hubspot.com`, registers no clients. An admin of Shadow makes one once: in HubSpot,
+**Development › MCP Auth Apps**, create an app with the redirect URL `https://localhost/shadow-sign-in`, then paste its
+client ID and client secret with **Client** on HubSpot in Settings. Then each person clicks **Connect** and signs in
+to HubSpot. Agents read the CRM, with what the person may see.
+
+## Pipes and Engage
+
+Each Meiro Pipes instance has its own MCP server at `/mcp`. Enter the address of your instance, click **Continue**,
+sign in to Pipes, and select **Allow**. Agents read the configuration, profiles, events, dashboard metrics, profile
+reports, journey and delivery performance, and the product guide, with your access. A change is only a proposal: Pipes
+sends you a link, and the change happens after you approve it there. Settings › API tokens in Pipes lists Shadow under
+connected apps.
 
 ## T3 Code
 

@@ -1094,10 +1094,7 @@ export class Integrations {
             )
             .map(
               (tool): AccountTool => ({
-                // Slack's tools already start with `slack_`.
-                name: tool.name.startsWith(prefix)
-                  ? tool.name
-                  : `${prefix}${tool.name}`,
+                name: agentToolName(prefix, tool.name),
                 description: tool.description ?? "",
                 parameters: tool.inputSchema as TSchema,
                 ...(tool.outputSchema
@@ -1459,4 +1456,13 @@ function serverAddress(address: string | undefined): string {
     throw new HttpError(400, "Address must start with http:// or https://");
   }
   return url.href;
+}
+
+/**
+ * The name that agents call an MCP server's tool by: one that codemode can write as `tools.<name>`, with the connector's
+ * prefix once. Notion's `notion-search` is `notion_search`, and Slack's `slack_read` stays as it is.
+ */
+export function agentToolName(prefix: string, name: string): string {
+  const safe = name.replace(/[^A-Za-z0-9_]/g, "_");
+  return safe.startsWith(prefix) ? safe : `${prefix}${safe}`;
 }

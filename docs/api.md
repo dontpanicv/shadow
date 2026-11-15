@@ -449,9 +449,9 @@ uses the newest credential of that person, else the newest shared one, unless th
 `account` argument; `<integrationId>_accounts` lists them. The agents of a company get the tools of each integration
 that someone connected there. Secrets never leave the server.
 
-An integration with `connect: "sign-in"` is one or more MCP servers, such as Plaud's, or an API that
-Shadow's own tools call, such as Google's. With `address`, such as T3 Code, the MCP server runs on the person's own
-machine: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. Some servers let self-registered clients return only to
+An integration with `connect: "sign-in"` is one or more MCP servers, such as Notion's, Linear's, or Plaud's, or an API that
+Shadow's own tools call, such as Google's. With `address`, such as T3 Code or Pipes, the MCP server runs on the person's
+own machine or instance: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. Some servers let self-registered clients return only to
 loopback addresses, so the sign-in ends on an error page at
 `https://localhost/shadow-sign-in?code=…&state=…`. The person pastes that address, and `sign-in` keeps the tokens as a
 credential, labeled with the account's email when the server gives it. The agents then get the servers' tools as
@@ -460,7 +460,7 @@ shared sign-in, else with a private one; the list has only tool names and schema
 an access token that Shadow renews with the refresh token.
 
 An integration with `client` signs in with Shadow's own OAuth client, because its sign-in server does not register
-clients: Google. An admin sets the client in Settings; until then, only admins see the integration, and `connect`
+clients: Google and HubSpot. An admin sets the client in Settings; until then, only admins see the integration, and `connect`
 answers `400`.
 `docs/integrations.md` shows how to make the clients.
 
