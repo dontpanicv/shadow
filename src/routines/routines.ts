@@ -44,6 +44,8 @@ export interface Routine {
   readonly nextRunAt: number | null;
   /** The thread where its agent answers; it starts at the first run that reaches the agent. */
   readonly threadId: string | null;
+  /** Whether each answer also goes to the Slack channel that its channel copies. */
+  readonly postInSlack: boolean;
   readonly lastRun: RoutineRun | null;
 }
 
@@ -68,6 +70,7 @@ export interface RoutineInput {
   readonly place?: RoutinePlaceInput;
   readonly instructions: string;
   readonly script?: string | null;
+  readonly postInSlack?: boolean;
 }
 
 /** What a script run gave: the text for the agent, or `null` when it found nothing new. */
@@ -132,10 +135,11 @@ interface RoutineRow {
   readonly placeId: string | null;
   readonly placeEvent: PlaceEvent | null;
   readonly placePersonId: string | null;
+  readonly postInSlack: number;
 }
 
 const ROUTINE_COLUMNS =
-  "id, company_id AS companyId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, place_id AS placeId, place_event AS placeEvent, place_person_id AS placePersonId";
+  "id, company_id AS companyId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, place_id AS placeId, place_event AS placeEvent, place_person_id AS placePersonId, post_in_slack AS postInSlack";
 const RUN_COLUMNS =
   "r.id, r.routine_id AS routineId, t.name AS routineName, r.started_at AS startedAt, r.finished_at AS finishedAt, r.outcome, r.error";
 
@@ -157,7 +161,14 @@ export class Routines {
     private readonly integrations: Pick<Integrations, "tools">,
     private readonly threads: RoutineThreads,
     private readonly search: RoutineSearch,
-    private readonly places: RoutinePlaces
+    private readonly places: RoutinePlaces,
+    /** Called with each answer of a routine that posts in Slack. */
+    private readonly posted: (
+      routine: Pick<Routine, "id" | "name" | "channelId"> & {
+        readonly companyId: string;
+      },
+      answer: string
+    ) => void = () => undefined
   ) {}
 
   /**
@@ -346,7 +357,7 @@ export class Routines {
     const when = this.when(companyId, channelId, input, input.createdBy);
     this.database
       .query(
-        "INSERT OR IGNORE INTO routine (id, company_id, channel_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, place_id, place_event, place_person_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO routine (id, company_id, channel_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, place_id, place_event, place_person_id, post_in_slack, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         input.id,
@@ -361,6 +372,7 @@ export class Routines {
         when.placeId,
         when.placeEvent,
         when.placePersonId,
+        input.postInSlack ? 1 : 0,
         now
       );
     return this.routineOf(this.row(companyId, input.id));
@@ -410,7 +422,7 @@ export class Routines {
         : changes.script?.trim() || null;
     this.database
       .query(
-        "UPDATE routine SET name = ?, schedule = ?, instructions = ?, script = ?, enabled = ?, next_run_at = ?, created_by = ?, place_id = ?, place_event = ?, place_person_id = ? WHERE id = ?"
+        "UPDATE routine SET name = ?, schedule = ?, instructions = ?, script = ?, enabled = ?, next_run_at = ?, created_by = ?, place_id = ?, place_event = ?, place_person_id = ?, post_in_slack = ? WHERE id = ?"
       )
       .run(
         required(changes.name ?? routine.name, "Name"),
@@ -425,6 +437,7 @@ export class Routines {
         when.placeId,
         when.placeEvent,
         when.placePersonId,
+        (changes.postInSlack ?? routine.postInSlack) ? 1 : 0,
         routineId
       );
     return this.routineOf(this.row(companyId, routineId));
@@ -589,6 +602,7 @@ export class Routines {
         runTask(routine, this.placeLine(routine), null, startedAt),
         []
       );
+      this.post(routine, answer);
       return answer === null ? "quiet" : "posted";
     }
     const result =
@@ -627,7 +641,15 @@ export class Routines {
     this.database
       .query("UPDATE routine SET store = ? WHERE id = ?")
       .run(JSON.stringify(result.store), routine.id);
+    this.post(routine, answer);
     return answer === null ? "quiet" : "posted";
+  }
+
+  /** Gives an answer of a routine that posts in Slack to Slack; a quiet run posts nothing. */
+  private post(routine: RoutineRow, answer: string | null): void {
+    if (answer !== null && routine.postInSlack === 1) {
+      this.posted(routine, answer);
+    }
   }
 
   /**
@@ -934,6 +956,7 @@ export class Routines {
       enabled: row.enabled === 1,
       nextRunAt: row.enabled === 1 ? row.nextRunAt : null,
       threadId: row.threadId,
+      postInSlack: row.postInSlack === 1,
       lastRun,
     };
   }

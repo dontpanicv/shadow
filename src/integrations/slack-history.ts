@@ -176,6 +176,33 @@ export class SlackHistory {
     }
   }
 
+  /**
+   * The kept messages of a Slack thread, its first message and its replies, or with a null `rootTs` the newest
+   * messages of the channel that started no thread, oldest first: at most `limit`, and only after `afterTs`.
+   */
+  transcript(
+    companyId: string,
+    slackChannelId: string,
+    rootTs: string | null,
+    limit: number,
+    afterTs = "0"
+  ): { readonly ts: string; readonly author: string; readonly text: string }[] {
+    const rows = (
+      rootTs
+        ? this.database
+            .query(
+              "SELECT ts, author, text FROM slack_message WHERE company_id = ? AND slack_channel_id = ? AND (ts = ? OR thread_ts = ?) AND deleted_at IS NULL AND CAST(ts AS REAL) > CAST(? AS REAL) ORDER BY CAST(ts AS REAL) DESC LIMIT ?"
+            )
+            .all(companyId, slackChannelId, rootTs, rootTs, afterTs, limit)
+        : this.database
+            .query(
+              "SELECT ts, author, text FROM slack_message WHERE company_id = ? AND slack_channel_id = ? AND thread_ts IS NULL AND deleted_at IS NULL AND CAST(ts AS REAL) > CAST(? AS REAL) ORDER BY CAST(ts AS REAL) DESC LIMIT ?"
+            )
+            .all(companyId, slackChannelId, afterTs, limit)
+    ) as { ts: string; author: string; text: string }[];
+    return rows.reverse();
+  }
+
   private slackChannels(companyId: string): SlackChannelOf[] {
     return this.companies
       .channelsIn(companyId, null)
@@ -563,7 +590,7 @@ export class SlackHistory {
   }
 
   /** Slack's markup as plain Markdown: names for mentions, `#name` for channels, and links. */
-  private async plain(
+  async plain(
     companyId: string,
     token: string,
     text: string,

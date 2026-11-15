@@ -69,6 +69,7 @@ export type UsageSource =
   | "routine"
   | "reminder"
   | "intake"
+  | "slack"
   | "background";
 
 /** Whom a model call's cost counts for. */

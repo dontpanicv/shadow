@@ -12,6 +12,7 @@ import { placeApiRoutes } from "../places/api.ts";
 import { HttpError } from "../platform/errors.ts";
 import { routineApiRoutes } from "../routines/api.ts";
 import { searchApiRoutes } from "../search/api.ts";
+import { slackApiRoutes } from "../slack/api.ts";
 import { threadApiRoutes } from "../threads/api.ts";
 import { api } from "./api.ts";
 import type { Route } from "./http.ts";
@@ -48,6 +49,7 @@ export const allRoutes: readonly Route[] = [
   ...routineApiRoutes,
   ...agendaApiRoutes,
   ...feedbackApiRoutes,
+  ...slackApiRoutes,
   [
     "POST",
     "/api/v1/server/restart",

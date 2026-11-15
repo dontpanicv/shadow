@@ -51,6 +51,25 @@ export interface SlackBotStatus {
   readonly error: string | null;
 }
 
+/** A channel that copies a Slack channel, with its goal for ambient listening; null when Shadow only answers mentions. */
+export interface SlackGoal {
+  readonly channelId: string;
+  readonly channelName: string;
+  readonly wakeWhen: string | null;
+  readonly engagement: string | null;
+}
+
+/** What ambient listening decided about one Slack message, without its text. */
+export interface SlackDecision {
+  readonly channelName: string;
+  readonly slackChannelId: string;
+  readonly ts: string;
+  readonly reason: string;
+  readonly probability: number | null;
+  readonly outcome: string;
+  readonly at: number;
+}
+
 export interface Facts {
   readonly text: string;
 }
@@ -227,6 +246,8 @@ export interface Routine {
   /** Null while paused. */
   readonly nextRunAt: number | null;
   readonly threadId: string | null;
+  /** Whether each answer also goes to the Slack channel that its channel copies. */
+  readonly postInSlack: boolean;
   readonly lastRun: RoutineRun | null;
 }
 
@@ -341,6 +362,7 @@ export type UsageSource =
   | "routine"
   | "reminder"
   | "intake"
+  | "slack"
   | "background";
 
 export interface Usage {

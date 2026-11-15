@@ -24,6 +24,7 @@ import type { Place } from "../src/places/places.ts";
 import type { User } from "../src/platform/auth.ts";
 import type { Routine, RoutineRun } from "../src/routines/routines.ts";
 import type { RecentSearch, SearchResponse } from "../src/search/search.ts";
+import type { SlackDecision, SlackGoal } from "../src/slack/slack.ts";
 import type {
   Brief,
   LearnedItem,
@@ -48,6 +49,8 @@ const checks: true[] = [
   true satisfies Fits<Channel, Web.Channel>,
   true satisfies Fits<Member, Web.Member>,
   true satisfies Fits<SlackBotStatus, Web.SlackBotStatus>,
+  true satisfies Fits<SlackGoal, Web.SlackGoal>,
+  true satisfies Fits<SlackDecision, Web.SlackDecision>,
   true satisfies Fits<Brief, Web.Brief>,
   true satisfies Fits<Message, Web.Message>,
   true satisfies Fits<SavedFile, Web.SavedFile>,

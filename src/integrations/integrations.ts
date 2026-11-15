@@ -1466,3 +1466,9 @@ export function agentToolName(prefix: string, name: string): string {
   const safe = name.replace(/[^A-Za-z0-9_]/g, "_");
   return safe.startsWith(prefix) ? safe : `${prefix}${safe}`;
 }
+
+export type {
+  SlackBot,
+  SlackClient,
+  SlackSurfacePort,
+} from "./slack-bot.ts";

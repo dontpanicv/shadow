@@ -257,6 +257,12 @@ const NAMESPACES: CodemodeNamespace[] = [
     description: "One-time reminders for people at a time or at a place.",
   },
   {
+    name: "notices",
+    prefix: "notices_",
+    description:
+      "Tell one member something privately, in their inbox and their Slack DM, such as what a Slack channel asked of them.",
+  },
+  {
     name: "feedback",
     prefix: "feedback_",
     description:
@@ -330,7 +336,7 @@ interface Task extends JsonObject {
   readonly requesterId: string | null;
   readonly requesterName: string | null;
   /** What gave the work; tasks from before it was kept have none. */
-  readonly source: "routine" | "reminder" | "intake" | null;
+  readonly source: "routine" | "reminder" | "intake" | "slack" | null;
   readonly text: string | null;
   readonly files: FileRef[];
 }
@@ -1023,7 +1029,7 @@ export class Threads {
     requestId: string,
     notify: readonly string[] | "everyone",
     requesterId: string | null,
-    source: "routine" | "reminder",
+    source: "routine" | "reminder" | "slack",
     files: readonly FileRef[] = []
   ): Promise<string | null> {
     const task = this.taskFor(thread, requesterId, source, files);

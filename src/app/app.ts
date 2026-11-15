@@ -10,7 +10,7 @@ import { FeedbackReports } from "../feedback/feedback.ts";
 import { Intake } from "../intake/intake.ts";
 import type { Connector } from "../integrations/integrations.ts";
 import { Integrations } from "../integrations/integrations.ts";
-import { SlackBot } from "../integrations/slack-bot.ts";
+import { SlackBot, type SlackBotOptions } from "../integrations/slack-bot.ts";
 import { Llm, type LlmProvider } from "../llm/llm.ts";
 import { transcribeRequirements } from "../llm/transcribe.ts";
 import { Notifications } from "../notifications/notifications.ts";
@@ -26,6 +26,8 @@ import { Routines } from "../routines/routines.ts";
 import type { Embedder } from "../search/embedder.ts";
 import { extractRequirements, jpeg, readText } from "../search/extract.ts";
 import { Indexer, RecentSearches } from "../search/search.ts";
+import { SlackSurface } from "../slack/slack.ts";
+import { noticeTools } from "../slack/tools.ts";
 import { Threads } from "../threads/threads.ts";
 
 export interface App {
@@ -48,6 +50,7 @@ export interface App {
   readonly intake: Intake;
   readonly slackBot: SlackBot;
   readonly feedback: FeedbackReports;
+  readonly slack: SlackSurface;
 }
 
 /** Everything the modules need from this machine, checked before Shadow starts. */
@@ -68,7 +71,9 @@ export async function createApp(
   secrets?: Secrets,
   embedder: Embedder | null = null,
   /** The connectors; tests give their own. */
-  catalog?: readonly Connector[]
+  catalog?: readonly Connector[],
+  /** Slack's network and socket; tests give a fake Slack. */
+  slackOptions?: SlackBotOptions
 ): Promise<App> {
   mkdirSync(config.dataDirectory, { recursive: true });
   const resolvedSecrets =
@@ -154,6 +159,7 @@ export async function createApp(
         ...reminders.tools(companyId),
         ...intake.tools(companyId),
         ...feedback.tools(companyId),
+        ...noticeTools(companies, notifications, companyId),
       ],
       automations: (companyId, personId) =>
         agenda.automations(companyId, personId),
@@ -177,7 +183,14 @@ export async function createApp(
     integrations,
     threads,
     indexer,
-    places
+    places,
+    (routine, answer) => {
+      slack
+        .postRoutine(routine, answer)
+        .catch((error: unknown) =>
+          console.error("posting a routine in Slack failed", error)
+        );
+    }
   );
   const reminders = new Reminders(database, companies, threads, places);
   const agenda = new Agenda(
@@ -223,9 +236,22 @@ export async function createApp(
       },
       brief: (companyId, channelId, messages) =>
         threads.briefFromSlack(companyId, channelId, messages),
-    }
+    },
+    slackOptions
   );
   const feedback = new FeedbackReports(database, companies, threads);
+  const slack = new SlackSurface(
+    database,
+    slackBot,
+    companies,
+    threads,
+    llm,
+    notifications,
+    agenda,
+    artifacts,
+    feedback,
+    config.baseUrl
+  );
   return {
     config,
     database,
@@ -246,10 +272,12 @@ export async function createApp(
     intake,
     slackBot,
     feedback,
+    slack,
   };
 }
 
 export async function closeApp(app: App): Promise<void> {
+  await app.slack.close();
   await app.slackBot.close();
   await app.intake.close();
   app.reminders.close();

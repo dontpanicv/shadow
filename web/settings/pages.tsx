@@ -10,6 +10,8 @@ import {
   FactsSection,
   MembersSection,
   SlackBotSection,
+  SlackDecisionsSection,
+  SlackGoalsSection,
 } from "../companies/settings.tsx";
 import { FloatingSidebarButton, Shell } from "../companies/shell.tsx";
 import { IntegrationsSection } from "../integrations/section.tsx";
@@ -43,6 +45,12 @@ export function CompanySettingsPage() {
         <PageContent title={company.name}>
           <PageSection title="Slack">
             <SlackBotSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Listening">
+            <SlackGoalsSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Listening decisions">
+            <SlackDecisionsSection companyId={companyId} />
           </PageSection>
           <PageSection title="Members">
             <MembersSection company={company} />

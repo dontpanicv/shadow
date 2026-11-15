@@ -47,6 +47,11 @@ const COLUMNS =
 export class Notifications {
   /** How many open screens of each person show each thread, by `<user> <thread>`. */
   private readonly watching = new Map<string, number>();
+  /** Who also delivers a notification that its person has not seen, such as Slack as a DM. */
+  private readonly deliveries: ((
+    notification: Notification,
+    userId: string
+  ) => void)[] = [];
 
   constructor(
     private readonly database: Database,
@@ -97,7 +102,19 @@ export class Notifications {
         notification.createdAt,
         notification.readAt
       );
+    if (!seen) {
+      for (const deliver of this.deliveries) {
+        deliver(notification, input.userId);
+      }
+    }
     return notification;
+  }
+
+  /** Also delivers each notification that its person has not seen, such as in a Slack DM. */
+  onDelivery(
+    deliver: (notification: Notification, userId: string) => void
+  ): void {
+    this.deliveries.push(deliver);
   }
 
   inbox(companyId: string, user: User): Inbox {

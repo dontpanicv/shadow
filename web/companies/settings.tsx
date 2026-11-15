@@ -1,10 +1,19 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
-import type { Company, Facts, Role, SlackBotStatus } from "../app/types.ts";
+import type {
+  Company,
+  Facts,
+  Role,
+  SlackBotStatus,
+  SlackGoal,
+} from "../app/types.ts";
 import {
   Avatar,
+  Badge,
   Button,
+  Empty,
   Select,
   SettingsCard,
   SettingsRow,
@@ -17,6 +26,8 @@ import {
   meQuery,
   refreshCompany,
   slackBotQuery,
+  slackDecisionsQuery,
+  slackGoalsQuery,
 } from "./data.ts";
 
 /** The name of the company, for its admins. */
@@ -261,4 +272,141 @@ const DISCONNECTED: SlackBotStatus = {
   team: null,
   syncedAt: null,
   error: null,
+};
+
+/**
+ * The goal of each Slack channel: where Shadow listens without being asked, and how it takes part. A channel without a
+ * goal gets answers only when someone mentions Shadow.
+ */
+export function SlackGoalsSection({ companyId }: { companyId: string }) {
+  const goals = useQuery(slackGoalsQuery(companyId)).data ?? [];
+  if (goals.length === 0) {
+    return <Empty title="No Slack channels yet" />;
+  }
+  return (
+    <SettingsCard>
+      {goals.map((goal) => (
+        <GoalRow companyId={companyId} goal={goal} key={goal.channelId} />
+      ))}
+    </SettingsCard>
+  );
+}
+
+function GoalRow({ companyId, goal }: { companyId: string; goal: SlackGoal }) {
+  const path = `/companies/${companyId}/slack/goals/${goal.channelId}`;
+  const [draft, setDraft] = useState({
+    wakeWhen: goal.wakeWhen ?? "",
+    engagement: goal.engagement ?? "",
+  });
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      queryKey: slackGoalsQuery(companyId).queryKey,
+    });
+  const save = useMutation({
+    mutationFn: () => request(path, { method: "PUT", body: draft }),
+    onSuccess: () => {
+      showToast("success", `Shadow listens in #${goal.channelName}`);
+      return refresh();
+    },
+    onError: showError,
+  });
+  const remove = useMutation({
+    mutationFn: () => request(path, { method: "DELETE" }),
+    onSuccess: () => {
+      setDraft({ wakeWhen: "", engagement: "" });
+      return refresh();
+    },
+    onError: showError,
+  });
+  const suggest = useMutation({
+    mutationFn: () =>
+      request<{ wakeWhen: string; engagement: string }>(`${path}/suggest`, {
+        method: "POST",
+      }),
+    onSuccess: setDraft,
+    onError: showError,
+  });
+  return (
+    <form
+      aria-busy={save.isPending || suggest.isPending || undefined}
+      className="settings-text-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <SettingsRow label={`#${goal.channelName}`}>
+        <Button
+          label="Suggest"
+          onClick={() => suggest.mutate()}
+          variant="ghost"
+        />
+        {goal.wakeWhen ? (
+          <Button
+            label="Stop listening"
+            onClick={() => remove.mutate()}
+            variant="ghost"
+          />
+        ) : null}
+      </SettingsRow>
+      <input
+        aria-label={`When Shadow takes part in #${goal.channelName}`}
+        className="input"
+        onChange={(event) =>
+          setDraft({ ...draft, wakeWhen: event.target.value })
+        }
+        placeholder="Wake when: questions about invoices and payments"
+        value={draft.wakeWhen}
+      />
+      <input
+        aria-label={`How Shadow takes part in #${goal.channelName}`}
+        className="input"
+        onChange={(event) =>
+          setDraft({ ...draft, engagement: event.target.value })
+        }
+        placeholder="Take part by: answering briefly, with the source"
+        value={draft.engagement}
+      />
+      <Button
+        disabled={!(draft.wakeWhen.trim() && draft.engagement.trim())}
+        label="Save"
+        type="submit"
+      />
+    </form>
+  );
+}
+
+/** What ambient listening decided lately, newest first, for admins to tune the goals; never the text of messages. */
+export function SlackDecisionsSection({ companyId }: { companyId: string }) {
+  const decisions = useQuery(slackDecisionsQuery(companyId)).data ?? [];
+  if (decisions.length === 0) {
+    return <Empty title="Nothing yet" />;
+  }
+  return (
+    <SettingsCard>
+      {decisions.slice(0, 30).map((decision) => (
+        <SettingsRow
+          compact
+          description={`${dayTime(decision.at)}${
+            decision.probability === null
+              ? ""
+              : ` · ${Math.round(decision.probability * 100)}%`
+          }`}
+          key={`${decision.slackChannelId}-${decision.ts}-${decision.at}`}
+          label={`#${decision.channelName}`}
+        >
+          <Badge label={OUTCOMES[decision.outcome] ?? decision.outcome} />
+        </SettingsRow>
+      ))}
+    </SettingsCard>
+  );
+}
+
+const OUTCOMES: Record<string, string> = {
+  skipped: "Skipped",
+  quiet: "Stayed quiet",
+  replied: "Replied",
+  capped: "Hour limit",
+  muted: "Muted",
+  failed: "Failed",
 };

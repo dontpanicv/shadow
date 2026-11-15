@@ -677,6 +677,50 @@ export class Companies {
     };
   }
 
+  /**
+   * The member with this email, for a person who writes to Shadow from Slack: someone with an allowed email who is not
+   * a member yet becomes one, with an account made for them if they never signed in. Null for an email that is not
+   * allowed.
+   */
+  async memberByEmail(
+    companyId: string,
+    email: string,
+    name: string
+  ): Promise<User | null> {
+    const find = () =>
+      this.database
+        .query("SELECT id, name, email FROM user WHERE lower(email) = lower(?)")
+        .get(email) as User | null;
+    let person = find();
+    if (!person) {
+      const context = await this.auth.$context;
+      // Making the account checks `allowed_emails`, as a sign-in does.
+      const made = await context.internalAdapter
+        .createUser(
+          { email: email.toLowerCase(), name, emailVerified: true },
+          { method: "slack" }
+        )
+        .catch(() => null);
+      if (!made) {
+        return null;
+      }
+      person = find();
+    }
+    if (!person) {
+      return null;
+    }
+    const member = this.database
+      .query("SELECT 1 FROM member WHERE organizationId = ? AND userId = ?")
+      .get(companyId, person.id);
+    if (!member) {
+      await this.auth.api.addMember({
+        body: { userId: person.id, organizationId: companyId, role: "member" },
+      });
+      this.memberAdded(companyId);
+    }
+    return person;
+  }
+
   /** Makes a member an admin or a member, for an admin; a company keeps one admin at least. */
   setRole(companyId: string, user: User, memberId: string, role: Role): Member {
     this.requireAdmin(companyId, user);

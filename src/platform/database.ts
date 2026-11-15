@@ -728,6 +728,62 @@ const migrations = [
   ALTER TABLE slack_bot ADD COLUMN listened_at INTEGER;
   ALTER TABLE slack_bot ADD COLUMN checked_at INTEGER;
   ALTER TABLE slack_day ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0;`,
+  // integrations: the bot's own Slack user, whose mentions wake Shadow. routines: a routine whose answers Shadow also
+  // posts in the Slack channel of its channel. slack: who each Slack user is in Shadow; the Shadow thread of each Slack
+  // thread or DM, which Shadow follows until `followed_until` unless muted; each answer that Shadow is posting, so a
+  // restart finishes it; each channel's goal; and the decisions of ambient listening, without the text of messages.
+  `ALTER TABLE slack_bot ADD COLUMN bot_user_id TEXT;
+  ALTER TABLE routine ADD COLUMN post_in_slack INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE slack_member (
+    company_id TEXT NOT NULL,
+    slack_user_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    PRIMARY KEY (company_id, slack_user_id)
+  );
+  CREATE TABLE slack_conversation (
+    company_id TEXT NOT NULL,
+    slack_channel_id TEXT NOT NULL,
+    root_ts TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    followed_until INTEGER,
+    muted INTEGER NOT NULL DEFAULT 0,
+    last_reply_ts TEXT,
+    PRIMARY KEY (company_id, slack_channel_id, root_ts)
+  );
+  CREATE TABLE slack_reply (
+    id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    slack_channel_id TEXT NOT NULL,
+    root_ts TEXT,
+    message_ts TEXT NOT NULL,
+    after_message_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    done_at INTEGER
+  );
+  CREATE TABLE slack_goal (
+    company_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    wake_when TEXT NOT NULL,
+    engagement TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    PRIMARY KEY (company_id, channel_id)
+  );
+  CREATE TABLE slack_decision (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    slack_channel_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    probability REAL,
+    outcome TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX slack_decision_company ON slack_decision (company_id, at);`,
 ];
 
 export function openDatabase(path: string): Database {

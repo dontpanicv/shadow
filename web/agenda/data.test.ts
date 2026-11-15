@@ -15,6 +15,7 @@ function routine(id: string, fields: Partial<Routine>): Routine {
     enabled: true,
     nextRunAt: null,
     threadId: null,
+    postInSlack: false,
     lastRun: null,
     ...fields,
   };

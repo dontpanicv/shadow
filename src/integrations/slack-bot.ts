@@ -46,12 +46,56 @@ type BotCompanies = Pick<
 
 interface BotRow {
   token: Uint8Array;
+  bot_user_id: string | null;
   app_token: Uint8Array | null;
   team_name: string;
   synced_at: number | null;
   listened_at: number | null;
   checked_at: number | null;
   error: string | null;
+}
+
+/**
+ * What the bot gives the module that talks in Slack: the events of conversations, after the mirror kept them, and the
+ * clicks on Shadow's buttons. `event` returns quickly; long work runs on after it.
+ */
+export interface SlackSurfacePort {
+  readonly event: (
+    companyId: string,
+    event: Record<string, unknown>
+  ) => Promise<void>;
+  readonly interaction: (
+    companyId: string,
+    payload: Record<string, unknown>
+  ) => void;
+}
+
+/** Slack's Web API for a company's bot, for the module that talks in Slack; the token stays inside. */
+export interface SlackClient {
+  /** The bot's own Slack user, whose mentions wake Shadow and whose messages it skips. */
+  readonly botUserId: string | null;
+  readonly call: (
+    method: string,
+    params: Record<string, string>
+  ) => Promise<Record<string, unknown>>;
+  readonly post: (
+    method: string,
+    body: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
+  /** Slack's markup as plain Markdown, with people's names. */
+  readonly plain: (text: string) => Promise<string>;
+  /** The kept messages of a thread, or of the channel for a null `rootTs`; see `SlackHistory.transcript`. */
+  readonly transcript: (
+    slackChannelId: string,
+    rootTs: string | null,
+    limit: number,
+    afterTs?: string
+  ) => {
+    readonly ts: string;
+    readonly author: string;
+    readonly text: string;
+  }[];
+  readonly download: (url: string) => Promise<Uint8Array>;
 }
 
 /** How a test replaces the network and the clock's work. */
@@ -82,6 +126,7 @@ export class SlackBot {
   private readonly timers: ReturnType<typeof setInterval>[] = [];
   private readonly stopping = new AbortController();
   private readonly connectTo: ((url: string) => SocketLike) | undefined;
+  private surface: SlackSurfacePort | null = null;
 
   constructor(
     private readonly database: Database,
@@ -95,6 +140,36 @@ export class SlackBot {
     this.api = new SlackApi(options.fetch);
     this.history = new SlackHistory(database, this.api, companies, ports);
     this.connectTo = options.connectTo;
+  }
+
+  /** Gives the conversations of Slack to the module that talks there. */
+  attach(surface: SlackSurfacePort): void {
+    this.surface = surface;
+  }
+
+  /** The Web API of the company's bot; null without a connected bot. */
+  client(companyId: string): SlackClient | null {
+    const row = this.row(companyId);
+    if (!row) {
+      return null;
+    }
+    const token = this.secrets.decrypt(row.token);
+    const { signal } = this.stopping;
+    return {
+      botUserId: row.bot_user_id,
+      call: (method, params) => this.api.call(token, method, params, signal),
+      post: (method, body) => this.api.post(token, method, body, signal),
+      plain: (text) => this.history.plain(companyId, token, text, signal),
+      transcript: (slackChannelId, rootTs, limit, afterTs) =>
+        this.history.transcript(
+          companyId,
+          slackChannelId,
+          rootTs,
+          limit,
+          afterTs
+        ),
+      download: (url) => this.api.download(token, url, signal),
+    };
   }
 
   status(companyId: string, user: User): SlackBotStatus {
@@ -147,7 +222,7 @@ export class SlackBot {
     });
     this.database
       .query(
-        "INSERT INTO slack_bot (company_id, token, app_token, team_id, team_name, connected_by, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id) DO UPDATE SET token = excluded.token, app_token = excluded.app_token, team_id = excluded.team_id, team_name = excluded.team_name, connected_by = excluded.connected_by, connected_at = excluded.connected_at, synced_at = NULL, listened_at = NULL, checked_at = NULL, error = NULL, deleted_at = NULL"
+        "INSERT INTO slack_bot (company_id, token, app_token, team_id, team_name, bot_user_id, connected_by, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id) DO UPDATE SET token = excluded.token, app_token = excluded.app_token, team_id = excluded.team_id, team_name = excluded.team_name, bot_user_id = excluded.bot_user_id, connected_by = excluded.connected_by, connected_at = excluded.connected_at, synced_at = NULL, listened_at = NULL, checked_at = NULL, error = NULL, deleted_at = NULL"
       )
       .run(
         companyId,
@@ -155,6 +230,7 @@ export class SlackBot {
         this.secrets.encrypt(app),
         String(team.team_id),
         String(team.team),
+        team.user_id ? String(team.user_id) : null,
         user.id,
         Date.now()
       );
@@ -230,6 +306,7 @@ export class SlackBot {
           this.catchUp(companyId);
         },
         event: (event) => this.event(companyId, event),
+        interaction: (payload) => this.surface?.interaction(companyId, payload),
         lost: (error) => {
           this.listening.delete(companyId);
           this.fail(companyId, error);
@@ -283,6 +360,13 @@ export class SlackBot {
           event as SlackMessageEvent,
           this.stopping.signal
         )
+      );
+    }
+    // After the mirror kept a message, the module that talks in Slack sees it, and the other conversation events.
+    if (this.surface && !CHANNEL_EVENTS.has(event.type)) {
+      const { surface } = this;
+      this.enqueue(companyId, () =>
+        surface.event(companyId, event as Record<string, unknown>)
       );
     }
   }
@@ -389,7 +473,7 @@ export class SlackBot {
   private row(companyId: string): BotRow | null {
     return this.database
       .query(
-        "SELECT token, app_token, team_name, synced_at, listened_at, checked_at, error FROM slack_bot WHERE company_id = ? AND deleted_at IS NULL"
+        "SELECT token, app_token, bot_user_id, team_name, synced_at, listened_at, checked_at, error FROM slack_bot WHERE company_id = ? AND deleted_at IS NULL"
       )
       .get(companyId) as BotRow | null;
   }

@@ -31,6 +31,7 @@ const server = Layer.unwrap(
       app.reminders.start();
       app.intake.start();
       app.slackBot.start();
+      app.slack.start();
       app.pictures.importGoogle();
       return app;
     }),

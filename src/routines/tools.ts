@@ -166,6 +166,12 @@ export function routineTools(
             description: "The channel name; default this thread's channel",
           })
         ),
+        post_in_slack: Type.Optional(
+          Type.Boolean({
+            description:
+              "Also post each answer in the Slack channel that the channel copies, such as when it was asked for in Slack. Default false",
+          })
+        ),
       }),
       // The id comes from the task, so a rerun after a crash finds the routine it made before.
       replay: "safe",
@@ -182,6 +188,7 @@ export function routineTools(
           place: placeOf(args, requester?.id ?? null),
           instructions: args.instructions,
           script: args.script,
+          postInSlack: args.post_in_slack,
           id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           createdBy: requester?.id ?? "shadow",
         });
@@ -212,10 +219,18 @@ export function routineTools(
           })
         ),
         enabled: Type.Optional(Type.Boolean()),
+        post_in_slack: Type.Optional(Type.Boolean()),
       }),
       replay: "safe",
       execute: async (
-        { routine: routineId, place, event, person, ...changes },
+        {
+          routine: routineId,
+          place,
+          event,
+          person,
+          post_in_slack: postInSlack,
+          ...changes
+        },
         api
       ) => {
         const requester = await threads.requester(
@@ -228,6 +243,7 @@ export function routineTools(
           routineId,
           {
             ...changes,
+            postInSlack,
             place: placeOf({ place, event, person }, requester?.id ?? null),
           },
           requester?.id ?? "shadow"

@@ -48,15 +48,13 @@ sign out of Slack in that browser.
 The channels that every member sees copy the public channels of the company's Slack; nobody makes them by hand. An
 admin connects the bot once in Company settings:
 
-1. At [api.slack.com/apps](https://api.slack.com/apps), make an app from scratch in the company's Slack workspace.
-   Keep it an app of your own workspace: Slack gives such an app the normal limits on reading history.
-2. Under **Socket Mode**, turn it on, and make an app-level token with the scope `connections:write` (`xapp-…`).
+1. At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App › From a manifest**, select the
+   company's Slack workspace, and paste [slack-app-manifest.json](slack-app-manifest.json), with Shadow's own
+   hostname in `unfurl_domains`. The manifest turns on Socket Mode, interactivity, the Home tab, and the scopes and
+   events below. Keep it an app of your own workspace: Slack gives such an app the normal limits on reading history.
+2. Under **Basic Information › App-Level Tokens**, make a token with the scope `connections:write` (`xapp-…`).
    Shadow opens the connection to Slack, so it needs no public address.
-3. Under **OAuth & Permissions**, add the bot token scopes `channels:read`, `channels:history`, `channels:join`,
-   `files:read`, and `users:read`.
-4. Under **Event Subscriptions**, turn events on, and subscribe to the bot events `message.channels`,
-   `channel_created`, `channel_rename`, `channel_archive`, `channel_unarchive`, and `channel_deleted`.
-5. Install the app to the Slack workspace, copy the **Bot User OAuth Token** (`xoxb-…`), and paste both tokens under
+3. Install the app to the Slack workspace, copy the **Bot User OAuth Token** (`xoxb-…`), and paste both tokens under
    **Slack** in Company settings.
 
 Shadow checks both tokens with Slack, keeps them encrypted, lists the public channels at once, and then listens: Slack
@@ -70,7 +68,33 @@ under it, and its attachments as files of the channel that it links. Then each n
 comes as an event; the days they change are written again within a minute, only when their text changes, and older
 versions stay. A new connection, as after a restart, reads only what came since the last event, and once a day Shadow
 reads the last 30 days again, for an event that never came. Search finds the files, and the brief of a channel quiet
-for 10 minutes reads each new or changed message once. Each person's own Slack account below stays theirs.
+for 10 minutes reads each new or changed message once.
+
+### Shadow in Slack
+
+People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
+
+- **Mention it** in a public channel: the Slack thread becomes a Shadow thread of that channel, which starts with what
+  the Slack thread said before. Shadow shows what it does now ("Google mail search…") with a Stop button, and then puts
+  its answer in place, with a link to the thread in Shadow and feedback buttons. Shadow follows the thread for 7 days.
+- **DM it**: a DM goes to the person's own thread, which hands work on to the channels, as on the web.
+- **Who**: a Slack user whose email is in `allowed_emails` becomes a member at their first message; others get one
+  answer that they are not allowed. Private channels and group DMs come later.
+- **Listening**: an admin gives a channel a goal in Company settings: when Shadow wakes, and how it takes part
+  (**Suggest** writes one from the channel's brief). The goal is the consent to listen there. Each new message at the
+  top of that channel, and each reply in a thread that Shadow follows, goes through a cheap check with the fast model:
+  a message that is clearly not for Shadow costs nothing more. A message that passes starts a turn, which answers only
+  when a reply clearly helps, else stays quiet, or tells one person privately. Shadow posts at most 4 such replies an
+  hour in a channel, never acts unasked, and stops in a thread that someone mutes. **Listening decisions** shows each
+  decision without the text of messages.
+- **Approvals**: an action that waits for a person's approval, such as sending mail, asks them in a Slack DM with
+  Allow and Deny.
+- **Notices**: each notification that a person has not seen, such as a reminder or the morning review, comes as a DM
+  too. A routine with `post_in_slack` posts each answer in its channel's Slack channel; a quiet run posts nothing.
+- **Home tab**: what waits for the person, and their routines and reminders.
+- **Links**: a link to an artifact shows its title.
+
+Each person's own Slack account below stays theirs.
 
 Agents search and read messages, channels, threads, unread messages, and canvases, find people, make drafts that you
 send from Slack, and send messages after you allow each one. Each command runs in a home of its own, which Shadow

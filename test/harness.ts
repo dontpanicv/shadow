@@ -11,6 +11,7 @@ import { type App, closeApp, createApp } from "../src/app/app.ts";
 import { routes } from "../src/app/http.ts";
 import { allRoutes } from "../src/app/routes.ts";
 import type { Connector } from "../src/integrations/integrations.ts";
+import type { SlackBotOptions } from "../src/integrations/slack-bot.ts";
 import { Secrets } from "../src/platform/secrets.ts";
 
 export interface CallOptions {
@@ -32,7 +33,10 @@ export type TestApp = Awaited<ReturnType<typeof startTestApp>>;
  * await shadow.close();
  */
 export async function startTestApp(
-  setup: { readonly catalog?: readonly Connector[] } = {}
+  setup: {
+    readonly catalog?: readonly Connector[];
+    readonly slack?: SlackBotOptions;
+  } = {}
 ) {
   const faux = fauxProvider();
   const model = faux.getModel();
@@ -58,7 +62,8 @@ export async function startTestApp(
     { provider: faux.provider, name: "Test model", defaultModel: model.id },
     Secrets.forTests(),
     null,
-    setup.catalog
+    setup.catalog,
+    setup.slack
   );
   const { handler, dispose } = HttpRouter.toWebHandler(routes(app, allRoutes), {
     disableLogger: true,

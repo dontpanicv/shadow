@@ -11,6 +11,8 @@ import type {
   Inbox,
   Member,
   SlackBotStatus,
+  SlackDecision,
+  SlackGoal,
   ThreadSummary,
   User,
 } from "../app/types.ts";
@@ -172,6 +174,26 @@ export function usePicture(
 }
 
 /** The Slack bot of a company, for its admins. */
+/** The Slack channels with their goals for ambient listening, for admins. */
+export function slackGoalsQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "slack", "goals"],
+    queryFn: ({ signal }) =>
+      request<SlackGoal[]>(`/companies/${companyId}/slack/goals`, { signal }),
+  });
+}
+
+/** What ambient listening decided lately, without the text of messages, for admins. */
+export function slackDecisionsQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "slack", "decisions"],
+    queryFn: ({ signal }) =>
+      request<SlackDecision[]>(`/companies/${companyId}/slack/decisions`, {
+        signal,
+      }),
+  });
+}
+
 export function slackBotQuery(companyId: string) {
   return queryOptions({
     queryKey: ["companies", companyId, "slack-bot"],

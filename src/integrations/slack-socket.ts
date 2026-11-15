@@ -8,6 +8,8 @@ export interface SlackSocketHandlers {
   readonly hello: () => void;
   /** An event of the Events API, such as `message` or `channel_rename`. */
   readonly event: (event: { readonly type: string }) => void;
+  /** A click on a button of a message that Shadow posted, with Slack's whole payload. */
+  readonly interaction: (payload: Record<string, unknown>) => void;
   /** The connection failed or closed; it connects again by itself. */
   readonly lost: (error: unknown) => void;
 }
@@ -80,7 +82,7 @@ export class SlackSocket {
     const envelope = JSON.parse(data) as {
       envelope_id?: string;
       type?: string;
-      payload?: { event?: { type: string } };
+      payload?: { event?: { type: string } } & Record<string, unknown>;
     };
     if (envelope.envelope_id) {
       socket.send(JSON.stringify({ envelope_id: envelope.envelope_id }));
@@ -90,6 +92,8 @@ export class SlackSocket {
       this.handlers.hello();
     } else if (envelope.type === "events_api" && envelope.payload?.event) {
       this.handlers.event(envelope.payload.event);
+    } else if (envelope.type === "interactive" && envelope.payload) {
+      this.handlers.interaction(envelope.payload as Record<string, unknown>);
     } else if (envelope.type === "disconnect") {
       // Slack refreshes connections now and then: the next one opens at once.
       this.socket = null;

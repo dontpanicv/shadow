@@ -656,6 +656,20 @@ needs, or when they see an easier way, they report it once and continue. A repor
 its turn. An admin reads every report, also those from another person's private turns, without the link to
 a thread they do not see; the agent describes Shadow, not the person.
 
+### Slack (`src/slack/`)
+
+Shadow's second app is the company's Slack. A mention in a public channel, or a DM, reaches Shadow through the Slack
+bot's Socket Mode connection; `docs/integrations.md` says what people see there. These routes are for admins, `403` for
+others.
+
+| Request | Body | Response |
+| --- | --- | --- |
+| `GET /api/v1/companies/:companyId/slack/goals` | | `SlackGoal[]`: `{ channelId, channelName, wakeWhen: string \| null, engagement: string \| null }`, each channel that copies a Slack channel, with its goal for listening; null where Shadow answers only mentions |
+| `PUT /api/v1/companies/:companyId/slack/goals/:channelId` | `{ wakeWhen, engagement }` | `SlackGoal`; the goal is the consent for Shadow to listen in the channel. `404` for a channel that copies no Slack channel |
+| `DELETE /api/v1/companies/:companyId/slack/goals/:channelId` | | `204`; Shadow stops listening there and still answers mentions |
+| `POST /api/v1/companies/:companyId/slack/goals/:channelId/suggest` | | `{ wakeWhen, engagement }` that the fast model writes from the channel's brief; nothing is saved |
+| `GET /api/v1/companies/:companyId/slack/decisions` | | `SlackDecision[]`: `{ channelName, slackChannelId, ts, reason, probability, outcome, at }`, the 100 newest decisions of listening, newest first, never with the text of a message. `outcome`: `skipped`, `quiet`, `replied`, `capped`, `muted`, or `failed` |
+
 ### LLM (`src/llm/`)
 
 | Request | Body | Response |

@@ -40,6 +40,10 @@ addresses, or code and data from employers or clients.
 - Agents make and change reminders with tools; a person sees their pending ones in Upcoming and cancels one there.
 - Shadow stays quiet by default: background work notifies a person only when they must act or asked for it, and a
   routine or reminder answers `QUIET` when nothing needs anyone.
+- In Slack (`src/slack/`), a mention or a DM is a person's request, and an admin's goal for a channel is the consent
+  for Shadow to listen there: a cheap check, then a turn in the shared realm that answers only when a reply helps,
+  else `QUIET` or `notices_tell` to one person. Ambient turns never act, post at most `AMBIENT_PER_HOUR` replies in a
+  channel, follow a thread for `FOLLOW_MS`, stop when muted, and log decisions without message text.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
   retain useful context and infer future checks. A useful development adds a visible source message and files to the
@@ -92,7 +96,7 @@ addresses, or code and data from employers or clients.
 ## Modules
 
 - `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `places`, `artifacts`,
-  `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`) holds one domain: its service, routes, and tests. `src/platform/`
+  `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`) holds one domain: its service, routes, and tests. `src/platform/`
   is shared code that knows no domain; `src/app/` composes the services and holds the route helpers.
 - A module uses only the modules before it in that list, through their `<module>.ts` file, or their `pages.ts` from
   routes. A module reads only the tables it owns. `test/architecture.test.ts` enforces these rules;

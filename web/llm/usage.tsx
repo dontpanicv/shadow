@@ -23,6 +23,7 @@ const SOURCES: Record<UsageSource, string> = {
   routine: "Routines",
   reminder: "Reminders",
   intake: "Accounts",
+  slack: "Slack listening",
   background: "Background work",
 };
 

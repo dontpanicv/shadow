@@ -45,6 +45,42 @@ export class SlackApi {
     }
   }
 
+  /**
+   * The answer of a method that writes, such as chat.postMessage, with a JSON body that can hold blocks; it waits when
+   * Slack asks for fewer requests, as `call` does.
+   */
+  async post(
+    token: string,
+    method: string,
+    body: Record<string, unknown>,
+    signal?: AbortSignal
+  ): Promise<Record<string, unknown>> {
+    for (let tries = 0; ; tries += 1) {
+      const response = await this.fetchSlack(
+        `https://slack.com/api/${method}`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify(body),
+          signal,
+        }
+      );
+      if (response.status === 429 && tries < RETRIES) {
+        const wait = Number(response.headers.get("retry-after")) || 1;
+        await Bun.sleep(Math.min(wait, LONGEST_WAIT) * 1000);
+        continue;
+      }
+      const answer = (await response.json()) as Record<string, unknown>;
+      if (answer.ok !== true) {
+        throw new Error(String(answer.error ?? `HTTP ${response.status}`));
+      }
+      return answer;
+    }
+  }
+
   /** The address of a new Socket Mode connection, with the app token (`xapp-…`, scope `connections:write`). */
   async openSocket(appToken: string): Promise<string> {
     const response = await this.fetchSlack(
