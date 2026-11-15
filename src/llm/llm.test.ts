@@ -479,12 +479,12 @@ function threadsOver(dataDirectory: string, llm: Llm) {
   const registry = {
     requireMember: (companyId: string) => ({
       id: companyId,
-      name: "Family",
+      name: "Company",
       role: "admin" as const,
     }),
     requireAdmin: (companyId: string) => ({
       id: companyId,
-      name: "Family",
+      name: "Company",
       role: "admin" as const,
     }),
     registerThread: (
@@ -647,7 +647,7 @@ describe("Threads with the Llm", () => {
     faux.setResponses([answer, answer]);
     try {
       const { id, title } = await threads.create(
-        "family",
+        "company",
         user,
         "food",
         "Could we cook something with the kids on Saturday evening?\nBob is back at six."
@@ -698,7 +698,7 @@ describe("Threads with the Llm", () => {
       ).messages.map((message) => message.text);
     try {
       const dinner = await first.threads.create(
-        "family",
+        "company",
         user,
         "food",
         "Dinner?"
@@ -708,7 +708,7 @@ describe("Threads with the Llm", () => {
         "Pasta",
       ]);
       const trip = await first.threads.create(
-        "family",
+        "company",
         user,
         "travel",
         "When do we go?"
@@ -717,7 +717,7 @@ describe("Threads with the Llm", () => {
         "When do we go?",
         "Saturday",
       ]);
-      const company = join(dataDirectory, "companies", "family");
+      const company = join(dataDirectory, "companies", "company");
       expect(await Bun.file(join(company, "session.sqlite")).exists()).toBe(
         true
       );

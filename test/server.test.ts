@@ -149,8 +149,8 @@ test("a credential is private until its owner shares it, only its owner deletes 
     await call(`${base}/integrations/home_assistant/credentials`, {
       token: alice,
       body: {
-        label: "Family",
-        secret: "family-secret",
+        label: "Company",
+        secret: "company-secret",
         address: "http://home.local:8123",
       },
     })
@@ -158,7 +158,7 @@ test("a credential is private until its owner shares it, only its owner deletes 
   expect(credential.shared).toBe(false);
   const bobsView = async () =>
     (await call(`${base}/integrations`, { token: bob })).text();
-  expect(await bobsView()).not.toContain("Family");
+  expect(await bobsView()).not.toContain("Company");
 
   const share = (token: string) =>
     call(`${base}/credentials/${credential.id}`, {
@@ -168,8 +168,8 @@ test("a credential is private until its owner shares it, only its owner deletes 
     });
   expect((await share(bob)).status).toBe(404);
   expect(await (await share(alice)).json()).toMatchObject({ shared: true });
-  expect(await bobsView()).toContain("Family");
-  expect(await bobsView()).not.toContain("family-secret");
+  expect(await bobsView()).toContain("Company");
+  expect(await bobsView()).not.toContain("company-secret");
 
   const remove = (token: string) =>
     call(`${base}/credentials/${credential.id}`, { method: "DELETE", token });

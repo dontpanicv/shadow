@@ -62,7 +62,7 @@ function agent(context: Context) {
 }
 
 test("the orchestrator and a channel thread can both schedule reminders in their company", async () => {
-  const company = await shadow.app.companies.create(alice, "Family");
+  const company = await shadow.app.companies.create(alice, "Company");
   const orchestrator = await shadow.app.threads.orchestrator(company.id, alice);
   const channel = shadow.app.companies.channels(company.id, alice)[0]!;
   const thread = await shadow.app.threads.create(

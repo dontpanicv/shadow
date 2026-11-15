@@ -132,7 +132,7 @@ test("a review never writes for someone outside the thread, and sees what people
   );
 });
 
-test("a review sees the facts the family wrote, so it does not learn them again", async () => {
+test("a review sees the facts the company wrote, so it does not learn them again", async () => {
   const learned = await open();
   const reviewer = model("{}");
   await learned.review(

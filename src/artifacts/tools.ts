@@ -60,7 +60,7 @@ export function artifactTools(
   const visibility = Type.Optional(
     Type.Union([Type.Literal("members"), Type.Literal("public")], {
       description:
-        "members: only members of this company, signed in. public: anyone with the link, such as family on WhatsApp. Default members; choose public only when they want to share it outside the company.",
+        "members: only members of this company, signed in. public: anyone with the link, such as a customer or a partner. Default members; choose public only when they want to share it outside the company.",
     })
   );
 

@@ -24,7 +24,7 @@ export function Home() {
     <Shell companyId={undefined}>
       <section className="conversation">
         <FloatingSidebarButton />
-        <Empty title="Ask a family member to add you" />
+        <Empty title="Ask an admin to add you" />
       </section>
     </Shell>
   );

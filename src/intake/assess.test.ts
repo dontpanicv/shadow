@@ -426,7 +426,7 @@ test("a final destination assessment cannot split a proposal, invent checks, or 
   }
 });
 
-test("the model reads times as the family's Prague wall clock, with the offset, across daylight-saving changes", () => {
+test("the model reads times as the company's Prague wall clock, with the offset, across daylight-saving changes", () => {
   for (const [utc, local] of [
     ["2026-11-07T08:00:00Z", "2026-11-07T09:00:00+01:00"],
     ["2026-07-01T22:30:15Z", "2026-07-02T00:30:15+02:00"],

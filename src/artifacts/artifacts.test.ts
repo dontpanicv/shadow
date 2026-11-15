@@ -27,7 +27,7 @@ beforeAll(async () => {
   shadow = await startTestApp();
   alice = await userOf("Alice", "alice@example.com");
   eve = await userOf("Eve", "eve@example.com");
-  const companyId = (await shadow.app.companies.create(alice, "Family")).id;
+  const companyId = (await shadow.app.companies.create(alice, "Company")).id;
   const channel = shadow.app.companies.addChannel(
     companyId,
     "trips",

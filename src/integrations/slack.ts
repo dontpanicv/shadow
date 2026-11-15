@@ -61,7 +61,7 @@ export function slackConnector(binary: string): Connector {
       slackTool(slack, {
         name: "slack_search",
         description:
-          "Messages that match a query, newest first. The query takes Slack's search operators, such as `in:#family` or `from:@ada`.",
+          "Messages that match a query, newest first. The query takes Slack's search operators, such as `in:#sales` or `from:@ada`.",
         parameters: Type.Object({
           query: Type.String(),
           limit: LIMIT,

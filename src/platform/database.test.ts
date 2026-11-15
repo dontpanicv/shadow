@@ -105,7 +105,7 @@ test("own credentials and machines become private ones in their owner's company,
 	INSERT INTO organization (id, name, createdAt, deletedAt) VALUES ('old', 'Old', 1, 5), ('home', 'Home', 2, NULL);
 	INSERT INTO member (id, organizationId, userId) VALUES ('m1', 'old', 'alice'), ('m2', 'home', 'alice'), ('m3', 'home', 'bob');
 	INSERT INTO channel (id, company_id, name, created_by, created_at) VALUES ('general', 'home', 'general', 'alice', 1);
-	INSERT INTO credential (id, company_id, integration, owner_id, label, shared, secret, created_at) VALUES ('family-mail', 'home', 'google', 'bob', 'family', 1, x'00', 1), ('alices-mail', NULL, 'google', 'alice', 'alice', 1, x'00', 2);
+	INSERT INTO credential (id, company_id, integration, owner_id, label, shared, secret, created_at) VALUES ('company-mail', 'home', 'google', 'bob', 'company', 1, x'00', 1), ('alices-mail', NULL, 'google', 'alice', 'alice', 1, x'00', 2);
 	INSERT INTO machine (id, company_id, name, addresses, port, cert_sha256, os, arch, version, paired_at, paired_by) VALUES
 		('old-nas', 'home', 'nas~old-nas', '[]', 1, 'n~old-nas', 'linux', 'x86_64', '1', 1, NULL),
 		('shared-nas', 'home', 'nas', '[]', 1, 'n', 'linux', 'x86_64', '1', 2, 'alice'),
@@ -123,7 +123,7 @@ test("own credentials and machines become private ones in their owner's company,
       .all()
   ).toEqual([
     { id: "alices-mail", companyId: "home", ownerId: "alice", shared: 0 },
-    { id: "family-mail", companyId: "home", ownerId: "bob", shared: 1 },
+    { id: "company-mail", companyId: "home", ownerId: "bob", shared: 1 },
   ]);
   expect(
     database

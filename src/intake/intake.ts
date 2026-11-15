@@ -1286,7 +1286,7 @@ export class Intake {
     };
   }
 
-  /** The family's own facts and what Shadow learned that the owner sees, for the judge that acts for them. */
+  /** The company's own facts and what Shadow learned that the owner sees, for the judge that acts for them. */
   private knowledge(companyId: string, owner: User): Knowledge {
     const names = new Map(
       this.companies

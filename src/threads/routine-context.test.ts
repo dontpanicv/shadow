@@ -26,7 +26,7 @@ beforeEach(async () => {
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  companyId = (await shadow.app.companies.create(alice, "Family")).id;
+  companyId = (await shadow.app.companies.create(alice, "Company")).id;
   channelId = shadow.app.companies.channels(companyId, alice)[0]!.id;
   reopened = undefined;
   respond(() => fauxAssistantMessage("Done."));

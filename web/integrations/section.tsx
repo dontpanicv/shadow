@@ -285,7 +285,7 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
             autoFocus
             label="Label"
             name="label"
-            placeholder="Family account"
+            placeholder="Work account"
             required
           />
         )}

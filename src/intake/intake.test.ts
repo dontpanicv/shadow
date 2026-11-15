@@ -1114,12 +1114,12 @@ test("passive observations start no model and retry without duplicate messages o
   ).toHaveLength(1);
 });
 
-test("a source observation can start a shared family subject without running a model or sending a notification", async () => {
+test("a source observation can start a shared company subject without running a model or sending a notification", async () => {
   const run = await setup({ target: "shared" });
   const before = app.faux.state.callCount;
   await app.app.threads.observe(
     run.target!,
-    "A new source concerns this family subject.",
+    "A new source concerns this company subject.",
     "shared-source",
     run.owner,
     false
@@ -1326,7 +1326,7 @@ test("the morning review puts the updates of one matter into one new thread, sta
   expect(run.posts).toHaveLength(posted + 1);
 });
 
-test("the judge reads the family's facts and what Shadow learned, in every assessment and in the morning review", async () => {
+test("the judge reads the company's facts and what Shadow learned, in every assessment and in the morning review", async () => {
   const run = await setup({
     initialNotice: "brief",
     learned: (ownerId) =>
@@ -1599,7 +1599,7 @@ test("deleting a chat update from a contact with no name blocks only that chat, 
     },
     {
       ...item("mine", "I will bring the cake", true, START),
-      chat: "family",
+      chat: "company",
       sender: "",
     },
   ]);

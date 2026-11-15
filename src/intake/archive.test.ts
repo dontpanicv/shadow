@@ -165,7 +165,7 @@ test.each(["whatsapp", "slack"])(
   "%s long-running threads have one file per local calendar day",
   async (integration) => {
     const run = await setup(integration);
-    const thread = integration === "slack" ? "group-direct" : "family@g.us";
+    const thread = integration === "slack" ? "group-direct" : "company@g.us";
     const rows = [
       run.put("one", thread, START, "Morning", { group: true }),
       run.put("two", thread, START + 1000, "Later", { group: true }),

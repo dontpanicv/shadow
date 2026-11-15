@@ -118,7 +118,7 @@ function agent(context: Context, options?: SimpleStreamOptions) {
   ].join("\n");
   if (system.includes("You keep the brief")) {
     return fauxAssistantMessage(
-      `<summary>What the family eats.</summary><brief>## Now\n- Pasta tonight ${/\[[^\]]*\]\(thread:[\w-]+\)/.exec(textOf(context.messages.at(-1)!))![0]}</brief>`
+      `<summary>What the company eats.</summary><brief>## Now\n- Pasta tonight ${/\[[^\]]*\]\(thread:[\w-]+\)/.exec(textOf(context.messages.at(-1)!))![0]}</brief>`
     );
   }
   if (system.includes("You are the learning loop")) {
@@ -345,25 +345,25 @@ async function idle(companyId: string, threadId: string) {
 
 test("an agent starts a thread in another channel, gets the answer back, and cannot keep the exchange going", async () => {
   const inputCount = agentInputs.length;
-  const family = await shadow.app.companies.create(alice, "Family");
+  const company = await shadow.app.companies.create(alice, "Company");
   const food = shadow.app.companies.addChannel(
-    family.id,
+    company.id,
     "food",
     alice.id,
     null
   );
   const general = shadow.app.companies
-    .channels(family.id, alice)
+    .channels(company.id, alice)
     .find((channel) => channel.name === "general")!;
   const asked = await shadow.app.threads.create(
-    family.id,
+    company.id,
     alice,
     general.id,
     "Ask #food what's for dinner"
   );
 
   const started = await until(
-    async () => shadow.app.companies.channels(family.id, alice),
+    async () => shadow.app.companies.channels(company.id, alice),
     (channels) =>
       channels.find((channel) => channel.id === food.id)!.threads.length === 1
   );
@@ -379,7 +379,7 @@ test("an agent starts a thread in another channel, gets the answer back, and can
     );
   // The question, then a correction to the answer: the fourth pass still arrives.
   const answered = await until(
-    () => idle(family.id, dinner.id),
+    () => idle(company.id, dinner.id),
     (state) => state.messages.length === 2
   );
   expect(answered.messages.map((message) => message.text)).toEqual([
@@ -392,7 +392,7 @@ test("an agent starts a thread in another channel, gets the answer back, and can
     [`[Ask #food what's for dinner](thread:${asked.id})`, "With cheese?"],
   ]);
   await until(
-    () => idle(family.id, asked.id),
+    () => idle(company.id, asked.id),
     (state) =>
       fromThread(state).some(
         ([link, text]) =>
@@ -421,9 +421,9 @@ test("an agent starts a thread in another channel, gets the answer back, and can
     )
   );
   // Alice hears back once in her thread, with the answer to the report: the first answer waited while #food worked.
-  const report = (await idle(family.id, asked.id)).messages.at(-1)!;
+  const report = (await idle(company.id, asked.id)).messages.at(-1)!;
   await until(
-    async () => shadow.app.notifications.inbox(family.id, alice),
+    async () => shadow.app.notifications.inbox(company.id, alice),
     (inbox) =>
       inbox.notifications.some(
         (notification) => notification.createdAt >= report.time
@@ -431,21 +431,21 @@ test("an agent starts a thread in another channel, gets the answer back, and can
   );
   await Bun.sleep(100);
   expect(
-    shadow.app.notifications.inbox(family.id, alice).notifications
+    shadow.app.notifications.inbox(company.id, alice).notifications
   ).toEqual([expect.objectContaining({ threadId: asked.id, text: "Done." })]);
 });
 
 test("a thread that reports back leaves the notice to the asker, also for a person who writes in both", async () => {
-  const family = await shadow.app.companies.create(alice, "Reporting");
+  const company = await shadow.app.companies.create(alice, "Reporting");
   const food = shadow.app.companies.addChannel(
-    family.id,
+    company.id,
     "food",
     alice.id,
     null
   );
-  const [general] = shadow.app.companies.channels(family.id, alice);
+  const [general] = shadow.app.companies.channels(company.id, alice);
   const list = await shadow.app.threads.create(
-    family.id,
+    company.id,
     alice,
     food.id,
     "Hello"
@@ -453,9 +453,12 @@ test("a thread that reports back leaves the notice to the asker, also for a pers
   const listed = () =>
     shadow.app.threads.messages(shadow.app.companies.thread(list.id, alice));
   await until(listed, (state) => !state.running && state.messages.length === 2);
-  const before = shadow.app.notifications.inbox(family.id, alice).notifications;
+  const before = shadow.app.notifications.inbox(
+    company.id,
+    alice
+  ).notifications;
   const asking = await shadow.app.threads.create(
-    family.id,
+    company.id,
     alice,
     general!.id,
     `Ask thread ${list.id} for dinner`
@@ -463,31 +466,31 @@ test("a thread that reports back leaves the notice to the asker, also for a pers
   await until(listed, (state) => !state.running && state.messages.length === 3);
   // The answer to Alice, then the answer to the report.
   await until(
-    () => idle(family.id, asking.id),
+    () => idle(company.id, asking.id),
     (state) => state.messages.length === 3
   );
   await until(
-    async () => shadow.app.notifications.inbox(family.id, alice),
+    async () => shadow.app.notifications.inbox(company.id, alice),
     (inbox) => inbox.notifications.length > before.length
   );
   await Bun.sleep(100);
-  const { notifications } = shadow.app.notifications.inbox(family.id, alice);
+  const { notifications } = shadow.app.notifications.inbox(company.id, alice);
   expect(notifications.slice(0, -before.length || undefined)).toEqual([
     expect.objectContaining({ threadId: asking.id, text: "Done." }),
   ]);
 });
 
 test("an answer waits while the thread it asked works, and notifies when that thread stops without a report", async () => {
-  const family = await shadow.app.companies.create(alice, "Waiting");
-  const [general] = shadow.app.companies.channels(family.id, alice);
+  const company = await shadow.app.companies.create(alice, "Waiting");
+  const [general] = shadow.app.companies.channels(company.id, alice);
   const asking = await shadow.app.threads.create(
-    family.id,
+    company.id,
     alice,
     general!.id,
     "Delegate and answer"
   );
   const working = await until(
-    async () => shadow.app.companies.channels(family.id, alice)[0]!.threads,
+    async () => shadow.app.companies.channels(company.id, alice)[0]!.threads,
     (threads) => threads.some((thread) => thread.title === "Take your time")
   );
   const asked = working.find((thread) => thread.title === "Take your time")!;
@@ -500,12 +503,12 @@ test("an answer waits while the thread it asked works, and notifies when that th
   );
   await Bun.sleep(100);
   expect(
-    shadow.app.notifications.inbox(family.id, alice).notifications
+    shadow.app.notifications.inbox(company.id, alice).notifications
   ).toEqual([]);
 
   await shadow.app.threads.stop(asked.id, alice);
   const { notifications } = await until(
-    async () => shadow.app.notifications.inbox(family.id, alice),
+    async () => shadow.app.notifications.inbox(company.id, alice),
     (inbox) => inbox.notifications.length > 0
   );
   expect(notifications).toEqual([
@@ -1152,9 +1155,9 @@ test("a stopped turn says so, calls of one tool in a row fold into one row, and 
 
 test("the company's working stream shows a thread while its agent works, and people stop it", async () => {
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const family = await shadow.app.companies.create(alice, "Busy");
-  const [general] = shadow.app.companies.channels(family.id, alice);
-  const stream = await shadow.call(`/api/v1/companies/${family.id}/working`, {
+  const company = await shadow.app.companies.create(alice, "Busy");
+  const [general] = shadow.app.companies.channels(company.id, alice);
+  const stream = await shadow.call(`/api/v1/companies/${company.id}/working`, {
     token,
   });
 
@@ -1169,7 +1172,7 @@ test("the company's working stream shows a thread while its agent works, and peo
   expect(await working()).toEqual([]);
 
   const thread = await shadow.app.threads.create(
-    family.id,
+    company.id,
     alice,
     general!.id,
     "Take your time"
@@ -1197,7 +1200,7 @@ test("the company's working stream shows a thread while its agent works, and peo
   const outsider = await shadow.signIn("Eve", "eve@example.com");
   expect(
     (
-      await shadow.call(`/api/v1/companies/${family.id}/working`, {
+      await shadow.call(`/api/v1/companies/${company.id}/working`, {
         token: outsider,
       })
     ).status
@@ -1213,16 +1216,16 @@ test("the company's working stream shows a thread while its agent works, and peo
 });
 
 test("stopping a thread also stops the threads it asked, which still work on its message", async () => {
-  const family = await shadow.app.companies.create(alice, "Delegating");
-  const [general] = shadow.app.companies.channels(family.id, alice);
+  const company = await shadow.app.companies.create(alice, "Delegating");
+  const [general] = shadow.app.companies.channels(company.id, alice);
   const seen: (readonly string[])[] = [];
   const stopWatching = await shadow.app.threads.watchWorking(
-    family.id,
+    company.id,
     alice,
     (threadIds) => seen.push(threadIds)
   );
   const asking = await shadow.app.threads.create(
-    family.id,
+    company.id,
     alice,
     general!.id,
     "Delegate and wait"
@@ -1246,21 +1249,21 @@ test("stopping a thread also stops the threads it asked, which still work on its
 });
 
 test("each member has an own orchestrator thread, which stays open, out of the channel lists, and private", async () => {
-  const family = await shadow.app.companies.create(alice, "Orchestrated");
+  const company = await shadow.app.companies.create(alice, "Orchestrated");
   const [first, again] = await Promise.all([
-    shadow.app.threads.orchestrator(family.id, alice),
-    shadow.app.threads.orchestrator(family.id, alice),
+    shadow.app.threads.orchestrator(company.id, alice),
+    shadow.app.threads.orchestrator(company.id, alice),
   ]);
   expect(again.id).toBe(first.id);
-  expect((await shadow.app.threads.orchestrator(family.id, alice)).id).toBe(
+  expect((await shadow.app.threads.orchestrator(company.id, alice)).id).toBe(
     first.id
   );
   expect(
-    shadow.app.companies.channels(family.id, alice).flatMap((c) => c.threads)
+    shadow.app.companies.channels(company.id, alice).flatMap((c) => c.threads)
   ).toEqual([]);
 
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const base = `/api/v1/companies/${family.id}`;
+  const base = `/api/v1/companies/${company.id}`;
   expect(
     await (await shadow.call(`${base}/orchestrator`, { token })).json()
   ).toEqual({
@@ -1280,8 +1283,8 @@ test("each member has an own orchestrator thread, which stays open, out of the c
   expect(
     (await shadow.call(`${base}/orchestrator`, { token: outsider })).status
   ).toBe(404);
-  await shadow.app.companies.addMember(family.id, alice, bob.email);
-  const bobs = await shadow.app.threads.orchestrator(family.id, bob);
+  await shadow.app.companies.addMember(company.id, alice, bob.email);
+  const bobs = await shadow.app.threads.orchestrator(company.id, bob);
   expect(bobs.id).not.toBe(first.id);
   expect(() => shadow.app.companies.thread(first.id, bob)).toThrow();
   await expect(
@@ -1671,7 +1674,7 @@ test("the soul comes first in an agent's instructions, and the instructions hold
   expect(soul).toBeGreaterThan(-1);
   expect(soul).toBeLessThan(prompt.indexOf("This thread is in #"));
   expect(soul).toBeLessThan(
-    prompt.indexOf("You are Shadow, a family assistant.")
+    prompt.indexOf("You are Shadow, a company assistant.")
   );
   expect(prompt).not.toContain("Answer concisely");
 });
@@ -1926,7 +1929,7 @@ test("a settled thread goes into its channel's brief and summary, which a new th
     shadow.app.companies
       .channels(home.id, alice)
       .find((channel) => channel.id === food.id)!.summary
-  ).toBe("What the family eats.");
+  ).toBe("What the company eats.");
 
   const before = systemPrompts.length;
   const next = await shadow.app.threads.create(
@@ -1990,16 +1993,16 @@ test("an agent creates private channels, searches, and merges them, and a merge 
   expect(await ask("Create channel Sales: Deals", shared!.id)).toContain(
     "the channels that every member sees come from Slack"
   );
-  expect(await ask("Create channel Trips: Family trips and holidays")).toBe(
+  expect(await ask("Create channel Trips: Company trips and holidays")).toBe(
     "Created #trips."
   );
   const trips = shadow.app.companies
     .channels(home.id, alice)
     .find((channel) => channel.name === "trips")!;
-  expect(trips.summary).toBe("Family trips and holidays");
+  expect(trips.summary).toBe("Company trips and holidays");
   expect(trips.ownerId).toBe(alice.id);
   expect(await ask("Search channels summer holidays")).toBe(
-    "#trips (private): Family trips and holidays"
+    "#trips (private): Company trips and holidays"
   );
   expect(await ask("Search channels dentist")).toBe(
     "No channel matches. list_channels shows them all."
@@ -2091,22 +2094,22 @@ test("an agent creates private channels, searches, and merges them, and a merge 
 });
 
 test("people merge only a private channel into another; a channel that every member sees stays", async () => {
-  const family = await shadow.app.companies.create(alice, "Moving");
-  const [general] = shadow.app.companies.channels(family.id, alice);
+  const company = await shadow.app.companies.create(alice, "Moving");
+  const [general] = shadow.app.companies.channels(company.id, alice);
   const food = shadow.app.companies.addChannel(
-    family.id,
+    company.id,
     "food",
     alice.id,
     null
   );
-  const mine = shadow.app.companies.createChannel(family.id, alice, "mine");
-  const orchestrator = await shadow.app.threads.orchestrator(family.id, alice);
+  const mine = shadow.app.companies.createChannel(company.id, alice, "mine");
+  const orchestrator = await shadow.app.threads.orchestrator(company.id, alice);
   expect(orchestrator.channelId).toBe(general!.id);
 
   const token = await shadow.signIn("Alice", "alice@example.com");
   const outsider = await shadow.signIn("Bob", "bob@example.com");
   const merge = (channelId: string, into: string, as = token) =>
-    shadow.call(`/api/v1/companies/${family.id}/channels/${channelId}/merge`, {
+    shadow.call(`/api/v1/companies/${company.id}/channels/${channelId}/merge`, {
       method: "POST",
       token: as,
       body: { into },
@@ -2118,10 +2121,10 @@ test("people merge only a private channel into another; a channel that every mem
   expect((await merge(mine.id, food.id)).status).toBe(204);
   expect(
     shadow.app.companies
-      .channels(family.id, alice)
+      .channels(company.id, alice)
       .map((channel) => channel.name)
   ).toEqual(["general", "food"]);
-  expect(shadow.app.companies.orchestratorOf(family.id, alice.id)!.id).toBe(
+  expect(shadow.app.companies.orchestratorOf(company.id, alice.id)!.id).toBe(
     orchestrator.id
   );
 });

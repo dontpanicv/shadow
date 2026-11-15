@@ -40,7 +40,7 @@ beforeAll(async () => {
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  companyId = (await shadow.app.companies.create(alice, "Family")).id;
+  companyId = (await shadow.app.companies.create(alice, "Company")).id;
   await shadow.signIn("Eve", "eve@example.com");
   const eve = (await internalAdapter.findUserByEmail("eve@example.com"))!;
   notOwner = { id: eve.user.id, name: eve.user.name, email: eve.user.email };
@@ -344,50 +344,50 @@ test("a turn uses its person's own credential, else a shared one, and only its o
     const [tool] = await notes.tools(companyId);
     return tool!.execute({}, { userId });
   };
-  const family = await notes.addCredential(companyId, bob, "notes", {
-    label: "Family",
-    secret: "family",
+  const company = await notes.addCredential(companyId, bob, "notes", {
+    label: "Company",
+    secret: "company",
   });
-  expect(family).toMatchObject({ ownerId: bob.id, shared: false });
+  expect(company).toMatchObject({ ownerId: bob.id, shared: false });
   const own = await notes.addCredential(companyId, alice, "notes", {
     label: "Mine",
     secret: "alice",
   });
   // Private: only Alice's turns use hers, and Bob's his.
   expect(await token(alice.id)).toBe("alice");
-  expect(await token(bob.id)).toBe("family");
+  expect(await token(bob.id)).toBe("company");
   await expect(token(null)).rejects.toThrow("Notes is not connected");
   expect(notes.list(companyId, alice)[0]!.credentials).toMatchObject([
     { label: "Mine" },
   ]);
 
-  expect(() => notes.setShared(companyId, alice, family.id, true)).toThrow(
+  expect(() => notes.setShared(companyId, alice, company.id, true)).toThrow(
     "Not found"
   );
-  expect(notes.setShared(companyId, bob, family.id, true)).toMatchObject({
-    label: "Family",
+  expect(notes.setShared(companyId, bob, company.id, true)).toMatchObject({
+    label: "Company",
     shared: true,
   });
   expect(reached).toEqual([companyId, companyId, companyId]);
-  expect(await token(null)).toBe("family");
+  expect(await token(null)).toBe("company");
   expect(await token(alice.id)).toBe("alice");
   expect(notes.list(companyId, alice)[0]!.credentials).toMatchObject([
-    { label: "Family", ownerName: "Bob", shared: true },
+    { label: "Company", ownerName: "Bob", shared: true },
     { label: "Mine", shared: false },
   ]);
   expect(notes.list(companyId, bob)[0]!.credentials).toMatchObject([
-    { label: "Family" },
+    { label: "Company" },
   ]);
 
   expect(() => notes.deleteCredential(companyId, bob, own.id)).toThrow(
     "Not found"
   );
-  expect(() => notes.deleteCredential(companyId, alice, family.id)).toThrow(
+  expect(() => notes.deleteCredential(companyId, alice, company.id)).toThrow(
     "Not found"
   );
   notes.deleteCredential(companyId, alice, own.id);
-  expect(await token(alice.id)).toBe("family");
-  notes.deleteCredential(companyId, bob, family.id);
+  expect(await token(alice.id)).toBe("company");
+  notes.deleteCredential(companyId, bob, company.id);
 });
 
 test("a tool that acts as a person asks its credential's owner every time, and only an agent in a thread can ask", async () => {
@@ -412,7 +412,7 @@ test("a tool that acts as a person asks its credential's owner every time, and o
             if (!input.startsWith("curl ")) {
               throw new Error("Paste a cURL command");
             }
-            return { secret: `session of ${input}`, label: "Family chat" };
+            return { secret: `session of ${input}`, label: "Company chat" };
           },
           tools: [
             {
@@ -439,7 +439,7 @@ test("a tool that acts as a person asks its credential's owner every time, and o
   const chat = await messenger.addCredential(companyId, alice, "messenger", {
     secret: "curl x",
   });
-  expect(chat).toMatchObject({ label: "Family chat" });
+  expect(chat).toMatchObject({ label: "Company chat" });
   messenger.setShared(companyId, alice, chat.id, true);
 
   const [send] = await messenger.tools(companyId);
@@ -917,11 +917,11 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
       ],
     }
   );
-  const family = await notes.addCredential(companyId, alice, "mail", {
-    label: "family@example.com",
-    secret: "family",
+  const company = await notes.addCredential(companyId, alice, "mail", {
+    label: "company@example.com",
+    secret: "company",
   });
-  notes.setShared(companyId, alice, family.id, true);
+  notes.setShared(companyId, alice, company.id, true);
   await notes.addCredential(companyId, alice, "mail", {
     label: "work@example.com",
     secret: "work",
@@ -939,16 +939,16 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
   expect(await secret!.execute({ account: "work@example.com" }, turn)).toBe(
     "work"
   );
-  expect(await secret!.execute({ account: "family@example.com" }, turn)).toBe(
-    "family"
+  expect(await secret!.execute({ account: "company@example.com" }, turn)).toBe(
+    "company"
   );
   expect(await accounts!.execute({}, turn)).toEqual([
     { account: "me@example.com", of: "own" },
     { account: "work@example.com", of: "own" },
-    { account: "family@example.com", of: "own" },
+    { account: "company@example.com", of: "own" },
   ]);
   expect(await accounts!.execute({}, { userId: null })).toEqual([
-    { account: "family@example.com", of: "shared" },
+    { account: "company@example.com", of: "shared" },
   ]);
 });
 
@@ -1019,20 +1019,20 @@ esac
   const turn = { userId: alice.id };
   const store = join(directory, credential.id);
   expect(
-    await tools[0]!.execute({ query: "family", unread: true }, turn)
+    await tools[0]!.execute({ query: "company", unread: true }, turn)
   ).toEqual({
     store,
-    command: "--json --read-only chats list --query family --unread",
+    command: "--json --read-only chats list --query company --unread",
   });
   // Two backfills at once wait for each other, and the sync starts again after them.
   const [first, second] = await Promise.all([
-    tools[3]!.execute({ chat: "family@g.us", messages: 1000 }, turn),
+    tools[3]!.execute({ chat: "company@g.us", messages: 1000 }, turn),
     tools[3]!.execute({ chat: "partner@s.whatsapp.net" }, turn),
   ]);
   expect(first).toEqual({
     store,
     command:
-      "--json --timeout 5m history backfill --chat family@g.us --count 500 --requests 2",
+      "--json --timeout 5m history backfill --chat company@g.us --count 500 --requests 2",
   });
   expect(second).toMatchObject({
     command: expect.stringContaining(
@@ -1055,7 +1055,7 @@ esac
   const allowed: string[] = [];
   expect(
     await tools[6]!.execute(
-      { to: "family@g.us", text: "-Home soon" },
+      { to: "company@g.us", text: "-Home soon" },
       {
         ...turn,
         approve: async (text, approverId) => {
@@ -1065,11 +1065,11 @@ esac
     )
   ).toEqual({
     store,
-    command: "--json send text --to=family@g.us --message=-Home soon",
+    command: "--json send text --to=company@g.us --message=-Home soon",
   });
   expect(
     await tools[7]!.execute(
-      { to: "family@g.us", file: "f1", caption: "Tonight" },
+      { to: "company@g.us", file: "f1", caption: "Tonight" },
       {
         ...turn,
         file: async () => ({ path: "/files/f1-menu.pdf", name: "menu.pdf" }),
@@ -1081,16 +1081,16 @@ esac
   ).toEqual({
     store,
     command:
-      "--json send file --to=family@g.us --file=/files/f1-menu.pdf --filename=menu.pdf --caption=Tonight",
+      "--json send file --to=company@g.us --file=/files/f1-menu.pdf --filename=menu.pdf --caption=Tonight",
   });
   expect(allowed).toEqual([
-    `${alice.id}: Send on WhatsApp to family@g.us: -Home soon`,
-    `${alice.id}: Send on WhatsApp to family@g.us: menu.pdf\n\nTonight`,
+    `${alice.id}: Send on WhatsApp to company@g.us: -Home soon`,
+    `${alice.id}: Send on WhatsApp to company@g.us: menu.pdf\n\nTonight`,
   ]);
   const saved = join(directory, "saved");
   expect(
     await tools[8]!.execute(
-      { chat: "family@g.us", message: "M1" },
+      { chat: "company@g.us", message: "M1" },
       {
         ...turn,
         save: async (write) => ({ id: "f2", name: await write(saved) }),
@@ -1098,10 +1098,10 @@ esac
     )
   ).toEqual({ id: "f2", name: "photo.jpg" });
   expect(await Bun.file(saved).text()).toStartWith(
-    "--json media download --chat family@g.us --id M1 --output "
+    "--json media download --chat company@g.us --id M1 --output "
   );
   await expect(
-    tools[8]!.execute({ chat: "family@g.us", message: "M1" }, turn)
+    tools[8]!.execute({ chat: "company@g.us", message: "M1" }, turn)
   ).rejects.toThrow("Only an agent in a thread can save files.");
 
   whatsApp.deleteCredential(companyId, alice, credential.id);

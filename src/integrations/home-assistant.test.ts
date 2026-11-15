@@ -85,7 +85,7 @@ describe("homeAssistantConnector", () => {
       body: { area_id: "bedroom" },
     });
     await expect(
-      run("home_assistant_call", { domain: "notify", service: "family" })
+      run("home_assistant_call", { domain: "notify", service: "company" })
     ).rejects.toThrow("Agents do not send");
     expect(calls).toHaveLength(1);
   });

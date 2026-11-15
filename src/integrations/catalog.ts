@@ -31,7 +31,7 @@ export function integrationCatalog(
       id: "rohlik",
       name: "Rohlík",
       description:
-        "The family's grocery shop with delivery: products, the cart, orders and their history, recipes, and shopping lists. Put things in the cart; people place the order themselves.",
+        "A grocery shop with delivery: products, the cart, orders and their history, recipes, and shopping lists. Put things in the cart; people place the order themselves.",
       secretLabel: null,
       guide: ["Click **Connect**, and sign in to Rohlík.", PASTE_ADDRESS],
       tools: [],

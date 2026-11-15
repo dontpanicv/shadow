@@ -167,10 +167,10 @@ test("an index finds by meaning and by words, and re-embeds when the model chang
 test("search covers one company and never another, also through the agent's recall tool", async () => {
   const anna = await person("Anna", "anna@example.com");
   const otto = await person("Otto", "otto@example.com");
-  const family = await app.companies.create(anna.user, "Family");
+  const company = await app.companies.create(anna.user, "Company");
   const work = await app.companies.create(otto.user, "Work");
   await note(
-    family.id,
+    company.id,
     "health/dentist.md",
     "# Dentist\n\nThe dentist appointment moved to Tuesday afternoon."
   );
@@ -192,11 +192,11 @@ test("search covers one company and never another, also through the agent's reca
       return fauxAssistantMessage("It moved to Tuesday afternoon.");
     },
   ]);
-  await app.indexer.scan(family.id);
+  await app.indexer.scan(company.id);
   await app.indexer.scan(work.id);
-  const channel = app.companies.channels(family.id, anna.user)[0]!;
+  const channel = app.companies.channels(company.id, anna.user)[0]!;
   await app.threads.create(
-    family.id,
+    company.id,
     anna.user,
     channel.id,
     "When is the dentist?"
@@ -207,8 +207,8 @@ test("search covers one company and never another, also through the agent's reca
   expect(recalled).toContain("Dentist");
   expect(recalled).not.toContain("Payroll");
 
-  await app.indexer.scan(family.id);
-  const found = await app.indexer.search(family.id, "dentist", 20, null);
+  await app.indexer.scan(company.id);
+  const found = await app.indexer.search(company.id, "dentist", 20, null);
   expect(found.semantic).toBe(true);
   expect(found.results.map((result) => result.kind).sort()).toEqual([
     "note",
@@ -220,7 +220,7 @@ test("search covers one company and never another, also through the agent's reca
 
   const response = await handler(
     new Request(
-      `http://shadow.test/api/v1/companies/${family.id}/search?q=dentist`,
+      `http://shadow.test/api/v1/companies/${company.id}/search?q=dentist`,
       { headers: { authorization: `Bearer ${otto.token}` } }
     )
   );
@@ -301,7 +301,7 @@ function mediaWord(input: object): string {
 }
 
 const prose = (channel: string) =>
-  `The family wrote this note about the ${channel} for the whole week`;
+  `The company wrote this note about the ${channel} for the whole week`;
 
 async function sync(
   index: CompanyIndex,

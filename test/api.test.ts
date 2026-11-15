@@ -69,7 +69,7 @@ test("a request body must be a JSON object", async () => {
         body: text,
       })
     );
-  for (const text of ["{", "[1]", '"Family"', "null"]) {
+  for (const text of ["{", "[1]", '"Company"', "null"]) {
     expect(await failure(await post(text))).toEqual({
       status: 400,
       error: "Send a JSON object",

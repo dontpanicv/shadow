@@ -60,7 +60,7 @@ export async function readConfig(
   const dataDirectory = resolve(env.SHADOW_DATA ?? "data");
   for (const directory of [configDirectory, dataDirectory]) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    // Only Shadow's user reads the secrets and the family's data, also on an install that an older version made.
+    // Only Shadow's user reads the secrets and the company's data, also on an install that an older version made.
     chmodSync(directory, 0o700);
   }
   const file = Bun.file(join(configDirectory, "shadow.toml"));

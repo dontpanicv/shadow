@@ -188,7 +188,7 @@ type Usage = {
 };
 type Learned = {
 	id: number;
-	kind: "about" | "howto"; // about: a fact about a person; howto: how to do a task for the family in a channel
+	kind: "about" | "howto"; // about: a fact about a person; howto: how to do a task for the company in a channel
 	personId: string | null; // the person an "about" is about
 	channelId: string | null; // the channel of a "howto"; null for one of the person's own orchestrator
 	realm: string | null; // the person who alone sees it, because it came from their private channel or orchestrator; null: every member
@@ -323,7 +323,7 @@ orchestrator from before each member had one belongs to the person who made the 
 After a thread with a person's new messages is quiet for 10 minutes, or settled, the model reviews those messages
 (`src/threads/learned.ts`): it adds, changes, and removes facts about the people of the thread and the how-tos of its
 channel, or of the person in their orchestrator. An entry from a private channel or an orchestrator belongs to that
-person's realm. Every agent reads the entries that its realm sees before each answer, after the family's facts, and
+person's realm. Every agent reads the entries that its realm sees before each answer, after the company's facts, and
 the facts that people wrote win. The review can also suggest a routine or a reminder to a person who wrote in the
 thread, when they asked for the same thing more than once or named a regular or later time: see Agenda. Reviews read
 only messages after the first start of the version that has them.
@@ -535,7 +535,7 @@ All company access requires membership. Turning off an account stops its source 
 notices. Existing audit records remain private. Deleted Shadow threads are excluded from source recall.
 
 "Read for me" is off by default and only its credential owner can change it. It permits automatic private context,
-future checks, and useful updates posted in the existing subject thread. Matching shared family threads may receive
+future checks, and useful updates posted in the existing subject thread. Matching shared threads may receive
 the source material. External messages still need the person's request and normal tool approval. Collection runs every 15 minutes, starts one day back, and uses saved cursors with an overlap. A bounded
 poll can retain a backlog checkpoint without claiming complete source coverage.
 

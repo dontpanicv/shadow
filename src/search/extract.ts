@@ -541,7 +541,7 @@ async function recognize(image: Uint8Array): Promise<string> {
 
 let languages: Promise<string> | undefined;
 
-/** Every language tesseract has, such as "ces+eng"; reading with all of them handles mixed family papers. */
+/** Every language tesseract has, such as "ces+eng"; reading with all of them handles papers in mixed languages. */
 function ocrLanguages(): Promise<string> {
   languages ??= run([tools.tesseract!, "--list-langs"])
     .then((output) =>

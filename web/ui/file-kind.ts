@@ -68,10 +68,10 @@ export function imageType(name: string): string {
 }
 
 /** Rows past this do not show, so that a large sheet or archive does not hold up the page. */
-// shortcut: a sheet shows its first 5,000 rows; render rows as they scroll into view if families keep larger sheets.
+// shortcut: a sheet shows its first 5,000 rows; render rows as they scroll into view if companies keep larger sheets.
 export const ROW_LIMIT = 5000;
 /** Columns past this do not show, for the same reason. */
-// shortcut: a sheet shows its first 200 columns; render columns as they scroll into view if families keep wider sheets.
+// shortcut: a sheet shows its first 200 columns; render columns as they scroll into view if companies keep wider sheets.
 export const COLUMN_LIMIT = 200;
 
 /**

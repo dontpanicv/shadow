@@ -29,7 +29,7 @@
     {
       "id": "person",
       "type": "external",
-      "label": "Family member",
+      "label": "Company member",
       "sublabel": "web · iPhone · Watch",
       "stage": 0,
       "row": 1,
@@ -98,7 +98,7 @@
       "id": "facts",
       "type": "database",
       "label": "Company facts",
-      "sublabel": "family writes them",
+      "sublabel": "company writes them",
       "stage": 2,
       "row": 1,
       "sources": [
@@ -309,7 +309,7 @@
       "items": [
         "The topic brief is rewritten after 10 quiet minutes",
         "The learning loop keeps facts about people and how-tos",
-        "Company facts are what the family writes itself"
+        "Company facts are what the company writes itself"
       ]
     }
   ]

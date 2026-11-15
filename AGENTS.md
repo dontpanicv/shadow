@@ -23,7 +23,7 @@ Slack and mail and helps them with their work. It runs on the company's own serv
 
 ## Public Repository
 
-This repository is public. Never commit secrets, tokens, personal or family data, private hostnames or VPN
+This repository is public. Never commit secrets, tokens, personal or company data, private hostnames or VPN
 addresses, or code and data from employers or clients.
 
 ## Working Rules
@@ -43,7 +43,7 @@ addresses, or code and data from employers or clients.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
   retain useful context and infer future checks. A useful development adds a visible source message and files to the
-  existing subject thread, including an existing matching shared family thread; a new matter and silent filing stay in
+  existing subject thread, including an existing matching shared thread; a new matter and silent filing stay in
   the person's private channels. Shadow is the
   person's second brain, not their worker: no source starts an agent, and an agent does research, analysis, or a draft
   only when a person asks. An urgent development is posted at once. The others wait for the person's one morning

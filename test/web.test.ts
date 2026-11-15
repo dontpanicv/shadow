@@ -31,7 +31,7 @@ describe("the web app", () => {
     alice = shadow.app.database
       .query("SELECT id, name, email FROM user WHERE email = ?")
       .get("alice@example.com") as User;
-    const company = await shadow.app.companies.create(alice, "Family");
+    const company = await shadow.app.companies.create(alice, "Company");
     companyId = company.id;
     generalId = shadow.app.companies.channels(companyId, alice)[0]!.id;
     const summary = await shadow.app.threads.create(

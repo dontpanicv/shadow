@@ -15,7 +15,7 @@
     {
       "id": "member",
       "type": "external",
-      "label": "Family member",
+      "label": "Company member",
       "sublabel": "signed in · web · iPhone",
       "icon": "person",
       "pos": [40, 60],

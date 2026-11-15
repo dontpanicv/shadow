@@ -18,7 +18,7 @@ They do not need to maintain a task list or set a routine for each expected repl
    context. Latest thread messages come before prior summaries, so clipping
    preserves the latest state.
    The configured judge receives original text, direction, source IDs, bulk metadata, and attachment names/types/sizes.
-   It also receives the facts that the family wrote and what Shadow learned that the owner sees. These explain the
+   It also receives the facts that the company wrote and what Shadow learned that the owner sees. These explain the
    evidence and carry the owner's wishes about what to watch or report; they are never evidence.
    There is no Qwen reader. Code validates destinations, evidence IDs, exact quotes, and times. A failed batch does
    not prevent unrelated batches from being assessed. Source text never gives tool instructions.
@@ -104,7 +104,7 @@ standard Snowball stemmer; there is no guessed accent restoration. This change d
 library. On macOS, Bun still selects Apple's SQLite. FTS5 is enabled; this implementation needs no native extension.
 
 Each record belongs to one member. A shared integration credential still produces private evidence for its owner.
-An existing shared family thread may receive source material that matches its subject, as explicitly permitted.
+An existing shared thread may receive source material that matches its subject, as explicitly permitted.
 Other people's private threads remain inaccessible. The posted update is visible in the matching thread. Any confirmed notification goes only to the account owner. Turning an account off stops its reads, checks,
 and queued reviews. It keeps historical audit data. Deleted Shadow threads are hidden from source recall.
 
@@ -157,7 +157,7 @@ Intake does not read the messages that people write in Shadow threads; agents ap
 
 Sequence tests cover a 30-day check across a restart, acknowledgements, replies across conversations, account
 outages, repeated polls, silent due reviews, membership and owner isolation, resolved morning updates, opt-out,
-edited source versions, shared-family subjects, and normal source-review tools and approvals. Conference sequences
+edited source versions, shared subjects, and normal source-review tools and approvals. Conference sequences
 cover existing private and shared channels, a new private channel, and name conflicts. Retrying a review creates
 no second input or notification.
 
@@ -222,6 +222,6 @@ Source files represent conversations, rather than individual messages:
 | WhatsApp | One conversation per local calendar day |
 | Plaud | One meeting, with its latest summary |
 
-New messages update the same file ID. Message edits replace their earlier text in that file. Each entry keeps its original source ID, date, sender, and source link. Attachments remain separate files and appear as links in the conversation file. Overlapping polls and retries do not add duplicate entries or files. The archive is scoped to the owner, account, and destination channel: a shared family review receives only messages selected for that channel. It does not receive the rest of a private conversation.
+New messages update the same file ID. Message edits replace their earlier text in that file. Each entry keeps its original source ID, date, sender, and source link. Attachments remain separate files and appear as links in the conversation file. Overlapping polls and retries do not add duplicate entries or files. The archive is scoped to the owner, account, and destination channel: a shared company review receives only messages selected for that channel. It does not receive the rest of a private conversation.
 
 Older per-message source files stay as they are, so the links to them in earlier messages keep working. A Slack search records only its counts in the audit; the messages that intake keeps are recorded with the collection result.

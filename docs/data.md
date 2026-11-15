@@ -158,7 +158,7 @@ The company's index is `data/companies/<company-id>/index.sqlite`. Search, the s
   the picture and audio encoders (555 MB) to `data/models/`, and llama.cpp to `data/runtime/`, all checked against
   pinned sha256 hashes. Text that reads as prose, pictures, and audio get a 768-dimension vector in one shared space,
   stored as float16 in the `segments` table: no vector database, no extension.
-  Queries compare against every vector by brute force, which takes milliseconds at family scale.
+  Queries compare against every vector by brute force, which takes milliseconds at the scale of one company.
 - **Ranking:** after DigUp (github.com/ARahim3/DigUp, MIT). Each source's best cosine becomes a z-score against all
   scores for the query, centered and scaled per kind because pictures and audio score on a different scale than text;
   keyword coverage is the share of query words a source contains. A source shows when

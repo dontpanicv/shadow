@@ -140,7 +140,7 @@ test("start creates each company's folders and indexes a new file soon after it 
   const data = join(dataDirectory, "watch");
   const indexer = new Indexer(
     data,
-    directory(["family"]),
+    directory(["company"]),
     threadsWith({}),
     artifactsWith(),
     null
@@ -149,11 +149,11 @@ test("start creates each company's folders and indexes a new file soon after it 
     indexer.start();
     for (const folder of ["notes", "files", "raw", "channels"]) {
       expect(
-        statSync(join(data, "companies", "family", folder)).isDirectory()
+        statSync(join(data, "companies", "company", folder)).isDirectory()
       ).toBe(true);
     }
-    await indexer.scan("family");
-    expect(indexer.status("family")).toEqual({
+    await indexer.scan("company");
+    expect(indexer.status("company")).toEqual({
       sources: 0,
       segments: 0,
       waiting: 0,
@@ -161,15 +161,15 @@ test("start creates each company's folders and indexes a new file soon after it 
     });
 
     await Bun.write(
-      join(data, "companies", "family", "notes", "shopping.md"),
+      join(data, "companies", "company", "notes", "shopping.md"),
       "# Shopping\n\nBuy oat milk and apples."
     );
     await until(
       async () =>
-        (await indexer.search("family", "oat milk", 20, null)).results
+        (await indexer.search("company", "oat milk", 20, null)).results
           .length === 1
     );
-    const found = await indexer.search("family", "oat milk", 20, null);
+    const found = await indexer.search("company", "oat milk", 20, null);
     expect(found.semantic).toBe(false);
     expect(found.results[0]).toMatchObject({
       kind: "note",
@@ -184,11 +184,11 @@ test("start creates each company's folders and indexes a new file soon after it 
 test("a scan indexes finished thread messages, artifacts, and channel files, and skips what it cannot use", async () => {
   const data = join(dataDirectory, "threads");
   const threads = directory(
-    ["family"],
+    ["company"],
     [
       {
         id: "t1",
-        companyId: "family",
+        companyId: "company",
         conversationId: 1,
         channelId: "c1",
         title: "Holiday",
@@ -199,7 +199,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
       },
       {
         id: "t2",
-        companyId: "family",
+        companyId: "company",
         conversationId: 2,
         channelId: "c1",
         title: "Empty",
@@ -210,18 +210,18 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
       },
     ]
   );
-  const channel = join(data, "companies", "family", "channels", "c1");
+  const channel = join(data, "companies", "company", "channels", "c1");
   await mkdir(join(channel, "files"), { recursive: true });
   await Bun.write(
     join(channel, "files", "tickets.txt"),
     "Ferry tickets for Saturday"
   );
   await Bun.write(
-    join(data, "companies", "family", "files", "~$draft.docx"),
+    join(data, "companies", "company", "files", "~$draft.docx"),
     "lock"
   );
   await Bun.write(
-    join(data, "companies", "family", "files", "broken report.docx"),
+    join(data, "companies", "company", "files", "broken report.docx"),
     "not a zip"
   );
   const indexer = new Indexer(
@@ -273,8 +273,8 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
     null
   );
   try {
-    await indexer.scan("family");
-    const { results } = await indexer.search("family", "ferry", 20, null);
+    await indexer.scan("company");
+    const { results } = await indexer.search("company", "ferry", 20, null);
     expect(
       results
         .map((result) => [
@@ -296,18 +296,18 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
     expect(results.find((result) => result.kind === "thread")?.snippet).toBe(
       "Anna: We take the ferry to the island"
     );
-    expect((await indexer.search("family", "draft", 20, null)).results).toEqual(
-      []
-    );
+    expect(
+      (await indexer.search("company", "draft", 20, null)).results
+    ).toEqual([]);
     // A tool call's arguments find the thread by whom it wrote to.
     expect(
-      (await indexer.search("family", "quaybuilders", 20, null)).results.map(
+      (await indexer.search("company", "quaybuilders", 20, null)).results.map(
         (result) => result.uri
       )
     ).toEqual(["thread:t1"]);
     // A file Shadow cannot read is still found by its name, with no snippet of its stored path.
     expect(
-      (await indexer.search("family", "broken report", 20, null)).results.map(
+      (await indexer.search("company", "broken report", 20, null)).results.map(
         (result) => [result.uri, result.snippet]
       )
     ).toEqual([["files/broken report.docx", ""]]);
@@ -322,7 +322,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
   const live = { channels: ["c1"], artifacts: true };
   const thread = {
     id: "t1",
-    companyId: "family",
+    companyId: "company",
     conversationId: 1,
     channelId: "c1",
     title: "Holiday",
@@ -355,7 +355,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
   const indexer = new Indexer(
     data,
     {
-      ids: () => ["family"],
+      ids: () => ["company"],
       threadsIn: () => [thread],
       allThreadsIn: () => [thread],
       channelsIn: () => liveChannels(),
@@ -370,11 +370,11 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
     null
   );
   const found = async () =>
-    (await indexer.search("family", "ferry", 20, null)).results
+    (await indexer.search("company", "ferry", 20, null)).results
       .map((result) => result.uri)
       .sort();
   try {
-    await indexer.scan("family");
+    await indexer.scan("company");
     expect(await found()).toEqual(["artifact:amber-fox", "thread:t1"]);
     live.channels = [];
     expect(await found()).toEqual(["artifact:amber-fox"]);
@@ -393,11 +393,11 @@ test("pictures read while the model is down are read again, and text waits for t
     "#!/bin/sh\nprintf '\\377\\330beach\\377\\331'\n"
   );
   await chmod(fakeFfmpeg, 0o755);
-  const files = join(data, "companies", "family", "files");
+  const files = join(data, "companies", "company", "files");
   await mkdir(files, { recursive: true });
   await Bun.write(join(files, "IMG_0001.jpg"), "jpeg");
   await Bun.write(
-    join(data, "companies", "family", "notes", "trip.md"),
+    join(data, "companies", "company", "notes", "trip.md"),
     "The children want to visit the mountain lake again next summer"
   );
   const { embedder, state } = testEmbedder();
@@ -412,17 +412,20 @@ test("pictures read while the model is down are read again, and text waits for t
   tools.ffmpeg = fakeFfmpeg;
   try {
     state.failMedia = true;
-    await indexer.scan("family");
-    expect(indexer.status("family")).toMatchObject({ waiting: 0, model: true });
+    await indexer.scan("company");
+    expect(indexer.status("company")).toMatchObject({
+      waiting: 0,
+      model: true,
+    });
     expect(
-      (await indexer.search("family", "beach", 20, null)).results.map(
+      (await indexer.search("company", "beach", 20, null)).results.map(
         (result) => result.modality
       )
     ).toEqual([]);
 
     state.failMedia = false;
-    await indexer.scan("family");
-    const beach = await indexer.search("family", "beach", 20, null);
+    await indexer.scan("company");
+    const beach = await indexer.search("company", "beach", 20, null);
     expect(beach.semantic).toBe(true);
     expect(
       beach.results.map((result) => [result.title, result.modality])
@@ -430,7 +433,7 @@ test("pictures read while the model is down are read again, and text waits for t
 
     // Without a query vector, search still answers by keywords.
     state.failText = true;
-    const lake = await indexer.search("family", "mountain lake", 20, null);
+    const lake = await indexer.search("company", "mountain lake", 20, null);
     expect(lake.semantic).toBe(false);
     expect(lake.results.map((result) => result.title)).toEqual(["trip"]);
   } finally {

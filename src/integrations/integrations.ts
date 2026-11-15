@@ -85,7 +85,7 @@ export interface ConnectorTool<Parameters extends TSchema = TSchema> {
     save?: SaveFile
   ): Promise<unknown>;
   /**
-   * What a person allows before each call, such as `Send on Slack to #family: Dinner at 7`; `execute` then gets it as
+   * What a person allows before each call, such as `Send on Slack to #sales: The offer is ready`; `execute` then gets it as
    * `allowed`. A tool with it acts as the person, such as one that sends; it asks every time. `null` when this call
    * does not act as the person, such as an event that emails nobody.
    */

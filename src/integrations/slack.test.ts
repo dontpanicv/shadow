@@ -11,7 +11,7 @@ import {
 const directory = await mkdtemp(join(tmpdir(), "shadow-slack-test-"));
 const slackcli = join(directory, "slackcli");
 const SESSION =
-  '{"default_workspace":"T1","workspaces":{"T1":{"workspace_id":"T1","workspace_name":"Family","auth_type":"browser"}}}';
+  '{"default_workspace":"T1","workspaces":{"T1":{"workspace_id":"T1","workspace_name":"Company","auth_type":"browser"}}}';
 // slackcli as Shadow runs it: parse-curl keeps a session of the cURL on stdin; other commands answer with their
 // arguments, their home, and the session there; `fail` fails as a `--json` command does.
 await Bun.write(
@@ -36,10 +36,10 @@ afterAll(() => rm(directory, { recursive: true }));
 
 test("a pasted cURL signs in, and names the credential after the workspace", async () => {
   expect(
-    await connector.secretFrom!("curl 'https://family.slack.com/api'")
+    await connector.secretFrom!("curl 'https://company.slack.com/api'")
   ).toEqual({
     secret: SESSION,
-    label: "Family",
+    label: "Company",
   });
   await expect(connector.secretFrom!("hello")).rejects.toThrow(
     "Failed to parse cURL command Could not find Slack workspace URL"
@@ -79,11 +79,11 @@ test("only slack_send acts as the person, and its approval shows what it sends",
   ).toEqual(["slack_send"]);
   expect(
     tools.get("slack_send")!.approval!(
-      { to: "#family", text: "Dinner at 7", thread: "1.2" } as never,
+      { to: "#company", text: "Dinner at 7", thread: "1.2" } as never,
       SESSION,
       undefined
     )
-  ).toBe("Send on Slack to #family in a thread: Dinner at 7");
+  ).toBe("Send on Slack to #company in a thread: Dinner at 7");
 });
 
 test("source selection follows direct participation and the same thread, not channel activity", () => {

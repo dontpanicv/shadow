@@ -445,7 +445,7 @@ test("a short PDF page of prose keeps a text vector, and a long page keeps all i
   });
 
   const line =
-    "The family budget lists rent, food, school costs, and the savings for the summer trip to the sea. ";
+    "The company budget lists rent, food, school costs, and the savings for the summer trip to the sea. ";
   const long = await extract(
     await pdf(
       "long.pdf",

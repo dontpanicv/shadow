@@ -28,7 +28,7 @@ async function render(node: ReactNode): Promise<string> {
 test("an answer's thread links open the thread, its files show, and nothing in it runs", async () => {
   const html = await render(
     <Markdown
-      companyId="family"
+      companyId="company"
       text={[
         "Started [Dinner <b>plan</b>](thread:abc-1), <i>*soon*</i>, and read ![the list](file:f-1).",
         '<img src="x" onerror="alert(1)"><script>alert(2)</script>',
@@ -37,9 +37,9 @@ test("an answer's thread links open the thread, its files show, and nothing in i
       ].join("\n\n")}
     />
   );
-  expect(html).toContain('class="thread-link" href="/c/family/thread/abc-1"');
+  expect(html).toContain('class="thread-link" href="/c/company/thread/abc-1"');
   expect(html).toContain("Dinner <b>plan</b>");
-  expect(html).toContain('src="/api/v1/companies/family/files/f-1"');
+  expect(html).toContain('src="/api/v1/companies/company/files/f-1"');
   expect(html).toContain('href="https://example.com"');
   expect(html).toContain('target="_blank"');
   expect(html).toContain("<i><em>soon</em></i>");
@@ -57,7 +57,7 @@ test("an answer's thread links open the thread, its files show, and nothing in i
 test("a picture from another site shows as a link, and loads nothing", async () => {
   const html = await render(
     <Markdown
-      companyId="family"
+      companyId="company"
       text={[
         "![the dog](https://example.com/p.png)",
         '<img src="https://example.com/q.png">',
@@ -74,16 +74,16 @@ test("a picture from another site shows as a link, and loads nothing", async () 
 test("only a link to a path of this site opens in the app; one to another site opens a new tab", async () => {
   const html = await render(
     <Markdown
-      companyId="family"
+      companyId="company"
       text={[
-        "[home](/c/family)",
+        "[home](/c/company)",
         "[evil](//evil.example/a)",
         '<a href="/&#9;/evil.example/b">tab</a>',
         '<a href="/\\evil.example/c">slash</a>',
       ].join("\n\n")}
     />
   );
-  expect(html).toContain('<a href="/c/family">home</a>');
+  expect(html).toContain('<a href="/c/company">home</a>');
   for (const link of html.match(/<a [^>]*evil\.example[^>]*>/g) ?? []) {
     expect(link).toContain('target="_blank"');
   }
@@ -92,7 +92,7 @@ test("only a link to a path of this site opens in the app; one to another site o
 
 test("an artifact in an answer runs in its own sandboxed page", async () => {
   const html = await render(
-    <Markdown companyId="family" text="![Votes](artifact:amber-fox)" />
+    <Markdown companyId="company" text="![Votes](artifact:amber-fox)" />
   );
   expect(html).toContain('<iframe class="message-artifact"');
   expect(html).toContain('src="/a/amber-fox"');

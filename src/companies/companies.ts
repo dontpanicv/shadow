@@ -64,7 +64,7 @@ export interface Channel {
   readonly slackId: string | null;
   readonly threads: readonly ThreadSummary[];
 }
-/** Facts about the family that its people write by hand; every agent of the company reads them. */
+/** Facts about the company that its people write by hand; every agent of the company reads them. */
 export interface Facts {
   readonly text: string;
 }

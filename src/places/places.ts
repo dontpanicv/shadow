@@ -56,7 +56,7 @@ export interface PointOfInterest {
 export const MIN_RADIUS = 100;
 export const MAX_RADIUS = 5000;
 /** OpenStreetMap's tile and search policies ask for a User-Agent that names the app. */
-export const USER_AGENT = "Shadow (self-hosted family assistant)";
+export const USER_AGENT = "Shadow (self-hosted company assistant)";
 
 /** OpenStreetMap's search. Its policy allows one request each second, and no autocomplete. */
 const NOMINATIM = "https://nominatim.openstreetmap.org";
