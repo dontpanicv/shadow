@@ -2739,7 +2739,18 @@ test("an invalid model correction leaves the check unchanged", async () => {
 });
 
 test("the person's answered turn marks the update that it took as delivered", async () => {
-  app = await startTestApp();
+  app = await startTestApp({
+    catalog: [
+      {
+        id: "mail",
+        name: "Mail",
+        description: "Test mail source.",
+        secretLabel: null,
+        tools: [],
+        watch: async () => [],
+      },
+    ],
+  });
   const token = await app.signIn("Alice", "alice@example.com");
   const { user } = (await (await app.call("/api/v1/me", { token })).json()) as {
     user: { id: string; name: string; email: string };
@@ -2768,7 +2779,7 @@ test("the person's answered turn marks the update that it took as delivered", as
   const now = Date.now();
   app.app.database
     .query(
-      "INSERT INTO credential (id, company_id, integration, owner_id, label, shared, secret, created_at, watched) VALUES ('mail', ?, 'google', ?, 'alice@example.com', 0, x'00', ?, 1)"
+      "INSERT INTO credential (id, company_id, integration, owner_id, label, shared, secret, created_at, watched) VALUES ('mail', ?, 'mail', ?, 'alice@example.com', 0, x'00', ?, 1)"
     )
     .run(home.id, owner.id, now);
   app.app.database

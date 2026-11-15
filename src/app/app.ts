@@ -113,6 +113,7 @@ export async function createApp(
   const companies = new Companies(database, auth, pictures, reloadTools);
   const integrations = new Integrations(database, resolvedSecrets, companies, {
     baseUrl: config.baseUrl,
+    googleClient: config.google,
     changed: reloadTools,
     catalog,
   });

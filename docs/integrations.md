@@ -10,29 +10,17 @@ member. A routine's script cannot send.
 Settings shows the steps that set up each integration: click ⓘ on it. The steps are the `guide` of its connector, in
 `src/integrations/`.
 
-Shadow has nine integrations: Google, Slack, Notion, Linear, Jira, HubSpot, Pipes, Plaud, and T3 Code, and the
-company's Slack bot, which an admin connects in Company settings.
+Shadow has six Google Workspace integrations: Gmail, Drive, Docs, Sheets, Slides, and Calendar. It also has Slack, Notion, Linear, Jira, HubSpot, Pipes, Plaud, and T3 Code, and the company's Slack bot.
 
-Google and HubSpot need an OAuth client of your own, which an admin sets with **Client** on the integration; the next
-sign-in uses it at once. Until then, only admins see it. Google also needs `gog` on the Shadow machine, and Slack `slackcli`,
-in the `PATH` of the Shadow service; install them, for example with `brew install gogcli` and
-`brew install shaharia-lab/tap/slackcli`. Then click **Reload** on Configuration in Company settings. Shadow does not show
-these integrations without them.
+The six Google integrations use Google's official remote MCP servers. They use the Google OAuth client configured for Shadow sign-in in `config/shadow.toml`. In Google Cloud, mark that client **Use this client for an AI-powered agent**, and list `base_url/api/v1/integrations/callback` as an authorized redirect URI. Each Google service needs its own Google API and MCP API enabled, and each person connects each service they want to use. Google requires a client ID and secret even for MCP; Shadow uses its existing sign-in client. HubSpot needs its own client, which an admin sets with **Client** in Settings.
 
-The sign-in pages return to Shadow at `base_url/api/v1/integrations/callback`. The person signs in in the same browser session used to start the connection. Google and HubSpot OAuth clients must list that exact redirect URI.
+Slack needs `slackcli` in the Shadow service's `PATH`; install it, for example with `brew install shaharia-lab/tap/slackcli`, then click **Reload** on Configuration in Company settings.
 
-## Google: Gmail, Calendar, and Drive
+The sign-in pages return to Shadow at `base_url/api/v1/integrations/callback`. The person signs in in the same browser session used to start the connection.
 
-Shadow calls Google's APIs through [gog](https://github.com/openclaw/gogcli), with the access token of each sign-in,
-which Shadow renews with its refresh token. One client serves all accounts: personal and Google Workspace ones, of every
-person. Google shows that it has not verified the app; an app that is not verified can have up to 100 users.
+## Google Workspace MCP
 
-Agents search and read mail, save its attachments to the thread's channel, make drafts, and send mail or one of your drafts after you allow it, with files of the
-company attached; gog blocks sending in every other tool. For a draft, the approval shows the draft as it is in
-Gmail, and Shadow sends nothing when the draft changed after you allowed it. Agents use only these tools for mail, never a mail app on a machine. They read calendars, find free time, and create, change, and delete events; the guests get an email about it only when the agent asks for it and you allow it.
-They search Drive, read Docs and Sheets, create Docs, and change only the Docs that they created. They upload files of
-the company to Drive and share the files that they uploaded or created, with anyone who has the link, a person, or a
-domain; Google sends no invitation email.
+Gmail offers search, thread reading, labels, and drafts. Its MCP server does not send mail or create drafts with attachments. Drive offers file search, read, copy, and create. Docs, Sheets, and Slides expose their official read and edit tools. Calendar read tools are available; event changes and responses are hidden because they can email guests without Shadow's per-call approval. Google MCP does not supply Shadow's automatic mail intake, attachment saving, or the former command tools.
 
 ## Slack
 

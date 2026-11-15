@@ -9,6 +9,7 @@ import {
 import { startTestApp, type TestApp } from "../../test/harness.ts";
 import type { User } from "../platform/auth.ts";
 import { Secrets } from "../platform/secrets.ts";
+import { googleConnectors } from "./google.ts";
 import {
   type Connector,
   Integrations,
@@ -672,6 +673,66 @@ test("people sign in to the MCP server at the address of their own machine, and 
   await own.close();
 });
 
+test("all Google MCP servers use Shadow’s configured sign-in client", async () => {
+  const services = new Integrations(
+    shadow.app.database,
+    Secrets.forTests(),
+    shadow.app.companies,
+    {
+      catalog: googleConnectors(
+        "http://localhost:3000/api/v1/integrations/callback"
+      ),
+      googleClient: {
+        clientId: "workspace-client",
+        clientSecret: "workspace-secret",
+      },
+    }
+  );
+  expect(services.list(companyId, notOwner)).toHaveLength(6);
+  for (const service of services.list(companyId, notOwner)) {
+    expect(service.client?.clientId).toBe("workspace-client");
+    expect(service.watchable).toBe(false);
+  }
+});
+
+test("a Google MCP server signs in with the saved client and exposes its tools", async () => {
+  const gmail: Connector = {
+    ...googleConnectors(
+      "http://localhost:3000/api/v1/integrations/callback"
+    )[0]!,
+    oauth: new URL(signInServer.url).origin,
+    mcp: [new URL("/mcp", signInServer.url).href],
+  };
+  const service = new Integrations(
+    shadow.app.database,
+    Secrets.forTests(),
+    shadow.app.companies,
+    {
+      catalog: [gmail],
+      googleClient: {
+        clientId: "workspace-client",
+        clientSecret: "workspace-secret",
+      },
+      transport: () => {
+        const [client, server] = InMemoryTransport.createLinkedPair();
+        shopServer().connect(server);
+        return client;
+      },
+    }
+  );
+  const { url } = await service.connect(companyId, alice, "google");
+  const page = new URL(url);
+  expect(page.searchParams.get("client_id")).toBe("workspace-client");
+  await service.finishCallback(
+    alice,
+    `http://localhost:3000/api/v1/integrations/callback?code=code-4&state=${page.searchParams.get("state")}`
+  );
+  expect((await service.tools(companyId)).map((tool) => tool.name)).toContain(
+    "google_search_products"
+  );
+  await service.close();
+});
+
 test("the own tools of a sign-in get a fresh access token, which the refresh token renews", async () => {
   const google: Connector = {
     id: "google",
@@ -697,12 +758,9 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
     shadow.app.companies,
     {
       catalog: [google],
+      googleClient: { clientId: "own-client", clientSecret: "shh" },
     }
   );
-  await withOwner.setClient(alice, "google", {
-    clientId: "own-client",
-    clientSecret: "shh",
-  });
   expect(withOwner.list(companyId, alice)[0]).toMatchObject({
     connect: "sign-in",
   });

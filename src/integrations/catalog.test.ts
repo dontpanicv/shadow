@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { integrationCatalog } from "./catalog.ts";
 import { agentToolName } from "./integrations.ts";
 
-test("the catalog has the work integrations, and Google and Slack only with their programs", () => {
-  const without = integrationCatalog(null, null);
+test("the catalog has the work integrations and all six Google MCP servers", () => {
+  const without = integrationCatalog(null);
   expect(without.map((connector) => connector.id)).toEqual([
     "notion",
     "linear",
@@ -12,11 +12,15 @@ test("the catalog has the work integrations, and Google and Slack only with thei
     "pipes",
     "plaud",
     "t3",
+    "google",
+    "google_drive",
+    "google_docs",
+    "google_sheets",
+    "google_slides",
+    "google_calendar",
   ]);
   expect(
-    integrationCatalog("/bin/gog", "/bin/slackcli").map(
-      (connector) => connector.id
-    )
+    integrationCatalog("/bin/slackcli").map((connector) => connector.id)
   ).toEqual(expect.arrayContaining(["google", "slack"]));
   const byId = Object.fromEntries(
     without.map((connector) => [connector.id, connector])
@@ -27,6 +31,18 @@ test("the catalog has the work integrations, and Google and Slack only with thei
   // A tool that only posts a comment for other people cannot wait for an approval, so agents never get it.
   expect(byId.linear!.hiddenTools).toContain("create_comment");
   expect(byId.notion!.hiddenTools).toContain("notion-create-comment");
+  for (const id of [
+    "google",
+    "google_drive",
+    "google_docs",
+    "google_sheets",
+    "google_slides",
+    "google_calendar",
+  ]) {
+    expect(byId[id]!.mcp).toHaveLength(1);
+    expect(byId[id]!.clientKey).toBe("google");
+  }
+  expect(byId.google_calendar!.hiddenTools).toContain("respond_to_event");
 });
 
 test("an MCP tool's name is one that codemode can write, with the connector's prefix once", () => {

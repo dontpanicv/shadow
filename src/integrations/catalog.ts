@@ -1,4 +1,4 @@
-import { googleConnector } from "./google.ts";
+import { googleConnectors } from "./google.ts";
 import type { Connector } from "./integrations.ts";
 import { recordingObservations, watchRecordings } from "./plaud.ts";
 import { callbackAddress } from "./sign-in.ts";
@@ -6,11 +6,10 @@ import { slackConnector } from "./slack.ts";
 
 /**
  * The connectors that Shadow has: the MCP servers that people sign in to (Notion, Linear, Jira, HubSpot, Pipes, Plaud,
- * and T3 Code), Google when this machine has gog, and Slack when it has slackcli. A tool that only posts a comment
+ * and T3 Code), Google's Workspace MCP servers, and Slack when it has slackcli. A tool that only posts a comment
  * that other people read is hidden: an MCP server's tool cannot wait for the person's approval.
  */
 export function integrationCatalog(
-  gog = Bun.which("gog"),
   slackcli = Bun.which("slackcli"),
   baseUrl = "http://localhost:3000"
 ): readonly Connector[] {
@@ -136,7 +135,7 @@ export function integrationCatalog(
         "list_thread_pull_requests",
       ],
     },
-    ...(gog ? [googleConnector(gog, undefined, redirectUrl)] : []),
+    ...googleConnectors(redirectUrl),
     ...(slackcli ? [slackConnector(slackcli)] : []),
   ];
 }

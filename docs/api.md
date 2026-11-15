@@ -87,7 +87,7 @@ type SavedFile = { id: string; name: string; size: number; time: number }; // si
 type ThreadState = { thread: ThreadSummary; messages: Message[]; running: boolean; approvals: Approval[] };
 type Approval = {
 	id: string;
-	tool: string; // such as "google_mail_send"
+	tool: string; // such as "google_search_threads"
 	text: string; // what the action does, such as "Send an email to Bob"
 	approverId: string | null; // the person who may answer; null for any member
 	expiresAt: number; // the agent gets an error after this
@@ -427,16 +427,14 @@ uses the newest credential of that person, else the newest shared one, unless th
 `account` argument; `<integrationId>_accounts` lists them. The agents of a company get the tools of each integration
 that someone connected there. Secrets never leave the server.
 
-An integration with `connect: "sign-in"` is one or more MCP servers, such as Notion's, Linear's, or Plaud's, or an API that
-Shadow's own tools call, such as Google's. With `address`, such as T3 Code or Pipes, the MCP server runs on the person's
+An integration with `connect: "sign-in"` is one or more MCP servers, such as Notion's, Linear's, or Plaud's,  With `address`, such as T3 Code or Pipes, the MCP server runs on the person's
 own machine or instance: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. The provider returns to `base_url/api/v1/integrations/callback`, where Shadow exchanges the code and saves the credential. A sign-in needs the same browser session that started it.
 The agents then get the servers' tools as
 `<integrationId>_<tool>`, in the codemode namespace of the integration. Shadow lists a server's tools with the newest
-shared sign-in, else with a private one; the list has only tool names and schemas. Google's tools run gog with
-an access token that Shadow renews with the refresh token.
+shared sign-in, else with a private one; the list has only tool names and schemas. Each Google Workspace service has its own MCP server and sign-in; all six use Shadow’s configured Google sign-in client.
 
 An integration with `client` signs in with Shadow's own OAuth client, because its sign-in server does not register
-clients: Google and HubSpot. An admin sets the client in Settings; until then, only admins see the integration, and `connect`
+clients: Google and HubSpot. Google uses the client in `config/shadow.toml`; an admin sets HubSpot’s client in Settings. Until a client is available, only admins see the integration, and `connect`
 answers `400`.
 `docs/integrations.md` shows how to make the clients.
 
@@ -645,9 +643,7 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
   `host = "127.0.0.1"` behind Caddy can trust. An IPv6 client is its /48 network. Keep private things in members
   artifacts.
 - Each thread is one conversation in its company's Pi Durable session, a SQLite file in the company's directory.
-- A connector tool that acts as a person, such as `google_mail_send`, `google_mail_send_draft`, `slack_send`,
-  or a `google_calendar_*_event` call with `notify`, waits for an approval before every call, which shows what it sends: from the person who added the credential that it uses while
-  they are a member, else from the turn's person. A routine's script cannot call it.
+- A connector tool that sends a message as a person, such as `slack_send`, waits for the credential owner's approval before every call. A routine's script cannot call it. MCP tools that can send guest email without Shadow's approval are hidden.
 - Agents reach public addresses only: the browser and `save_file` go through Shadow's egress proxy, which refuses
   loopback, private, link-local, and other non-public addresses after each DNS answer and redirect. Each person of a
   thread has a browser of their own, with their own logins.

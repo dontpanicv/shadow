@@ -143,7 +143,7 @@ other tool is in a namespace that the model uses from a short TypeScript script,
 [Pi](https://github.com/earendil-works/pi) (`pi-codemode`, 256 MB, its own worker):
 
 ```ts
-const mail = await tools.google_mail_search({ account: "work", query: "from:acme.com newer_than:7d" });
+const mail = await tools.google_search_threads({ account: "work", query: "from:acme.com newer_than:7d" });
 const slack = await tools.slack_search({ account: "work", query: "acme in:#sales" });
 return { mail, slack };
 ```
@@ -162,7 +162,7 @@ one.
 
 | Integration | What agents do | How it connects |
 | --- | --- | --- |
-| Google (Gmail, Calendar, Drive, Docs, Sheets) | Search and read mail, draft, send after approval, calendar, files | Google sign-in, through [gog](https://github.com/openclaw/gogcli) |
+| Google Workspace (Gmail, Calendar, Drive, Docs, Sheets, Slides) | The official MCP tools of each service | Google sign-in, through six remote MCP servers |
 | Slack | Search and read, draft, send after approval | A request of the Slack web app, pasted as cURL, through [slackcli](https://github.com/shaharia-lab/slackcli) |
 | Notion | Search and read pages and databases, create and change them | Notion's MCP server |
 | Linear | Find and read issues and projects, create and change issues | Linear's MCP server |
@@ -284,7 +284,7 @@ person's inbox in the app.
 - **A domain on Cloudflare**, for the tunnel and the HTTPS address. Google sign-in needs `https` on a public name.
 - **A Google Cloud project** for Google sign-in. Nobody can sign in with a password.
 - **A ChatGPT account** for the model, and enough free memory for the local search model.
-- **Optional:** `gog` for Google and `slackcli` for each person's own Slack account.
+- **Optional:** `slackcli` for each person's own Slack account.
 
 ### Run it
 
@@ -418,7 +418,7 @@ Shadow stands on the work of these projects and people:
   [Shiki](https://shiki.style), [Leaflet](https://leafletjs.com) with [OpenStreetMap](https://www.openstreetmap.org),
   [Chart.js](https://www.chartjs.org), [docx-preview](https://github.com/VolodymyrBaydalka/docxjs), and
   [read-excel-file](https://gitlab.com/catamphetamine/read-excel-file).
-- **Integrations:** [gog](https://github.com/openclaw/gogcli) and [slackcli](https://github.com/shaharia-lab/slackcli).
+- **Integrations:** Google Workspace MCP and [slackcli](https://github.com/shaharia-lab/slackcli).
 - **Models:** [EmbeddingGemma 2](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) by Google (Apache 2.0).
 - **Design:** the Ember look, inspired by the work of [Charles Postiaux](https://x.com/postiauxcharles); the measures of
   [Linear](https://linear.app), the layout of

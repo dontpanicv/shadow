@@ -142,10 +142,12 @@ export interface Connector {
    */
   readonly oauth?: string;
   /**
-   * It signs in with Shadow's own OAuth client, which an admin sets in Settings, because its sign-in server
-   * does not register clients. Only an admin sees it until then.
+   * It signs in with Shadow's own OAuth client because its sign-in server does not register clients.
+   * Google uses the configured sign-in client; an admin sets other clients in Settings.
    */
   readonly registered?: boolean;
+  /** The saved OAuth client shared by several connectors, such as Google's MCP servers. */
+  readonly clientKey?: string;
   /** The OAuth scopes that its sign-in asks for; else the ones that its server gives. */
   readonly scope?: string;
   /** More parameters of its sign-in page, such as Google's `access_type=offline` for a refresh token. */
@@ -293,6 +295,7 @@ export interface ConnectorNamespace {
 
 export interface IntegrationsOptions {
   readonly baseUrl?: string;
+  readonly googleClient?: OAuthClient;
   /** Called when the connector tools of a company may change: a credential there changed. */
   readonly changed?: (companyId: string) => void;
   readonly catalog?: readonly Connector[];
@@ -349,8 +352,7 @@ export class Integrations {
     private readonly options: IntegrationsOptions
   ) {
     this.catalog =
-      options.catalog ??
-      integrationCatalog(undefined, undefined, options.baseUrl);
+      options.catalog ?? integrationCatalog(undefined, options.baseUrl);
   }
 
   /** The integrations, with the credentials that the person sees in the company: the shared ones and their own. */
@@ -364,7 +366,8 @@ export class Integrations {
     const admin = this.companies.isAdmin(user);
     return this.catalog.flatMap((connector) => {
       const clientId = connector.registered
-        ? (this.oauthClient(connector.id)?.clientId ?? null)
+        ? (this.oauthClient(connector.clientKey ?? connector.id)?.clientId ??
+          null)
         : null;
       if (connector.registered && !(clientId || admin)) {
         return [];
@@ -379,7 +382,9 @@ export class Integrations {
         username: connector.username ?? null,
         guide: connector.guide ?? [],
         watchable: connector.watch !== undefined,
-        client: connector.registered ? { clientId, changeable: admin } : null,
+        client: connector.registered
+          ? { clientId, changeable: admin && connector.clientKey !== "google" }
+          : null,
         credentials: credentials
           .filter((credential) => credential.integration === connector.id)
           .map(({ integration: _, ...credential }) => credential),
@@ -420,7 +425,7 @@ export class Integrations {
       throw new HttpError(403, "Only an admin sets the client");
     }
     const connector = this.connector(integrationId);
-    if (!connector.registered) {
+    if (!connector.registered || connector.clientKey === "google") {
       throw notFound();
     }
     this.database
@@ -428,7 +433,7 @@ export class Integrations {
         "INSERT INTO oauth_client (integration, client_id, secret, changed_by, changed_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (integration) DO UPDATE SET client_id = ?2, secret = ?3, changed_by = ?4, changed_at = ?5"
       )
       .run(
-        integrationId,
+        connector.clientKey ?? integrationId,
         required(client.clientId, "Client ID").trim(),
         this.secrets.encrypt(
           required(client.clientSecret, "Client secret").trim()
@@ -508,7 +513,7 @@ export class Integrations {
     }
     const state = randomUUID();
     const client = connector.registered
-      ? this.oauthClient(connector.id)
+      ? this.oauthClient(connector.clientKey ?? connector.id)
       : undefined;
     if (connector.registered && !client) {
       throw new HttpError(
@@ -1311,6 +1316,9 @@ export class Integrations {
   }
 
   private oauthClient(integrationId: string): OAuthClient | undefined {
+    if (integrationId === "google") {
+      return this.options.googleClient;
+    }
     const row = this.database
       .query("SELECT client_id, secret FROM oauth_client WHERE integration = ?")
       .get(integrationId) as { client_id: string; secret: Uint8Array } | null;
