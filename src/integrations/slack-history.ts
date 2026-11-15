@@ -16,6 +16,11 @@ import {
 export const SLACK_HISTORY_DAYS = 30;
 /** How long a channel is quiet before its brief reads its new messages: one brief for each burst of conversation. */
 export const SLACK_BRIEF_QUIET_MS = 10 * 60_000;
+/**
+ * The most text, in UTF-16 code units, that one brief reads; the newest messages come first. A busy channel, such as
+ * one of alerts, can have millions of characters in 30 days. The older ones stay in the day files, which search finds.
+ */
+export const SLACK_BRIEF_TEXT = 180_000;
 /** The largest attachment that Shadow keeps; a larger one stays a name with a link to Slack. */
 const LARGEST_FILE = 50 * 1024 * 1024;
 /** Messages that say only who came or left. */
@@ -625,7 +630,7 @@ export class SlackHistory {
     await this.ports.brief(
       companyId,
       channel.id,
-      rows.map((row) => ({
+      newestWithin(rows, SLACK_BRIEF_TEXT).map((row) => ({
         file: { id: row.fileId, name: `slack-${row.day}.md` },
         author: row.author,
         text: row.text,
@@ -800,6 +805,23 @@ function messageLines(message: StoredMessage, link: string | null): string[] {
     ...(message.text ? message.text.split("\n") : []),
     ...(files.length > 0 ? [`Attachments: ${files.join(", ")}`] : []),
   ];
+}
+
+/** The newest messages whose text fits in `size`, oldest first; at least the newest one. */
+export function newestWithin<T extends { readonly text: string }>(
+  messages: readonly T[],
+  size: number
+): T[] {
+  let used = 0;
+  let first = messages.length;
+  while (first > 0) {
+    used += messages[first - 1]!.text.length;
+    if (used > size && first < messages.length) {
+      break;
+    }
+    first -= 1;
+  }
+  return messages.slice(first);
 }
 
 function nextCursor(page: Record<string, unknown>): string {

@@ -58,7 +58,8 @@ versions stay. A new connection, as after a restart, reads only what came since 
 Slack refreshes reads nothing, as the events go to the new one. Once a day Shadow reads the last 36 hours again, for an
 event that never came. Events, readings, day files, and briefs each wait only for their own kind of work, so a mention
 never waits for the first reading of a large workspace, which can take hours, and a day file never waits for a brief. Search finds the files, and
-the brief of a channel quiet for 10 minutes reads each new or changed message once.
+the brief of a channel quiet for 10 minutes reads each new or changed message once, at most the newest 180,000
+characters of them.
 
 ### Shadow in Slack
 
