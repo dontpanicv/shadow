@@ -79,7 +79,7 @@ function oauthLlm(script: LoginScript) {
       name: "ChatGPT",
       defaultModel: "fast",
     },
-    OWNER.email
+    (person) => person.email === OWNER.email
   );
   return { llm, db, secrets, logins: () => logins };
 }
@@ -110,7 +110,7 @@ describe("Llm settings", () => {
         name: "Test",
         defaultModel: "fast",
       },
-      OWNER.email
+      (person) => person.email === OWNER.email
     );
     expect(llm.model()).toBe("fast");
     expect(() => llm.setModel(OWNER, "gone")).toThrow(
@@ -133,7 +133,7 @@ describe("Llm settings", () => {
         name: "Test",
         defaultModel: "fast",
       },
-      OWNER.email
+      (person) => person.email === OWNER.email
     );
     expect(llm.effort()).toBe("off");
     expect(() => llm.setEffort(OWNER, "high")).toThrow("Unknown effort: high");
@@ -160,7 +160,7 @@ describe("Llm settings", () => {
         name: "Test",
         defaultModel: "fast",
       },
-      OWNER.email
+      (person) => person.email === OWNER.email
     );
     const status = await llm.status(OWNER);
     expect(status.provider).toBe("Test");
@@ -202,17 +202,17 @@ describe("Llm device login", () => {
     expect(await llm.status(OWNER)).toMatchObject({
       connected: false,
       login: null,
-      owner: true,
+      admin: true,
     });
     const someone = { id: "someone", name: "Someone", email: "a@example.com" };
     await expect(llm.startLogin(someone)).rejects.toThrow(
-      new HttpError(403, "Only the server's owner changes this")
+      new HttpError(403, "Only an admin changes this")
     );
     const before = Date.now();
     const started = await llm.startLogin(OWNER);
     // Only the owner sees the device code.
     expect(await llm.status(someone)).toMatchObject({
-      owner: false,
+      admin: false,
       login: null,
     });
     expect(seen.method).toBe("device_code");
@@ -434,7 +434,7 @@ const hooks = {
 const noIntegrations = { tools: async () => [], namespaces: () => [] };
 const noArtifacts = {
   content: () => "",
-  inWorkspace: () => [],
+  inCompany: () => [],
   moveChannel: () => undefined,
   moveWithThread: () => undefined,
   tools: () => [],
@@ -462,7 +462,7 @@ function threadsOver(dataDirectory: string, llm: Llm) {
     string,
     {
       id: string;
-      workspaceId: string;
+      companyId: string;
       conversationId: number;
       channelId: string;
       title: string;
@@ -477,13 +477,18 @@ function threadsOver(dataDirectory: string, llm: Llm) {
       settledAt: null,
     }));
   const registry = {
-    requireMember: (workspaceId: string) => ({
-      id: workspaceId,
+    requireMember: (companyId: string) => ({
+      id: companyId,
       name: "Family",
-      role: "owner",
+      role: "admin" as const,
+    }),
+    requireAdmin: (companyId: string) => ({
+      id: companyId,
+      name: "Family",
+      role: "admin" as const,
     }),
     registerThread: (
-      workspaceId: string,
+      companyId: string,
       thread: {
         id: string;
         channelId: string;
@@ -493,7 +498,7 @@ function threadsOver(dataDirectory: string, llm: Llm) {
     ) => {
       registered.set(thread.id, {
         ...thread,
-        workspaceId,
+        companyId,
         ownerId: null,
         realm: null,
       });
@@ -506,15 +511,16 @@ function threadsOver(dataDirectory: string, llm: Llm) {
     }),
     threadsIn: () => listed(),
     allThreadsIn: () => listed(),
-    threadOf: (_workspaceId: string, conversationId: number) =>
+    threadOf: (_companyId: string, conversationId: number) =>
       listed().find((thread) => thread.conversationId === conversationId) ??
       null,
-    channel: (_workspaceId: string, channelId: string) => ({
+    channel: (_companyId: string, channelId: string) => ({
       id: channelId,
       name: channelId,
       ownerId: null,
       summary: null,
       icon: null,
+      slackId: null,
       threads: [],
     }),
     channelsIn: () => [],
@@ -569,7 +575,7 @@ describe("Threads with the Llm", () => {
         name: "Test",
         defaultModel: "fast",
       },
-      OWNER.email
+      (person) => person.email === OWNER.email
     );
     const { threads, thread } = threadsOver(dataDirectory, llm);
     const used: string[] = [];
@@ -587,7 +593,7 @@ describe("Threads with the Llm", () => {
     faux.setResponses([answer("First"), answer("Second")]);
     try {
       const { id } = await threads.create(
-        "workspace-1",
+        "company-1",
         user,
         "general",
         "Hello"
@@ -626,7 +632,7 @@ describe("Threads with the Llm", () => {
         defaultModel: "deep",
         fastModel: "fast",
       },
-      OWNER.email
+      (person) => person.email === OWNER.email
     );
     const { threads, thread } = threadsOver(dataDirectory, llm);
     const answer = (
@@ -664,7 +670,7 @@ describe("Threads with the Llm", () => {
     }
   });
 
-  test("the threads of a workspace are separate conversations in one session file, also after a restart", async () => {
+  test("the threads of a company are separate conversations in one session file, also after a restart", async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-llm-"));
     const faux = twoModels();
     const llm = new Llm(
@@ -675,7 +681,7 @@ describe("Threads with the Llm", () => {
         name: "Test",
         defaultModel: "fast",
       },
-      OWNER.email
+      (person) => person.email === OWNER.email
     );
     faux.setResponses([
       fauxAssistantMessage("Pasta"),
@@ -711,13 +717,13 @@ describe("Threads with the Llm", () => {
         "When do we go?",
         "Saturday",
       ]);
-      const workspace = join(dataDirectory, "workspaces", "family");
-      expect(await Bun.file(join(workspace, "session.sqlite")).exists()).toBe(
+      const company = join(dataDirectory, "companies", "family");
+      expect(await Bun.file(join(company, "session.sqlite")).exists()).toBe(
         true
       );
       expect(
         await Bun.file(
-          join(workspace, "threads", dinner.id, "session.sqlite")
+          join(company, "threads", dinner.id, "session.sqlite")
         ).exists()
       ).toBe(false);
       const before = await first.threads.version(first.thread(trip.id));

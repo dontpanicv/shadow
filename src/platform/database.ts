@@ -3,10 +3,10 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 /**
- * Application tables. better-auth owns `user`, `session`, `account`, `verification`, `organization` (workspaces),
+ * Application tables. better-auth owns `user`, `session`, `account`, `verification`, `organization` (companies),
  * `member`, and `invitation`; it migrates them itself. Append a migration; never edit one that shipped.
  *
- * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `workspaces` owns `channel`, `thread`, and `workspace_facts` (and reads
+ * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `thread`, and `company_facts` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
  * `credential`, `oauth_client`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
  * `places` owns `place` and `place_presence`, `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
@@ -17,15 +17,15 @@ import { dirname } from "node:path";
 const migrations = [
   `CREATE TABLE channel (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		created_by TEXT NOT NULL,
 		created_at INTEGER NOT NULL,
-		UNIQUE (workspace_id, name)
+		UNIQUE (company_id, name)
 	);
 	CREATE TABLE thread (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		channel_id TEXT NOT NULL REFERENCES channel (id) ON DELETE CASCADE,
 		title TEXT NOT NULL,
 		created_by TEXT NOT NULL,
@@ -35,7 +35,7 @@ const migrations = [
 	CREATE INDEX thread_channel ON thread (channel_id, updated_at);
 	CREATE TABLE credential (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		integration TEXT NOT NULL,
 		owner_id TEXT NOT NULL,
 		label TEXT NOT NULL,
@@ -43,13 +43,13 @@ const migrations = [
 		secret BLOB NOT NULL,
 		created_at INTEGER NOT NULL
 	);
-	CREATE INDEX credential_workspace ON credential (workspace_id, integration);
+	CREATE INDEX credential_company ON credential (company_id, integration);
 	CREATE TABLE integration_setting (
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		user_id TEXT NOT NULL,
 		integration TEXT NOT NULL,
 		enabled INTEGER NOT NULL,
-		PRIMARY KEY (workspace_id, user_id, integration)
+		PRIMARY KEY (company_id, user_id, integration)
 	);
 	CREATE TABLE provider_credential (
 		provider_id TEXT PRIMARY KEY,
@@ -60,14 +60,14 @@ const migrations = [
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);`,
-  // workspaces: a thread is one conversation in its workspace's session.sqlite. Threads from before kept a session
+  // companies: a thread is one conversation in its company's session.sqlite. Threads from before kept a session
   // file each; their rows go, and their files stay on disk.
   `ALTER TABLE thread ADD COLUMN conversation_id INTEGER;
 	DELETE FROM thread WHERE conversation_id IS NULL;`,
-  // hands: the machines paired with a workspace. `addresses` is a JSON array.
+  // hands: the machines paired with a company. `addresses` is a JSON array.
   `CREATE TABLE machine (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		hostname TEXT,
 		addresses TEXT NOT NULL,
@@ -77,16 +77,16 @@ const migrations = [
 		arch TEXT NOT NULL,
 		version TEXT NOT NULL,
 		paired_at INTEGER NOT NULL,
-		UNIQUE (workspace_id, cert_sha256),
-		UNIQUE (workspace_id, name)
+		UNIQUE (company_id, cert_sha256),
+		UNIQUE (company_id, name)
 	);`,
-  // workspaces: what a channel is for and what goes on in it, as an agent last wrote it.
+  // companies: what a channel is for and what goes on in it, as an agent last wrote it.
   "ALTER TABLE channel ADD COLUMN summary TEXT;",
   // routines: the scheduled work of a channel. `schedule` is a cron expression in the server's time zone, `script`
   // runs in code mode (null: the agent does the work), and `store` is the JSON the script keeps between runs.
   `CREATE TABLE routine (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		channel_id TEXT NOT NULL REFERENCES channel (id) ON DELETE CASCADE,
 		name TEXT NOT NULL,
 		schedule TEXT NOT NULL,
@@ -114,7 +114,7 @@ const migrations = [
   // `scope` is `shared` or the visitor that owns it, and `value` is JSON.
   `CREATE TABLE artifact (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		thread_id TEXT NOT NULL REFERENCES thread (id) ON DELETE CASCADE,
 		title TEXT NOT NULL,
 		html TEXT NOT NULL,
@@ -144,14 +144,14 @@ const migrations = [
   // never given out again.
   `CREATE TABLE artifact_name (id TEXT PRIMARY KEY);
 	INSERT INTO artifact_name (id) SELECT id FROM artifact;`,
-  // workspaces: keep finished threads available without showing them among active threads.
+  // companies: keep finished threads available without showing them among active threads.
   "ALTER TABLE thread ADD COLUMN settled_at INTEGER;",
-  // workspaces: the one thread of a workspace that never ends and that nobody settles. It is in the first channel,
+  // companies: the one thread of a company that never ends and that nobody settles. It is in the first channel,
   // which channel lists leave it out of.
   `ALTER TABLE thread ADD COLUMN orchestrator INTEGER NOT NULL DEFAULT 0;
-	CREATE UNIQUE INDEX thread_orchestrator ON thread (workspace_id) WHERE orchestrator = 1;`,
+	CREATE UNIQUE INDEX thread_orchestrator ON thread (company_id) WHERE orchestrator = 1;`,
   // Deletes are soft: a deleted row keeps everything and gets `deleted_at`, and reads leave it out.
-  // workspaces: a deleted channel hides its threads; its name gets `~<id>`, so a new channel can take the name.
+  // companies: a deleted channel hides its threads; its name gets `~<id>`, so a new channel can take the name.
   "ALTER TABLE channel ADD COLUMN deleted_at INTEGER;",
   // artifacts: deleted artifacts, records, and visitors.
   `ALTER TABLE artifact ADD COLUMN deleted_at INTEGER;
@@ -166,14 +166,14 @@ const migrations = [
   // llm: the login of a provider after a logout, which nothing reads again.
   "ALTER TABLE provider_credential ADD COLUMN deleted_at INTEGER;",
   // artifacts: an artifact belongs to its channel and stays after its thread is settled; `thread_id` is the thread
-  // that made it. The orchestrator's belong to the workspace: their `channel_id` is null.
+  // that made it. The orchestrator's belong to the company: their `channel_id` is null.
   `ALTER TABLE artifact ADD COLUMN channel_id TEXT;
 	UPDATE artifact SET channel_id = (SELECT CASE WHEN orchestrator = 1 THEN NULL ELSE channel_id END FROM thread WHERE thread.id = artifact.thread_id);
 	CREATE INDEX artifact_channel ON artifact (channel_id);`,
   // reminders: one due time, tied to the person and thread that asked for it.
   `CREATE TABLE reminder (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		thread_id TEXT NOT NULL,
 		recipient_id TEXT NOT NULL,
 		text TEXT NOT NULL,
@@ -189,11 +189,11 @@ const migrations = [
 		updated_at INTEGER NOT NULL
 	);
 	CREATE INDEX reminder_due ON reminder (next_attempt_at) WHERE delivered_at IS NULL AND cancelled_at IS NULL AND deleted_at IS NULL;
-	CREATE INDEX reminder_workspace ON reminder (workspace_id, due_at);`,
+	CREATE INDEX reminder_company ON reminder (company_id, due_at);`,
   // notifications: what needs a person's attention, which opens a thread or a channel, and the devices that get pushes.
   `CREATE TABLE notification (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		user_id TEXT NOT NULL,
 		channel_id TEXT NOT NULL,
 		thread_id TEXT,
@@ -202,7 +202,7 @@ const migrations = [
 		created_at INTEGER NOT NULL,
 		read_at INTEGER
 	);
-	CREATE INDEX notification_inbox ON notification (user_id, workspace_id, created_at);
+	CREATE INDEX notification_inbox ON notification (user_id, company_id, created_at);
 	CREATE TABLE push_device (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
@@ -212,11 +212,11 @@ const migrations = [
 		deleted_at INTEGER
 	);
 	CREATE INDEX push_device_user ON push_device (user_id) WHERE deleted_at IS NULL;`,
-  // integrations: a credential without a workspace is its owner's own, for their turns in each of their workspaces.
+  // integrations: a credential without a company is its owner's own, for their turns in each of their companies.
   // SQLite cannot drop NOT NULL from a column, so the table is made again with the same rows.
   `CREATE TABLE credential_next (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT,
+		company_id TEXT,
 		integration TEXT NOT NULL,
 		owner_id TEXT NOT NULL,
 		label TEXT NOT NULL,
@@ -225,20 +225,20 @@ const migrations = [
 		created_at INTEGER NOT NULL,
 		deleted_at INTEGER
 	);
-	INSERT INTO credential_next SELECT id, workspace_id, integration, owner_id, label, shared, secret, created_at, deleted_at FROM credential;
+	INSERT INTO credential_next SELECT id, company_id, integration, owner_id, label, shared, secret, created_at, deleted_at FROM credential;
 	DROP TABLE credential;
 	ALTER TABLE credential_next RENAME TO credential;
-	CREATE INDEX credential_workspace ON credential (workspace_id, integration);
-	CREATE INDEX credential_owner ON credential (owner_id, integration) WHERE workspace_id IS NULL;`,
+	CREATE INDEX credential_company ON credential (company_id, integration);
+	CREATE INDEX credential_owner ON credential (owner_id, integration) WHERE company_id IS NULL;`,
   // reminders: the person who asked for a reminder or last changed it; its turn runs as them. Null for older rows.
   "ALTER TABLE reminder ADD COLUMN created_by TEXT;",
   // hands: the member who paired a machine, who allows what agents do on it for others.
   "ALTER TABLE machine ADD COLUMN paired_by TEXT;",
-  // hands: a machine without a workspace is the own machine of the person who paired it, for their turns in each of
-  // their workspaces. SQLite cannot drop NOT NULL from a column, so the table is made again with the same rows.
+  // hands: a machine without a company is the own machine of the person who paired it, for their turns in each of
+  // their companies. SQLite cannot drop NOT NULL from a column, so the table is made again with the same rows.
   `CREATE TABLE machine_next (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT,
+		company_id TEXT,
 		name TEXT NOT NULL,
 		hostname TEXT,
 		addresses TEXT NOT NULL,
@@ -250,26 +250,26 @@ const migrations = [
 		paired_at INTEGER NOT NULL,
 		deleted_at INTEGER,
 		paired_by TEXT,
-		UNIQUE (workspace_id, cert_sha256),
-		UNIQUE (workspace_id, name)
+		UNIQUE (company_id, cert_sha256),
+		UNIQUE (company_id, name)
 	);
-	INSERT INTO machine_next SELECT id, workspace_id, name, hostname, addresses, port, cert_sha256, os, arch, version, paired_at, deleted_at, paired_by FROM machine;
+	INSERT INTO machine_next SELECT id, company_id, name, hostname, addresses, port, cert_sha256, os, arch, version, paired_at, deleted_at, paired_by FROM machine;
 	DROP TABLE machine;
 	ALTER TABLE machine_next RENAME TO machine;
-	CREATE UNIQUE INDEX machine_own_cert ON machine (paired_by, cert_sha256) WHERE workspace_id IS NULL;
-	CREATE UNIQUE INDEX machine_own_name ON machine (paired_by, name) WHERE workspace_id IS NULL;`,
+	CREATE UNIQUE INDEX machine_own_cert ON machine (paired_by, cert_sha256) WHERE company_id IS NULL;
+	CREATE UNIQUE INDEX machine_own_name ON machine (paired_by, name) WHERE company_id IS NULL;`,
   // routines: what a run's script found, kept until the run ends, so a run that a stop cuts off goes on with it.
   "ALTER TABLE routine_run ADD COLUMN result TEXT;",
   // hands and routines: standing approvals, unused since dcg alone decides what waits for a person; drop both.
   "ALTER TABLE machine ADD COLUMN trusted_members TEXT NOT NULL DEFAULT '[]';",
   "ALTER TABLE routine ADD COLUMN machine_ids TEXT NOT NULL DEFAULT '[]';",
-  // workspaces: each member has an orchestrator of their own, and its `created_by` is that member. The workspace's one
-  // orchestrator from before becomes the own of the person who made the workspace, who made its first channel.
-  `UPDATE thread SET created_by = (SELECT c.created_by FROM channel c WHERE c.workspace_id = thread.workspace_id ORDER BY c.created_at, c.rowid LIMIT 1) WHERE orchestrator = 1;
+  // companies: each member has an orchestrator of their own, and its `created_by` is that member. The company's one
+  // orchestrator from before becomes the own of the person who made the company, who made its first channel.
+  `UPDATE thread SET created_by = (SELECT c.created_by FROM channel c WHERE c.company_id = thread.company_id ORDER BY c.created_at, c.rowid LIMIT 1) WHERE orchestrator = 1;
 	DROP INDEX thread_orchestrator;
-	CREATE UNIQUE INDEX thread_own_orchestrator ON thread (workspace_id, created_by) WHERE orchestrator = 1;`,
+	CREATE UNIQUE INDEX thread_own_orchestrator ON thread (company_id, created_by) WHERE orchestrator = 1;`,
   // integrations: Shadow's own OAuth client of an integration whose sign-in server does not register clients, such as
-  // Google's; the server's owner sets it in Settings. `secret` is the encrypted client secret.
+  // Google's; an admin sets it in Settings. `secret` is the encrypted client secret.
   `CREATE TABLE oauth_client (
 		integration TEXT PRIMARY KEY,
 		client_id TEXT NOT NULL,
@@ -277,36 +277,36 @@ const migrations = [
 		changed_by TEXT NOT NULL,
 		changed_at INTEGER NOT NULL
 	);`,
-  // workspaces: the emoji that the model chose for a channel, which people see before its name.
+  // companies: the emoji that the model chose for a channel, which people see before its name.
   "ALTER TABLE channel ADD COLUMN icon TEXT;",
-  // workspaces: the facts that the people of a workspace write by hand, such as names, birthdays, and places.
-  `CREATE TABLE workspace_facts (
-		workspace_id TEXT PRIMARY KEY,
+  // companies: the facts that the people of a company write by hand, such as names, birthdays, and places.
+  `CREATE TABLE company_facts (
+		company_id TEXT PRIMARY KEY,
 		text TEXT NOT NULL,
 		changed_by TEXT NOT NULL,
 		changed_at INTEGER NOT NULL
 	);`,
-  // workspaces: a private channel belongs to one member, who alone sees it, its threads, files, artifacts, and
+  // companies: a private channel belongs to one member, who alone sees it, its threads, files, artifacts, and
   // routines; `owner_id` is null for a channel every member sees.
   "ALTER TABLE channel ADD COLUMN owner_id TEXT;",
-  // search: what each person searched in a workspace, which the search page shows before a query.
+  // search: what each person searched in a company, which the search page shows before a query.
   `CREATE TABLE recent_search (
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		user_id TEXT NOT NULL,
 		query TEXT NOT NULL COLLATE NOCASE,
 		searched_at INTEGER NOT NULL,
-		PRIMARY KEY (workspace_id, user_id, query)
+		PRIMARY KEY (company_id, user_id, query)
 	);`,
-  // integrations and hands: a person adds each credential and machine in their own Settings, in the workspace, and it
+  // integrations and hands: a person adds each credential and machine in their own Settings, in the company, and it
   // is shared, for every member's turns, or private, for its owner's turns only. The own ones from before become
-  // private ones in their owner's workspace, and the workspace's become shared. A machine paired both ways stays once:
-  // the own row, whose key the machine trusts, now shared. Names are unique in the workspace, so a later machine with
+  // private ones in their owner's company, and the company's become shared. A machine paired both ways stays once:
+  // the own row, whose key the machine trusts, now shared. Names are unique in the company, so a later machine with
   // a taken name gets the start of its id. SQLite cannot add NOT NULL to a column, so both tables are made again.
-  `UPDATE credential SET shared = workspace_id IS NOT NULL;
-	UPDATE credential SET workspace_id = (SELECT m.organizationId FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = credential.owner_id ORDER BY o.deletedAt IS NOT NULL, o.createdAt LIMIT 1) WHERE workspace_id IS NULL;
+  `UPDATE credential SET shared = company_id IS NOT NULL;
+	UPDATE credential SET company_id = (SELECT m.organizationId FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = credential.owner_id ORDER BY o.deletedAt IS NOT NULL, o.createdAt LIMIT 1) WHERE company_id IS NULL;
 	CREATE TABLE credential_next (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		integration TEXT NOT NULL,
 		owner_id TEXT NOT NULL,
 		label TEXT NOT NULL,
@@ -315,14 +315,14 @@ const migrations = [
 		created_at INTEGER NOT NULL,
 		deleted_at INTEGER
 	);
-	INSERT INTO credential_next SELECT id, workspace_id, integration, owner_id, label, shared, secret, created_at, deleted_at FROM credential;
+	INSERT INTO credential_next SELECT id, company_id, integration, owner_id, label, shared, secret, created_at, deleted_at FROM credential;
 	DROP TABLE credential;
 	ALTER TABLE credential_next RENAME TO credential;
-	CREATE INDEX credential_workspace ON credential (workspace_id, integration);
-	UPDATE machine SET paired_by = (SELECT c.created_by FROM channel c WHERE c.workspace_id = machine.workspace_id ORDER BY c.created_at, c.rowid LIMIT 1) WHERE paired_by IS NULL;
+	CREATE INDEX credential_company ON credential (company_id, integration);
+	UPDATE machine SET paired_by = (SELECT c.created_by FROM channel c WHERE c.company_id = machine.company_id ORDER BY c.created_at, c.rowid LIMIT 1) WHERE paired_by IS NULL;
 	CREATE TABLE machine_next (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		hostname TEXT,
 		addresses TEXT NOT NULL,
@@ -336,17 +336,17 @@ const migrations = [
 		shared INTEGER NOT NULL,
 		deleted_at INTEGER
 	);
-	INSERT INTO machine_next SELECT id, COALESCE(workspace_id, (SELECT m.organizationId FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = machine.paired_by ORDER BY o.deletedAt IS NOT NULL, o.createdAt LIMIT 1)), name, hostname, addresses, port, cert_sha256, os, arch, version, paired_at, paired_by, workspace_id IS NOT NULL OR EXISTS (SELECT 1 FROM machine twin WHERE twin.workspace_id IS NOT NULL AND twin.deleted_at IS NULL AND twin.paired_by = machine.paired_by AND twin.cert_sha256 = machine.cert_sha256), deleted_at FROM machine;
-	UPDATE machine_next SET deleted_at = CAST(unixepoch('subsec') * 1000 AS INTEGER), name = name || '~' || id, cert_sha256 = cert_sha256 || '~' || id WHERE id IN (SELECT twin.id FROM machine twin JOIN machine own ON own.workspace_id IS NULL AND own.deleted_at IS NULL AND own.paired_by = twin.paired_by AND own.cert_sha256 = twin.cert_sha256 WHERE twin.workspace_id IS NOT NULL AND twin.deleted_at IS NULL);
-	UPDATE machine_next SET name = name || '-' || substr(id, 1, 4) WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM machine_next other WHERE other.deleted_at IS NULL AND other.workspace_id = machine_next.workspace_id AND other.name = machine_next.name COLLATE NOCASE AND (other.paired_at, other.id) < (machine_next.paired_at, machine_next.id));
+	INSERT INTO machine_next SELECT id, COALESCE(company_id, (SELECT m.organizationId FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = machine.paired_by ORDER BY o.deletedAt IS NOT NULL, o.createdAt LIMIT 1)), name, hostname, addresses, port, cert_sha256, os, arch, version, paired_at, paired_by, company_id IS NOT NULL OR EXISTS (SELECT 1 FROM machine twin WHERE twin.company_id IS NOT NULL AND twin.deleted_at IS NULL AND twin.paired_by = machine.paired_by AND twin.cert_sha256 = machine.cert_sha256), deleted_at FROM machine;
+	UPDATE machine_next SET deleted_at = CAST(unixepoch('subsec') * 1000 AS INTEGER), name = name || '~' || id, cert_sha256 = cert_sha256 || '~' || id WHERE id IN (SELECT twin.id FROM machine twin JOIN machine own ON own.company_id IS NULL AND own.deleted_at IS NULL AND own.paired_by = twin.paired_by AND own.cert_sha256 = twin.cert_sha256 WHERE twin.company_id IS NOT NULL AND twin.deleted_at IS NULL);
+	UPDATE machine_next SET name = name || '-' || substr(id, 1, 4) WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM machine_next other WHERE other.deleted_at IS NULL AND other.company_id = machine_next.company_id AND other.name = machine_next.name COLLATE NOCASE AND (other.paired_at, other.id) < (machine_next.paired_at, machine_next.id));
 	DROP TABLE machine;
 	ALTER TABLE machine_next RENAME TO machine;
-	CREATE UNIQUE INDEX machine_cert ON machine (workspace_id, paired_by, cert_sha256);
-	CREATE UNIQUE INDEX machine_name ON machine (workspace_id, name COLLATE NOCASE);`,
+	CREATE UNIQUE INDEX machine_cert ON machine (company_id, paired_by, cert_sha256);
+	CREATE UNIQUE INDEX machine_name ON machine (company_id, name COLLATE NOCASE);`,
   // llm: what the model calls cost, by day, person, source, thread, and model, which Settings shows; and the usage of
   // each conversation that the first table has counted.
   `CREATE TABLE llm_usage (
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		day TEXT NOT NULL,
 		user_id TEXT NOT NULL,
 		source TEXT NOT NULL,
@@ -357,18 +357,18 @@ const migrations = [
 		cache_read INTEGER NOT NULL,
 		cache_write INTEGER NOT NULL,
 		cost REAL NOT NULL,
-		PRIMARY KEY (workspace_id, day, user_id, source, thread_id, model)
+		PRIMARY KEY (company_id, day, user_id, source, thread_id, model)
 	);
 	CREATE TABLE llm_usage_seen (
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		conversation_id INTEGER NOT NULL,
 		usage TEXT NOT NULL,
-		PRIMARY KEY (workspace_id, conversation_id)
+		PRIMARY KEY (company_id, conversation_id)
 	);`,
   // agenda: the automations that Shadow suggests to a person, which wait until they accept or decline one.
   `CREATE TABLE suggestion (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		person_id TEXT NOT NULL,
 		thread_id TEXT NOT NULL,
 		channel_id TEXT NOT NULL,
@@ -384,20 +384,20 @@ const migrations = [
 		result_id TEXT,
 		deleted_at INTEGER
 	);
-	CREATE INDEX suggestion_person ON suggestion (workspace_id, person_id, created_at);`,
+	CREATE INDEX suggestion_person ON suggestion (company_id, person_id, created_at);`,
   // notifications: the Live Activities of the iOS app, each following the work for one message of a person, and the
   // last state Shadow pushed to it.
   `CREATE TABLE live_activity (
 		token TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		thread_id TEXT NOT NULL,
 		environment TEXT NOT NULL,
 		state TEXT,
 		started_at INTEGER NOT NULL,
 		ended_at INTEGER
 	);
-	CREATE INDEX live_activity_open ON live_activity (workspace_id, ended_at);`,
+	CREATE INDEX live_activity_open ON live_activity (company_id, ended_at);`,
   // accounts: the pictures that people upload for their profile; the newest that is not deleted is theirs.
   `CREATE TABLE profile_picture (
 		id TEXT PRIMARY KEY,
@@ -412,7 +412,7 @@ const migrations = [
   // A removed place gets `~<id>` in its name, so the name is free again.
   `CREATE TABLE place (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		owner_id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		latitude REAL NOT NULL,
@@ -422,7 +422,7 @@ const migrations = [
 		created_at INTEGER NOT NULL,
 		deleted_at INTEGER
 	);
-	CREATE UNIQUE INDEX place_name ON place (workspace_id, owner_id, name COLLATE NOCASE);`,
+	CREATE UNIQUE INDEX place_name ON place (company_id, owner_id, name COLLATE NOCASE);`,
   // reminders: a reminder at a place waits until its person's iPhone reports that they arrived or left
   // (`place_event`); then `triggered_at` and its due time are set. Null for a reminder at a time.
   `ALTER TABLE reminder ADD COLUMN place_id TEXT;
@@ -442,11 +442,11 @@ const migrations = [
 		at INTEGER NOT NULL,
 		PRIMARY KEY (place_id, person_id)
 	);`,
-  // feedback: what agents report about Shadow itself, for the server's owner; `person_id` is the person of the turn,
+  // feedback: what agents report about Shadow itself, for the admins; `person_id` is the person of the turn,
   // null for background work.
   `CREATE TABLE feedback (
 		id TEXT PRIMARY KEY,
-		workspace_id TEXT NOT NULL,
+		company_id TEXT NOT NULL,
 		thread_id TEXT,
 		person_id TEXT,
 		kind TEXT NOT NULL,
@@ -456,7 +456,7 @@ const migrations = [
 		created_at INTEGER NOT NULL,
 		deleted_at INTEGER
 	);
-	CREATE INDEX feedback_workspace ON feedback (workspace_id, deleted_at, created_at);`,
+	CREATE INDEX feedback_company ON feedback (company_id, deleted_at, created_at);`,
   // routines: keep the definition and script store a run started with; older servers leave this nullable column unset.
   "ALTER TABLE routine_run ADD COLUMN input TEXT;",
 
@@ -464,11 +464,11 @@ const migrations = [
   "ALTER TABLE credential ADD COLUMN watched INTEGER NOT NULL DEFAULT 0;",
   // intake: durable source observations, private context, future checks, and idempotent deliveries.
   `CREATE TABLE intake_source (
-    credential_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+    credential_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL,
     polled_at INTEGER NOT NULL DEFAULT 0, attempted_at INTEGER NOT NULL DEFAULT 0, error TEXT, checkpoint TEXT NOT NULL DEFAULT '{}'
   );
   CREATE TABLE intake_item (
-    id TEXT PRIMARY KEY, credential_id TEXT NOT NULL, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+    id TEXT PRIMARY KEY, credential_id TEXT NOT NULL, company_id TEXT NOT NULL, owner_id TEXT NOT NULL,
     source_id TEXT NOT NULL, version TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL,
     read_at INTEGER, reading TEXT, assessed_at INTEGER, thread_id TEXT, archived_id TEXT, superseded_at INTEGER,
     UNIQUE(credential_id,source_id,version)
@@ -476,48 +476,48 @@ const migrations = [
   CREATE INDEX intake_pending ON intake_item(owner_id,assessed_at,at);
   CREATE VIRTUAL TABLE intake_fts USING fts5(text, tokenize="unicode61 remove_diacritics 2");
   CREATE TABLE intake_check (
-    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL, thread_id TEXT,
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL, thread_id TEXT,
     text TEXT NOT NULL, source_ids TEXT NOT NULL, explicit_time INTEGER NOT NULL, check_at INTEGER NOT NULL, next_review_at INTEGER NOT NULL,
     state TEXT NOT NULL DEFAULT 'open', notified_at INTEGER, revised_at INTEGER NOT NULL,
     deleted_at INTEGER
   );
   CREATE INDEX intake_due ON intake_check(state,check_at);
   CREATE TABLE intake_context (
-    workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL, thread_id TEXT NOT NULL,
+    company_id TEXT NOT NULL, owner_id TEXT NOT NULL, thread_id TEXT NOT NULL,
     summary TEXT NOT NULL, source_ids TEXT NOT NULL, updated_at INTEGER NOT NULL,
-    PRIMARY KEY(workspace_id,owner_id,thread_id)
+    PRIMARY KEY(company_id,owner_id,thread_id)
   );
   CREATE TABLE intake_delivery (
-    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL,
     thread_id TEXT, body TEXT NOT NULL, attention TEXT NOT NULL,
     check_ids TEXT NOT NULL, evidence_ids TEXT NOT NULL, created_at INTEGER NOT NULL, delivered_at INTEGER, cancelled_at INTEGER
   );
   CREATE TABLE intake_thread_read (
-    workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL, thread_id TEXT NOT NULL, version TEXT NOT NULL,
-    PRIMARY KEY(workspace_id,owner_id,thread_id)
+    company_id TEXT NOT NULL, owner_id TEXT NOT NULL, thread_id TEXT NOT NULL, version TEXT NOT NULL,
+    PRIMARY KEY(company_id,owner_id,thread_id)
   );`,
   // intake: a thread update is silent unless the judge supplies a separate notification reason.
   `ALTER TABLE intake_delivery ADD COLUMN notification TEXT;
-   CREATE INDEX intake_conversation ON intake_item(workspace_id,owner_id,credential_id,json_extract(payload,'$.chat'),at);`,
+   CREATE INDEX intake_conversation ON intake_item(company_id,owner_id,credential_id,json_extract(payload,'$.chat'),at);`,
   `CREATE TABLE intake_source_read (
-    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL,
     thread_id TEXT NOT NULL, credential_id TEXT NOT NULL, source_ids TEXT NOT NULL,
     observed_at INTEGER NOT NULL, assessed_at INTEGER, deleted_at INTEGER
   );
-  CREATE INDEX intake_unassessed_read ON intake_source_read(workspace_id,owner_id,assessed_at);`,
+  CREATE INDEX intake_unassessed_read ON intake_source_read(company_id,owner_id,assessed_at);`,
   "ALTER TABLE intake_delivery ADD COLUMN subject TEXT;",
   // intake: durable check history, including writes from machines on the previous version.
   `CREATE TABLE intake_check_revision (
     id INTEGER PRIMARY KEY AUTOINCREMENT, check_id TEXT NOT NULL,
-    workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL, at INTEGER NOT NULL,
+    company_id TEXT NOT NULL, owner_id TEXT NOT NULL, at INTEGER NOT NULL,
     action TEXT NOT NULL DEFAULT 'review', quote TEXT, previous TEXT, current TEXT NOT NULL
   );
-  CREATE INDEX intake_check_history ON intake_check_revision(workspace_id,owner_id,check_id,id);
-  INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,current)
-    SELECT id,workspace_id,owner_id,revised_at,json_object('text',text,'state',state,'sourceIds',json(source_ids),'threadId',thread_id,'checkAt',check_at,'reviewAt',next_review_at,'explicitTime',explicit_time,'notifiedAt',notified_at) FROM intake_check WHERE deleted_at IS NULL;
+  CREATE INDEX intake_check_history ON intake_check_revision(company_id,owner_id,check_id,id);
+  INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,current)
+    SELECT id,company_id,owner_id,revised_at,json_object('text',text,'state',state,'sourceIds',json(source_ids),'threadId',thread_id,'checkAt',check_at,'reviewAt',next_review_at,'explicitTime',explicit_time,'notifiedAt',notified_at) FROM intake_check WHERE deleted_at IS NULL;
   CREATE TRIGGER intake_check_created AFTER INSERT ON intake_check BEGIN
-    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,current)
-    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+    INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,current)
+    VALUES(NEW.id,NEW.company_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
   END;
   CREATE TRIGGER intake_check_changed AFTER UPDATE ON intake_check
     WHEN OLD.text IS NOT NEW.text OR OLD.state IS NOT NEW.state OR OLD.source_ids IS NOT NEW.source_ids
@@ -525,32 +525,32 @@ const migrations = [
       OR OLD.thread_id IS NOT NEW.thread_id OR OLD.explicit_time IS NOT NEW.explicit_time
       OR OLD.notified_at IS NOT NEW.notified_at
     BEGIN
-    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,previous,current)
-    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'threadId',OLD.thread_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+    INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,previous,current)
+    VALUES(NEW.id,NEW.company_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'threadId',OLD.thread_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
   END;`,
   // intake: one derived file for each source conversation and destination, with retryable consolidation.
   `CREATE TABLE intake_archive (
-    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL,
     channel_id TEXT NOT NULL, credential_id TEXT NOT NULL, integration TEXT NOT NULL,
     conversation TEXT NOT NULL, period TEXT NOT NULL,
     item_ids TEXT NOT NULL, file_id TEXT, content_hash TEXT, pending INTEGER NOT NULL DEFAULT 1,
     attachment_ids TEXT NOT NULL DEFAULT '{}', obsolete_ids TEXT NOT NULL DEFAULT '[]',
     deleted_at INTEGER
   );
-  CREATE INDEX intake_archive_owner ON intake_archive(workspace_id,owner_id,deleted_at);`,
+  CREATE INDEX intake_archive_owner ON intake_archive(company_id,owner_id,deleted_at);`,
   // intake: the person's words about an observation, an update, or a source, which later assessments respect.
   `CREATE TABLE intake_feedback (
-    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL,
     target TEXT NOT NULL, about TEXT NOT NULL, quote TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER
   );
-  CREATE INDEX intake_feedback_owner ON intake_feedback(workspace_id,owner_id,created_at);`,
+  CREATE INDEX intake_feedback_owner ON intake_feedback(company_id,owner_id,created_at);`,
   // intake: the person deletes an observation, and blocks its sender or chat so that intake never reads it again.
   `ALTER TABLE intake_item ADD COLUMN deleted_at INTEGER;
   CREATE TABLE intake_block (
-    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL, credential_id TEXT,
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL, credential_id TEXT,
     kind TEXT NOT NULL, value TEXT NOT NULL, label TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER
   );
-  CREATE INDEX intake_block_owner ON intake_block(workspace_id,owner_id,deleted_at);`,
+  CREATE INDEX intake_block_owner ON intake_block(company_id,owner_id,deleted_at);`,
   // reminders: a reminder at a place fires only within its window, not before `not_before`, and at `not_after` at the
   // latest. intake: a check of what the owner must do is nudged in the morning summary from `nudge_at`, every 2 days.
   `ALTER TABLE reminder ADD COLUMN not_before INTEGER;
@@ -560,7 +560,7 @@ const migrations = [
   "UPDATE routine_run SET input = NULL, result = NULL WHERE outcome != 'running';",
   // places: a person's last state at a place counts only while their phone watches the place and reports it.
   "ALTER TABLE place_presence ADD COLUMN watched INTEGER NOT NULL DEFAULT 1;",
-  // workspaces, and every module that keeps a reference: channels are topics and threads are chats.
+  // companies, and every module that keeps a reference: channels are topics and threads are chats.
   `DROP TRIGGER intake_check_created;
   DROP TRIGGER intake_check_changed;
   DROP INDEX thread_channel;
@@ -595,10 +595,10 @@ const migrations = [
   CREATE INDEX routine_topic ON routine (topic_id);
   CREATE INDEX artifact_chat ON artifact (chat_id);
   CREATE INDEX artifact_topic ON artifact (topic_id);
-  CREATE UNIQUE INDEX chat_own_orchestrator ON chat (workspace_id, created_by) WHERE orchestrator = 1;
+  CREATE UNIQUE INDEX chat_own_orchestrator ON chat (company_id, created_by) WHERE orchestrator = 1;
   CREATE TRIGGER intake_check_created AFTER INSERT ON intake_check BEGIN
-    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,current)
-    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'chatId',NEW.chat_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+    INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,current)
+    VALUES(NEW.id,NEW.company_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'chatId',NEW.chat_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
   END;
   CREATE TRIGGER intake_check_changed AFTER UPDATE ON intake_check
     WHEN OLD.text IS NOT NEW.text OR OLD.state IS NOT NEW.state OR OLD.source_ids IS NOT NEW.source_ids
@@ -606,15 +606,15 @@ const migrations = [
       OR OLD.chat_id IS NOT NEW.chat_id OR OLD.explicit_time IS NOT NEW.explicit_time
       OR OLD.notified_at IS NOT NEW.notified_at
     BEGIN
-    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,previous,current)
-    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'chatId',OLD.chat_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'chatId',NEW.chat_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+    INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,previous,current)
+    VALUES(NEW.id,NEW.company_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'chatId',OLD.chat_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'chatId',NEW.chat_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
   END;`,
   // places: a point of interest is a place from OpenStreetMap that only reminders use; many can have the same name.
   `ALTER TABLE place ADD COLUMN osm_id TEXT;
   DROP INDEX place_name;
-  CREATE UNIQUE INDEX place_name ON place (workspace_id, owner_id, name COLLATE NOCASE) WHERE osm_id IS NULL;
-  CREATE UNIQUE INDEX place_point_of_interest ON place (workspace_id, owner_id, osm_id) WHERE osm_id IS NOT NULL;`,
-  // workspaces, and every module that keeps a reference: topics are channels and chats are threads again, as in Slack.
+  CREATE UNIQUE INDEX place_name ON place (company_id, owner_id, name COLLATE NOCASE) WHERE osm_id IS NULL;
+  CREATE UNIQUE INDEX place_point_of_interest ON place (company_id, owner_id, osm_id) WHERE osm_id IS NOT NULL;`,
+  // companies, and every module that keeps a reference: topics are channels and chats are threads again, as in Slack.
   `DROP TRIGGER intake_check_created;
   DROP TRIGGER intake_check_changed;
   DROP INDEX chat_topic;
@@ -649,10 +649,10 @@ const migrations = [
   CREATE INDEX routine_channel ON routine (channel_id);
   CREATE INDEX artifact_thread ON artifact (thread_id);
   CREATE INDEX artifact_channel ON artifact (channel_id);
-  CREATE UNIQUE INDEX thread_own_orchestrator ON thread (workspace_id, created_by) WHERE orchestrator = 1;
+  CREATE UNIQUE INDEX thread_own_orchestrator ON thread (company_id, created_by) WHERE orchestrator = 1;
   CREATE TRIGGER intake_check_created AFTER INSERT ON intake_check BEGIN
-    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,current)
-    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+    INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,current)
+    VALUES(NEW.id,NEW.company_id,NEW.owner_id,NEW.revised_at,json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
   END;
   CREATE TRIGGER intake_check_changed AFTER UPDATE ON intake_check
     WHEN OLD.text IS NOT NEW.text OR OLD.state IS NOT NEW.state OR OLD.source_ids IS NOT NEW.source_ids
@@ -660,9 +660,67 @@ const migrations = [
       OR OLD.thread_id IS NOT NEW.thread_id OR OLD.explicit_time IS NOT NEW.explicit_time
       OR OLD.notified_at IS NOT NEW.notified_at
     BEGIN
-    INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,previous,current)
-    VALUES(NEW.id,NEW.workspace_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'threadId',OLD.thread_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
+    INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,previous,current)
+    VALUES(NEW.id,NEW.company_id,NEW.owner_id,CAST(unixepoch('subsec')*1000 AS INTEGER),json_object('text',OLD.text,'state',OLD.state,'sourceIds',json(OLD.source_ids),'threadId',OLD.thread_id,'checkAt',OLD.check_at,'reviewAt',OLD.next_review_at,'explicitTime',OLD.explicit_time,'notifiedAt',OLD.notified_at),json_object('text',NEW.text,'state',NEW.state,'sourceIds',json(NEW.source_ids),'threadId',NEW.thread_id,'checkAt',NEW.check_at,'reviewAt',NEW.next_review_at,'explicitTime',NEW.explicit_time,'notifiedAt',NEW.notified_at));
   END;`,
+  // companies: a channel that every member sees copies a public channel of the company's Slack, by its Slack ID.
+  // integrations: the Slack bot of a company, whose encrypted `token` lists the Slack channels every 5 minutes, and
+  // the history of each Slack channel: its messages, the day file of each day, its attachments, and the names of people.
+  `ALTER TABLE channel ADD COLUMN slack_id TEXT;
+  CREATE UNIQUE INDEX channel_slack ON channel (company_id, slack_id) WHERE slack_id IS NOT NULL;
+  CREATE TABLE slack_bot (
+    company_id TEXT PRIMARY KEY,
+    token BLOB NOT NULL,
+    team_id TEXT NOT NULL,
+    team_name TEXT NOT NULL,
+    connected_by TEXT NOT NULL,
+    connected_at INTEGER NOT NULL,
+    synced_at INTEGER,
+    error TEXT,
+    deleted_at INTEGER
+  );
+  CREATE TABLE slack_history (
+    company_id TEXT NOT NULL,
+    slack_channel_id TEXT NOT NULL,
+    synced_at INTEGER NOT NULL,
+    PRIMARY KEY (company_id, slack_channel_id)
+  );
+  CREATE TABLE slack_message (
+    company_id TEXT NOT NULL,
+    slack_channel_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    thread_ts TEXT,
+    author TEXT NOT NULL,
+    text TEXT NOT NULL,
+    files TEXT NOT NULL,
+    day TEXT NOT NULL,
+    briefed INTEGER NOT NULL DEFAULT 0,
+    deleted_at INTEGER,
+    PRIMARY KEY (company_id, slack_channel_id, ts)
+  );
+  CREATE INDEX slack_message_day ON slack_message (company_id, slack_channel_id, day);
+  CREATE INDEX slack_message_thread ON slack_message (company_id, slack_channel_id, thread_ts);
+  CREATE TABLE slack_day (
+    company_id TEXT NOT NULL,
+    slack_channel_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    file_id TEXT,
+    content_hash TEXT NOT NULL,
+    PRIMARY KEY (company_id, slack_channel_id, day)
+  );
+  CREATE TABLE slack_file (
+    company_id TEXT NOT NULL,
+    slack_file_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (company_id, slack_file_id)
+  );
+  CREATE TABLE slack_user (
+    company_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (company_id, user_id)
+  );`,
 ];
 
 export function openDatabase(path: string): Database {

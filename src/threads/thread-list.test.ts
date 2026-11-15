@@ -5,8 +5,8 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
+import type { ThreadSummary } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
-import type { ThreadSummary } from "../workspaces/workspaces.ts";
 
 let shadow: TestApp;
 let alice: User;
@@ -46,15 +46,14 @@ function agent(context: Context) {
 }
 
 test("thread listing filters last activity, sorts across channels, includes settled threads, and enforces access", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Thread lists");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
-  const food = shadow.app.workspaces.createChannel(home.id, alice, "food");
-  const privateChannel = shadow.app.workspaces.createChannel(
+  const home = await shadow.app.companies.create(alice, "Thread lists");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
+  const food = shadow.app.companies.addChannel(home.id, "food", alice.id, null);
+  const privateChannel = shadow.app.companies.createChannel(
     home.id,
     alice,
-    "private",
-    true
+    "private"
   );
   const summaries: ThreadSummary[] = [];
   for (const channel of [general, food, food, privateChannel]) {
@@ -67,7 +66,7 @@ test("thread listing filters last activity, sorts across channels, includes sett
     await until(
       () =>
         shadow.app.threads.messages(
-          shadow.app.workspaces.thread(thread.id, alice)
+          shadow.app.companies.thread(thread.id, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
@@ -85,7 +84,7 @@ test("thread listing filters last activity, sorts across channels, includes sett
       .query("UPDATE thread SET updated_at = ? WHERE id = ?")
       .run(Date.parse(times[index]!), thread.id);
   }
-  shadow.app.workspaces.setThreadSettled(home.id, recent!.id, alice, true);
+  shadow.app.companies.setThreadSettled(home.id, recent!.id, alice, true);
   await shadow.app.threads.orchestrator(home.id, alice);
   await shadow.app.threads.orchestrator(home.id, bob);
 
@@ -119,7 +118,7 @@ test("thread listing filters last activity, sorts across channels, includes sett
   ).toEqual([recent!.id, newest!.id]);
 
   const token = await shadow.signIn("Bob", bob.email);
-  const base = `/api/v1/workspaces/${home.id}/threads`;
+  const base = `/api/v1/companies/${home.id}/threads`;
   const response = await shadow.call(
     `${base}?channel=food&since=2026-11-04&order=oldest`,
     { token }
@@ -155,14 +154,13 @@ test("thread listing filters last activity, sorts across channels, includes sett
 });
 
 test("list_threads uses the person of the turn, including in a shared channel", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Thread tool");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
-  const privateChannel = shadow.app.workspaces.createChannel(
+  const home = await shadow.app.companies.create(alice, "Thread tool");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
+  const privateChannel = shadow.app.companies.createChannel(
     home.id,
     alice,
-    "private",
-    true
+    "private"
   );
   const hidden = await shadow.app.threads.create(
     home.id,
@@ -173,7 +171,7 @@ test("list_threads uses the person of the turn, including in a shared channel", 
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(hidden.id, alice)
+        shadow.app.companies.thread(hidden.id, alice)
       ),
     (state) => !state.running && state.messages.length === 2
   );
@@ -186,7 +184,7 @@ test("list_threads uses the person of the turn, including in a shared channel", 
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(listed.id, alice)
+        shadow.app.companies.thread(listed.id, alice)
       ),
     (state) => !state.running && state.messages.at(-1)?.text === "Done."
   );
@@ -202,7 +200,7 @@ test("list_threads uses the person of the turn, including in a shared channel", 
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(listed.id, alice)
+        shadow.app.companies.thread(listed.id, alice)
       ),
     (state) => !state.running && state.messages.length === 4
   );
@@ -215,7 +213,7 @@ test("list_threads uses the person of the turn, including in a shared channel", 
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(listed.id, alice)
+        shadow.app.companies.thread(listed.id, alice)
       ),
     (state) => !state.running && state.messages.length === 6
   );

@@ -1,21 +1,21 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
+import type { Companies } from "../companies/companies.ts";
 import type { Places } from "../places/places.ts";
 import type { Threads } from "../threads/threads.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 import type { Reminder, ReminderInput, Reminders } from "./reminders.ts";
 
-/** Agent tools for the one-time reminders of a workspace, at a time or at a place. */
+/** Agent tools for the one-time reminders of a company, at a time or at a place. */
 export function reminderTools(
   reminders: Reminders,
-  workspaces: Pick<Workspaces, "agentMember" | "members" | "threadOf">,
+  companies: Pick<Companies, "agentMember" | "members" | "threadOf">,
   threads: Pick<Threads, "realm" | "requester">,
   places: Pick<
     Places,
     "savePointOfInterest" | "searchPointsOfInterest" | "usable"
   >,
-  workspaceId: string
+  companyId: string
 ) {
   const at = Type.Optional(
     Type.String({
@@ -52,16 +52,16 @@ export function reminderTools(
   const text = Type.String({ description: "What to remind the person about" });
   const reminder = Type.String({ description: "The reminder id" });
   const recipient = Type.Optional(
-    Type.String({ description: "Name of a member of this workspace" })
+    Type.String({ description: "Name of a member of this company" })
   );
   const actorFor = async (
     conversationId: Parameters<Threads["requester"]>[1]
   ) => {
-    const asker = await threads.requester(workspaceId, conversationId);
+    const asker = await threads.requester(companyId, conversationId);
     return {
       asker,
-      actor: asker ?? workspaces.agentMember(workspaceId),
-      realm: await threads.realm(workspaceId, conversationId),
+      actor: asker ?? companies.agentMember(companyId),
+      realm: await threads.realm(companyId, conversationId),
     };
   };
   /** The member named `recipient`, else the person who asks. */
@@ -70,7 +70,7 @@ export function reminderTools(
     askerId: string | null,
     name: string | undefined
   ): string => {
-    const members = workspaces.members(workspaceId, actor);
+    const members = companies.members(companyId, actor);
     const matches = name
       ? members.filter(
           (member) => member.name.toLowerCase() === name.toLowerCase()
@@ -78,7 +78,7 @@ export function reminderTools(
       : members.filter((member) => member.userId === askerId);
     if (matches.length !== 1) {
       throw new Error(
-        "Name exactly one member of this workspace as the recipient."
+        "Name exactly one member of this company as the recipient."
       );
     }
     return matches[0]!.userId;
@@ -86,10 +86,10 @@ export function reminderTools(
   /** The places of a reminder: those that the recipient and the asker both use. */
   const placesFor = (recipientId: string, askerId: string | null) => {
     const asker = new Set(
-      places.usable(workspaceId, askerId ?? recipientId).map(({ id }) => id)
+      places.usable(companyId, askerId ?? recipientId).map(({ id }) => id)
     );
     return places
-      .usable(workspaceId, recipientId)
+      .usable(companyId, recipientId)
       .filter(({ id }) => asker.has(id));
   };
   /** A reminder at the place `id`, for its event and within its window. */
@@ -154,7 +154,7 @@ export function reminderTools(
       replay: "safe",
       execute: async (args, api) => {
         const { actor, asker } = await actorFor(api.conversationId);
-        const source = workspaces.threadOf(workspaceId, api.conversationId);
+        const source = companies.threadOf(companyId, api.conversationId);
         if (!source) {
           throw new Error("This tool works only in a thread.");
         }
@@ -164,7 +164,7 @@ export function reminderTools(
           args.recipient
         );
         const created = reminders.create(
-          workspaceId,
+          companyId,
           actor,
           source.id,
           recipientId,
@@ -173,7 +173,7 @@ export function reminderTools(
             timeZone: args.timeZone,
             ...whenOf(args, recipientId, asker?.id ?? null),
             createdBy: asker?.id ?? null,
-            id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
+            id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           }
         );
         return { output: [{ type: "text", text: describe(created) }] };
@@ -251,17 +251,17 @@ export function reminderTools(
         if (!asker) {
           throw new Error("Only a person's own request makes this reminder.");
         }
-        const source = workspaces.threadOf(workspaceId, api.conversationId);
+        const source = companies.threadOf(companyId, api.conversationId);
         if (!source) {
           throw new Error("This tool works only in a thread.");
         }
         const { id } = await places.savePointOfInterest(
-          workspaceId,
+          companyId,
           asker.id,
           args.pointOfInterest
         );
         const created = reminders.create(
-          workspaceId,
+          companyId,
           asker,
           source.id,
           asker.id,
@@ -270,7 +270,7 @@ export function reminderTools(
             timeZone: args.timeZone,
             ...atPlace(id, args),
             createdBy: asker.id,
-            id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
+            id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           }
         );
         return { output: [{ type: "text", text: describe(created) }] };
@@ -279,12 +279,12 @@ export function reminderTools(
     defineTool({
       name: "reminders_list",
       description:
-        "List the one-time reminders of this workspace, including delivered and cancelled ones.",
+        "List the one-time reminders of this company, including delivered and cancelled ones.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: async (_args, api) => {
         const { actor, realm } = await actorFor(api.conversationId);
-        const result = reminders.list(workspaceId, actor, realm);
+        const result = reminders.list(companyId, actor, realm);
         return {
           output: [
             {
@@ -313,7 +313,7 @@ export function reminderTools(
       execute: async ({ reminder: id, ...input }, api) => {
         const { actor, asker, realm } = await actorFor(api.conversationId);
         const { recipientId, place: current } = reminders.get(
-          workspaceId,
+          companyId,
           actor,
           realm,
           id
@@ -327,7 +327,7 @@ export function reminderTools(
             {
               type: "text",
               text: describe(
-                reminders.update(workspaceId, actor, realm, id, {
+                reminders.update(companyId, actor, realm, id, {
                   text: input.text,
                   timeZone: input.timeZone,
                   ...(keepsPlace
@@ -355,7 +355,7 @@ export function reminderTools(
           output: [
             {
               type: "text",
-              text: describe(reminders.cancel(workspaceId, actor, realm, id)),
+              text: describe(reminders.cancel(companyId, actor, realm, id)),
             },
           ],
         };

@@ -31,11 +31,16 @@ server, with no cloud service between your company and its data.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/conversation-flow-dark.svg">
-  <img alt="A person asks their shadow, their own endless thread, or writes in a channel thread. The shadow sends work to channel threads with send_to_thread, and the answers come back to it. Channel threads run code mode scripts. When a thread goes quiet, the channel brief is written again, the learning loop updates the learned facts, and the messages go into the search index. The brief, the learned facts, and the workspace facts become prompt sections that every turn reads." src="docs/assets/conversation-flow-light.svg">
+  <img alt="A person asks their shadow, their own endless thread, or writes in a channel thread. The shadow sends work to channel threads with send_to_thread, and the answers come back to it. Channel threads run code mode scripts. When a thread goes quiet, the channel brief is written again, the learning loop updates the learned facts, and the messages go into the search index. The brief, the learned facts, and the company facts become prompt sections that every turn reads." src="docs/assets/conversation-flow-light.svg">
 </picture>
 
-- **The company has one workspace.** It holds channels, such as `#general`, `#sales`, or `#hiring`. A channel is open
-  to every member, or private to one person.
+- **The company has one company.** Its channels that every member sees, such as `#general`, `#sales`, or
+  `#hiring`, copy the public channels of the company's Slack: the Slack bot lists them every 5 minutes, makes a new
+  one, follows a rename, and hides one that Slack archives, with its threads, until Slack has it again. Nobody makes
+  them by hand. Each person also makes private channels of their own.
+- **Admins and users.** An admin runs Company settings: the Slack bot, the people and their roles, the company
+  facts, and what Shadow learned. Admins also choose the model and read the agents' feedback. A user works in Shadow.
+  The first of `allowed_emails` is the first admin.
 - **A channel holds threads.** A thread is one conversation about one thing. Several people can write in it, and its
   agent knows who wrote each message. A thread that is done is settled; its files and artifacts stay in the channel.
 - **Your shadow is your endless thread.** It answers simple things itself and gives other work to the thread of the
@@ -44,19 +49,23 @@ server, with no cloud service between your company and its data.
 - **The endless thread does not get slow.** A memory tree of short summaries covers your conversation and the results
   that workers send back. Their internal work stays in their threads. Old messages fold into the tree, and the agent
   opens a summary again with `zoom` when it needs the details.
-- **The channel brief.** When a thread is quiet for 10 minutes, or settled, a background model writes the channel's
-  brief again: its purpose, what is happening now, the decisions, the open questions, and what each person wants.
-  Every thread of the channel starts from it.
+- **The channel's Slack history.** A new channel gets the last 30 days of its Slack channel at once: one Markdown
+  file for each day, with thread replies under their message and attachments as files. Every 15 minutes it gets new
+  messages, new replies, edits, and deletes. Search and the agents find all of it.
+- **The channel brief.** When a thread is quiet for 10 minutes, or settled, and after new Slack messages, the cheap
+  fast model (ChatGPT's Luna), thinking hard, writes the channel's brief again: its purpose, what is happening now, the
+  decisions, and the open questions. Every thread of the channel starts from it.
 - **Learned facts.** The learning loop reads the new messages and keeps only lasting facts about each person, such
   as their role, their customers, and how they like to work, and how-tos for each channel; it skips the details of
-  one task. It can also suggest a routine or a reminder. You see, change, and remove what it learned in Settings, and
+  one task. It can also suggest a routine or a reminder. An admin sees, changes, and removes what it learned in
+  Company settings, and
   it does not learn a removed fact again.
-- **Workspace facts.** The team writes facts about the company in Workspace settings: teams, products, customers,
+- **Company facts.** The admins write facts about the company in Company settings: teams, products, customers,
   and processes.
 - **Recall.** Every message, file, note, and artifact goes into the search index. Agents look things up there with the
   `recall` tool before they say that they do not know.
 
-The brief, the learned facts, and the workspace facts are prompt sections. A section keeps the
+The brief, the learned facts, and the company facts are prompt sections. A section keeps the
 same text until its content changes, so the model's prompt cache stays warm.
 
 ## Your accounts, read for you
@@ -110,7 +119,7 @@ Private replay data must stay outside this public repository.
 
 ### Pi Durable
 
-Agents run on [Pi Durable](https://github.com/earendil-works/pi), the durable agent runtime of Earendil. The workspace
+Agents run on [Pi Durable](https://github.com/earendil-works/pi), the durable agent runtime of Earendil. The company
 has one Pi Durable session, and each thread is one conversation in it, with its transcript, runs, and tasks. A run that
 a restart stopped continues when Shadow starts again, and messages that came while Shadow was off are caught up. A
 tool that is safe to repeat, such as `send_to_thread`, runs again after a crash and finds the message it sent before.
@@ -166,10 +175,10 @@ namespace.
 
 ### Search and recall
 
-The workspace has one search index, `index.sqlite`, on the server. The Search page of the web app and the agents'
+The company has one search index, `index.sqlite`, on the server. The Search page of the web app and the agents'
 `recall` tool use it, so a person and their shadow find the same things.
 
-- **What goes in.** The messages of every thread, the text of every artifact, and every file in the workspace and its
+- **What goes in.** The messages of every thread, the text of every artifact, and every file in the company and its
   channels:
   - documents (Markdown, Office, OpenDocument, mail, calendars, and more) in chunks of about 1800 characters;
   - PDFs page by page, where a scanned page is rendered as a picture and read with OCR;
@@ -249,10 +258,10 @@ stays there when the thread is settled. The side panel of a thread shows the art
 - **Upcoming and suggestions.** Upcoming shows your routines, reminders, approvals, and the suggestions that wait for
   you. Accept a suggestion and it becomes a routine or a reminder.
 - **Feedback from the agents.** When a tool fails or answers wrong, when no tool can do the work, or when an agent sees
-  an easier way, it reports this with `feedback_report` and continues. The server's owner reads the reports under
+  an easier way, it reports this with `feedback_report` and continues. An admin reads the reports under
   **Private** › **Feedback** and dismisses each one when it is done. A report describes Shadow, not the person, and
-  links its thread only when the owner can see it.
-- **The model.** Shadow uses ChatGPT, signed in once with the device login of OpenAI's Codex. The server's owner
+  links its thread only when the admin can see it.
+- **The model.** Shadow uses ChatGPT, signed in once with the device login of OpenAI's Codex. An admin
   chooses the model and the effort for everybody.
 
 ## The web app
@@ -288,7 +297,7 @@ Fill in `config/shadow.toml` and start Shadow again:
 
 ```toml
 base_url = "https://shadow.example.com"
-allowed_emails = ["you@example.com", "colleague@example.com"]   # the first one is the server's owner
+allowed_emails = ["you@example.com", "colleague@example.com"]   # the first one is the first admin
 
 [google]
 client_id = "….apps.googleusercontent.com"
@@ -296,7 +305,9 @@ client_secret = "…"
 ```
 
 [google-sign-in.md](google-sign-in.md) shows how to make the Google client. Then sign in, connect ChatGPT in
-Settings, and add your colleagues in Workspace settings. Each person adds their own accounts in their Settings.
+Settings, connect the Slack bot and add your colleagues in Company settings
+([docs/integrations.md](docs/integrations.md#the-slack-bot-of-the-company)). Each person adds their own accounts in
+their Settings.
 
 Shadow keeps everything in two folders ([docs/data.md](docs/data.md)). `SHADOW_CONFIG` and `SHADOW_DATA` move them.
 
@@ -351,7 +362,7 @@ Set up Shadow (https://github.com/dontpanicv/shadow) on this Mac as a self-hoste
 3. Clone the repository to ~/shadow, and run `bun install` and `bunx --bun agent-browser install`.
 4. Run `bun start` once, so Shadow writes config/shadow.toml, and stop it.
 5. Ask me for: the Shadow hostname (such as shadow.example.com), the artifact hostname (such as a.example.com),
-   and the Google emails of the team, the owner first. Write base_url, allowed_emails, and share_url into
+   and the Google emails of the team, the first admin first. Write base_url, allowed_emails, and share_url into
    config/shadow.toml. Keep host = "127.0.0.1".
 6. Guide me through the Google OAuth client of google-sign-in.md, with the redirect URI
    https://<shadow hostname>/api/auth/callback/google, and write client_id and client_secret into config/shadow.toml.
@@ -360,7 +371,7 @@ Set up Shadow (https://github.com/dontpanicv/shadow) on this Mac as a self-hoste
    path rule, and a 404 for everything else), and to save its token in config/share-tunnel.token.
 8. Run scripts/install-service.sh and scripts/install-share-tunnel.sh. Check that https://<shadow hostname>
    opens Shadow and that data/logs/shadow.log shows no requirement that is missing.
-9. Tell me to sign in, connect ChatGPT in Settings, and add the team in Workspace settings.
+9. Tell me to sign in, connect ChatGPT in Settings, and connect the Slack bot and add the team in Company settings.
 
 Never print, commit, or send the secrets in config/. Stop and ask me before any step that you cannot undo.
 ```

@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import type { Llm } from "./llm.ts";
 
-/** The tool that searches the web with the LLM provider's own search, for the agents of every workspace. */
+/** The tool that searches the web with the LLM provider's own search, for the agents of every company. */
 export function llmTools(llm: Llm) {
   return [
     defineTool({

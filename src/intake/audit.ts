@@ -23,7 +23,7 @@ export class Audit {
     );
     this.database.run(`CREATE TABLE IF NOT EXISTS event (
       id INTEGER PRIMARY KEY, trace TEXT NOT NULL, stage TEXT NOT NULL,
-      workspace_id TEXT NOT NULL, owner_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL
+      company_id TEXT NOT NULL, owner_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL
     ); CREATE INDEX IF NOT EXISTS event_trace ON event(trace,id);
     CREATE TABLE IF NOT EXISTS blob (hash TEXT PRIMARY KEY, type TEXT NOT NULL, bytes BLOB NOT NULL);`);
     const root = resolve(import.meta.dir, "..");
@@ -54,16 +54,16 @@ export class Audit {
   record(
     trace: string,
     stage: string,
-    workspaceId: string,
+    companyId: string,
     ownerId: string,
     data: unknown,
     at = Date.now()
   ): void {
     this.database
       .query(
-        "INSERT INTO event(trace,stage,workspace_id,owner_id,at,data) VALUES(?,?,?,?,?,?)"
+        "INSERT INTO event(trace,stage,company_id,owner_id,at,data) VALUES(?,?,?,?,?,?)"
       )
-      .run(trace, stage, workspaceId, ownerId, at, JSON.stringify(data));
+      .run(trace, stage, companyId, ownerId, at, JSON.stringify(data));
   }
 
   blob(bytes: Uint8Array, type: string): string {
@@ -77,14 +77,14 @@ export class Audit {
   last(
     trace: string,
     stage: string,
-    workspaceId: string,
+    companyId: string,
     ownerId: string
   ): unknown {
     const row = this.database
       .query(
-        "SELECT data FROM event WHERE trace=? AND stage=? AND workspace_id=? AND owner_id=? ORDER BY id DESC LIMIT 1"
+        "SELECT data FROM event WHERE trace=? AND stage=? AND company_id=? AND owner_id=? ORDER BY id DESC LIMIT 1"
       )
-      .get(trace, stage, workspaceId, ownerId) as { data: string } | null;
+      .get(trace, stage, companyId, ownerId) as { data: string } | null;
     return row ? JSON.parse(row.data) : undefined;
   }
 

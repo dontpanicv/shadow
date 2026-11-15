@@ -13,14 +13,14 @@ Nothing else is written anywhere. Set `SHADOW_CONFIG` and `SHADOW_DATA` to move 
 
 ```text
 data/
-├── shadow.sqlite                     The directory: accounts, sessions, workspaces, members, channels,
+├── shadow.sqlite                     The directory: accounts, sessions, companies, members, channels,
 │                                    the thread registry, settings, and encrypted credentials.
-├── workspaces/
-│   └── <workspace-id>/              The folder of Shadow's one workspace, the family's.
+├── companies/
+│   └── <company-id>/              The folder of Shadow's one company.
 │       ├── session.sqlite           The agents: one Pi Durable session, with one conversation per thread
 │       │                            (transcript, runs, tasks).
 │       ├── memory.sqlite            The brief of each channel, every version; what Shadow learned about each
-│       │                            person and each channel; and the workspace's one memory from before each
+│       │                            person and each channel; and the company's one memory from before each
 │       │                            member had an orchestrator.
 │       ├── threads/
 │       │   └── <thread-id>/
@@ -28,17 +28,18 @@ data/
 │       │                            merged in pairs into a tree of summaries.
 │       ├── channels/
 │       │   └── <channel-id>/
-│       │       ├── files/           Files uploaded to the channel or attached to messages in its threads.
+│       │       ├── files/           Files uploaded to the channel or attached to messages in its threads,
+│       │       │                    and the Slack history: one `slack-YYYY-MM-DD.md` per day, and attachments.
 │       │       │   └── <uuidv7>-<name>.<ext>
 │       │       └── deleted/         Files deleted from the channel and old versions, kept as they were.
 │       ├── notes/                   Knowledge as markdown with YAML frontmatter; an Obsidian vault.
-│       ├── files/                   Documents people upload to the workspace, and the orchestrator's files.
+│       ├── files/                   Documents people upload to the company, and the orchestrator's files.
 │       ├── deleted/                 Files deleted from `files/` and old versions, kept as they were.
 │       ├── raw/                     Captures from integrations, exactly as received, never edited.
 │       │   └── <source>/<yyyy>/<mm>/<uuidv7>.<ext>
 │       ├── tables/                  Structured history as Parquet, append-only, read with DuckDB.
 │       │   └── <dataset>/date=<yyyy-mm-dd>/<uuidv7>.parquet
-│       └── index.sqlite             The search index of this workspace (derived, rebuildable).
+│       └── index.sqlite             The search index of this company (derived, rebuildable).
 ├── integrations/
 │   ├── <credential-id>/             A device linked to a person's number, such as WhatsApp's: its keys and its
 │   │                                copy of the person's threads, kept by wacli.
@@ -55,8 +56,8 @@ data/
 - **Nothing is ever removed.** A delete marks the row with `deleted_at`, and reads leave it out; a deleted thread file
   moves to `channels/<id>/deleted/`. A channel goes only by merging into another, which first moves its threads, files,
   artifacts, and routines there; the empty channel is then marked deleted. A result already sent to an orchestrator remains part of its own conversation;
-  `session.sqlite` keeps the messages. A deleted workspace (`organization.deletedAt`, from before Shadow had one
-  workspace) hides all of it, and its folder stays. Deleted
+  `session.sqlite` keeps the messages. A deleted company (`organization.deletedAt`, from before Shadow had one
+  company) hides all of it, and its folder stays. Deleted
   channels get `~<id>` after their name, so the name is free again.
   Artifact records that a visitor or a member deleted still count toward the artifact's limits, until a member clears
   the data, which moves the records aside with `~<time>` after their scope. A record that an agent deletes moves aside
@@ -66,14 +67,14 @@ data/
   index keeps their vectors. When the move takes the thread from people, the old channel's brief is written again
   from the threads that stay; the new channel's brief reads the whole thread. `session.sqlite` keeps the conversation,
   with a note of the move.
-- **One workspace, with private channels.** Every byte of the family's data is under `data/workspaces/<workspace-id>/`.
+- **One company, with private channels.** Every byte of the company's data is under `data/companies/<company-id>/`.
   A private channel (`channel.owner_id`) belongs to one member: its threads, files, artifacts, and routines are theirs
   alone. An orchestrator remembers only its own conversation and the results sent to it. Every read names whose view
-  it serves (`Realm` in `src/workspaces/workspaces.ts`), and only background work that acts for no person reads all of it.
+  it serves (`Realm` in `src/companies/companies.ts`), and only background work that acts for no person reads all of it.
 - **Search is one index, filtered per person.** "Search everything" means everything the person sees: the channels
-  every member sees, their own private channels, and their own orchestrator. The workspace has one `index.sqlite`, so
+  every member sees, their own private channels, and their own orchestrator. The company has one `index.sqlite`, so
   each source is embedded once; a search leaves out the sources the person may not see before it ranks.
-- **Folders are named by id, not by name.** Renaming a workspace, channel, or thread changes a row, never a path.
+- **Folders are named by id, not by name.** Renaming a company, channel, or thread changes a row, never a path.
   A channel's folder holds only its files; a thread's channel is a column in `shadow.sqlite`, and so is an artifact's.
 - **Canonical and derived data are separate.** `shadow.sqlite`, `session.sqlite`, `memory.sqlite`, the thread memories, `notes/`,
   `files/`, `raw/`, and `tables/` are the record; the memories come from `session.sqlite`, but only model calls can write them
@@ -88,18 +89,20 @@ data/
 
 | Data | Where | Format |
 | --- | --- | --- |
-| People, sessions, workspaces, members | `shadow.sqlite` (better-auth tables) | SQLite |
+| People, sessions, companies, members | `shadow.sqlite` (better-auth tables) | SQLite |
 | Channels, threads, credentials, routines and their runs, one-time reminders, suggestions, notifications, recent searches, the usage of the model by day, the feedback of agents | `shadow.sqlite` | SQLite; secrets AES-256-GCM with `config/secret.key` |
 | Current and historical source evidence, collection cursors, private context, internal checks, and delivery state | `shadow.sqlite`, `intake_item`, `intake_source`, `intake_fts`, `intake_check`, `intake_context`, `intake_delivery`, `intake_thread_read` | SQLite; all rows belong to one person |
 | Raw collection results, attachment bytes, prompts, model responses and usage, retrieval results, state changes, notices, agent work, corrections, and runtime fingerprints | `audit.sqlite`, `event` and `blob` | SQLite WAL, synchronous FULL; local private file, no integration credential secrets |
-| ChatGPT login | `shadow.sqlite` | encrypted, shared by all workspaces |
+| ChatGPT login | `shadow.sqlite` | encrypted, shared by all companies |
 | A thread's conversation and agent state | `session.sqlite`, the conversation named in `thread.conversation_id` | Pi Durable |
 | A routine run's fixed definition and initial store, and its script result | `shadow.sqlite`, `routine_run.input` and `routine_run.result`; retained after completion | JSON |
 | What Shadow learned: facts about each person and how-tos of each channel, which the reviews of quiet threads write and people correct | `memory.sqlite`, the tables `learned`, `learned_read`, and `learned_since` | SQLite |
-| The channel briefs: summaries of the messages of a channel's threads, which the model wrote | `memory.sqlite` | SQLite; old orchestrator memory tables are kept but no longer read |
+| The channel briefs: summaries of the messages of a channel's threads and of its Slack channel, which the fast model wrote | `memory.sqlite` | SQLite; old orchestrator memory tables are kept but no longer read |
+| The Slack bot and the history of the public Slack channels: the encrypted bot token, each message of the last 30 days and after, which day file holds each day, the attachments that are channel files, and the names of people | `shadow.sqlite`, `slack_bot`, `slack_message`, `slack_day`, `slack_file`, `slack_user`, `slack_history` | SQLite; the token AES-256-GCM with `config/secret.key` |
+| A day of a Slack channel: its messages with authors and times, and the replies of each thread under its message | `channels/<id>/files/<uuidv7>-slack-YYYY-MM-DD.md` | Markdown, written again when Slack changes |
 | The memory of each member's orchestrator: its own conversation and returned worker results | `threads/<thread-id>/memory.sqlite` | SQLite |
 | Files uploaded to a channel or attached to messages in its threads | `channels/<id>/files/` | the file as uploaded |
-| Artifacts: pages and small apps agents make, which belong to a channel, or the orchestrator's to the workspace | `shadow.sqlite` | HTML, and the records their visitors keep |
+| Artifacts: pages and small apps agents make, which belong to a channel, or the orchestrator's to the company | `shadow.sqlite` | HTML, and the records their visitors keep |
 | Knowledge: people, places, decisions, how-tos | `notes/` | markdown + YAML frontmatter (`type`, `title`, dates, links) |
 | Uploaded documents, and the files of the orchestrator, which belongs to no channel | `files/` | the file as uploaded |
 | Mail, threads, transcripts, API responses | `raw/<source>/…` | as received (JSON, `.eml`, text) |
@@ -128,10 +131,10 @@ that snapshots the file system. Keep `config/` in a password manager or another 
 
 ## Search
 
-The workspace's index is `data/workspaces/<workspace-id>/index.sqlite`. Search, the search page, and the agents'
+The company's index is `data/companies/<company-id>/index.sqlite`. Search, the search page, and the agents'
 `recall` tool find only what their person, or their thread's realm, sees.
 
-- **What is indexed:** every thread's messages, every artifact's text, and every file in the workspace's `notes/`,
+- **What is indexed:** every thread's messages, every artifact's text, and every file in the company's `notes/`,
   `files/`, `raw/`, and each channel's `files/`. Drop files into those folders; Shadow notices within a second. Every file's path is searchable by
   keywords, also when Shadow cannot read the file. The same kinds as DigUp:
 
@@ -160,13 +163,13 @@ The workspace's index is `data/workspaces/<workspace-id>/index.sqlite`. Search, 
   scores for the query, centered and scaled per kind because pictures and audio score on a different scale than text;
   keyword coverage is the share of query words a source contains. A source shows when
   z ≥ 3 or coverage ≥ 0.5, scored `max(z, 0) + 2 × coverage^1.5`; queries made of ids or numbers weigh words more.
-- **Freshness:** Shadow rescans a workspace a second after any change to one of its threads, and every minute for
+- **Freshness:** Shadow rescans a company a second after any change to one of its threads, and every minute for
   files. Only changed sources are re-read, and only changed text is re-embedded. A different model or runtime
   re-embeds everything. Until the model runs, search and recall use keywords only.
 
 ## Audit export
 
-`audit.sqlite` is separate from operational state. Each event has a trace id, stage, workspace, owner, time, and JSON
+`audit.sqlite` is separate from operational state. Each event has a trace id, stage, company, owner, time, and JSON
 payload. Attachments use content hashes in `blob`. Prompts and raw model results preserve the inputs for later replay
 or training. `audit.open` records the Bun version and source-file hashes. Model calls record model identity and usage.
 The audit contains private communications. It is never served by a public route or added to Git.

@@ -5,6 +5,12 @@ import type {
   WatchedPlace,
 } from "../src/agenda/agenda.ts";
 import type * as Server from "../src/artifacts/artifacts.ts";
+import type {
+  Channel,
+  Company,
+  Member,
+  ThreadSummary,
+} from "../src/companies/companies.ts";
 import type { Feedback } from "../src/feedback/feedback.ts";
 import type {
   FollowingCheck,
@@ -12,6 +18,7 @@ import type {
   FollowingOverview,
 } from "../src/intake/intake.ts";
 import type { Integration } from "../src/integrations/integrations.ts";
+import type { SlackBotStatus } from "../src/integrations/slack-bot.ts";
 import type { LlmStatus, UsageReport } from "../src/llm/llm.ts";
 import type { Place } from "../src/places/places.ts";
 import type { User } from "../src/platform/auth.ts";
@@ -25,12 +32,6 @@ import type {
   SavedFile,
   ThreadMessages,
 } from "../src/threads/threads.ts";
-import type {
-  Channel,
-  Member,
-  ThreadSummary,
-  Workspace,
-} from "../src/workspaces/workspaces.ts";
 import type * as Web from "../web/app/types.ts";
 
 /** Compiles only when what the server sends fits the web app's copy of the types of docs/api.md. */
@@ -41,11 +42,12 @@ const checks: true[] = [
   true satisfies Fits<FollowingDetail, Web.FollowingDetail>,
   true satisfies Fits<FollowingOverview, Web.FollowingOverview>,
   true satisfies Fits<User & { picture: string | null }, Web.User>,
-  true satisfies Fits<Workspace, Web.Workspace>,
+  true satisfies Fits<Company, Web.Company>,
   true satisfies Fits<ThreadSummary, Web.ThreadSummary>,
   true satisfies Fits<ListedThread, Web.ListedThread>,
   true satisfies Fits<Channel, Web.Channel>,
   true satisfies Fits<Member, Web.Member>,
+  true satisfies Fits<SlackBotStatus, Web.SlackBotStatus>,
   true satisfies Fits<Brief, Web.Brief>,
   true satisfies Fits<Message, Web.Message>,
   true satisfies Fits<SavedFile, Web.SavedFile>,

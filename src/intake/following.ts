@@ -5,7 +5,7 @@ import type { User } from "../platform/auth.ts";
 import { HttpError, notFound } from "../platform/errors.ts";
 import type { Evidence } from "./assess.ts";
 import type { Audit } from "./audit.ts";
-import type { Delivery, IntakeLlm, IntakeWorkspaces } from "./intake.ts";
+import type { Delivery, IntakeCompanies, IntakeLlm } from "./intake.ts";
 import type { IntakeRecall, IntakeSourceStatus, ItemRow } from "./recall.ts";
 
 export interface CheckSnapshot {
@@ -104,19 +104,19 @@ interface RevisionRow {
 export class Following {
   constructor(
     private readonly database: Database,
-    private readonly workspaces: IntakeWorkspaces,
+    private readonly companies: IntakeCompanies,
     private readonly recall: IntakeRecall,
     private readonly audit: Audit,
     private readonly llm: IntakeLlm
   ) {}
 
-  list(workspaceId: string, owner: User): FollowingCheck[] {
-    this.workspaces.requireMember(workspaceId, owner);
+  list(companyId: string, owner: User): FollowingCheck[] {
+    this.companies.requireMember(companyId, owner);
     const rows = this.database
       .query(
-        "SELECT c.id,r.id AS revision,r.at,r.current FROM intake_check c JOIN intake_check_revision r ON r.id=(SELECT max(id) FROM intake_check_revision WHERE check_id=c.id) WHERE c.workspace_id=? AND c.owner_id=? AND c.deleted_at IS NULL ORDER BY r.id DESC"
+        "SELECT c.id,r.id AS revision,r.at,r.current FROM intake_check c JOIN intake_check_revision r ON r.id=(SELECT max(id) FROM intake_check_revision WHERE check_id=c.id) WHERE c.company_id=? AND c.owner_id=? AND c.deleted_at IS NULL ORDER BY r.id DESC"
       )
-      .all(workspaceId, owner.id) as {
+      .all(companyId, owner.id) as {
       id: string;
       revision: number;
       at: number;
@@ -129,20 +129,20 @@ export class Following {
         revision: row.revision,
         updatedAt: row.at,
       }))
-      .filter((check) => this.visible(workspaceId, owner, check));
+      .filter((check) => this.visible(companyId, owner, check));
   }
 
-  detail(workspaceId: string, owner: User, id: string): FollowingDetail {
-    const check = this.list(workspaceId, owner).find((each) => each.id === id);
+  detail(companyId: string, owner: User, id: string): FollowingDetail {
+    const check = this.list(companyId, owner).find((each) => each.id === id);
     if (!check) {
       throw notFound();
     }
     const history = (
       this.database
         .query(
-          "SELECT * FROM intake_check_revision WHERE check_id=? AND workspace_id=? AND owner_id=? ORDER BY id DESC"
+          "SELECT * FROM intake_check_revision WHERE check_id=? AND company_id=? AND owner_id=? ORDER BY id DESC"
         )
-        .all(id, workspaceId, owner.id) as RevisionRow[]
+        .all(id, companyId, owner.id) as RevisionRow[]
     ).map((row) => ({
       id: row.id,
       at: row.at,
@@ -156,25 +156,25 @@ export class Following {
     // Old revisions can name a channel that is no longer visible. Do not disclose their text or sources.
     const visibleHistory = history.filter(
       (row) =>
-        this.visible(workspaceId, owner, row.current) &&
-        (!row.previous || this.visible(workspaceId, owner, row.previous))
+        this.visible(companyId, owner, row.current) &&
+        (!row.previous || this.visible(companyId, owner, row.previous))
     );
     return {
       check,
       evidence: this.recall.evidence(
-        this.rows(workspaceId, owner, check.sourceIds)
+        this.rows(companyId, owner, check.sourceIds)
       ),
       history: visibleHistory,
     };
   }
 
   async change(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     id: string,
     input: FollowingChange
   ): Promise<FollowingDetail> {
-    const before = this.detail(workspaceId, owner, id);
+    const before = this.detail(companyId, owner, id);
     this.requireRevision(before.check, input.revision);
     if (!input.quote.trim() || input.quote.length > 8000) {
       throw new HttpError(400, "Give a correction of at most 8000 characters");
@@ -202,17 +202,17 @@ export class Following {
         break;
       }
       case "correct":
-        next = await this.correct(workspaceId, owner, before, input.quote);
+        next = await this.correct(companyId, owner, before, input.quote);
         break;
       default:
         throw new HttpError(400, "Unknown check action");
     }
     this.database.transaction(() => {
-      const current = this.detail(workspaceId, owner, id);
+      const current = this.detail(companyId, owner, id);
       this.requireRevision(current.check, input.revision);
       this.database
         .query(
-          "UPDATE intake_check SET text=?,state=?,check_at=?,next_review_at=?,explicit_time=?,notified_at=?,revised_at=?,source_ids=?,thread_id=? WHERE id=? AND workspace_id=? AND owner_id=?"
+          "UPDATE intake_check SET text=?,state=?,check_at=?,next_review_at=?,explicit_time=?,notified_at=?,revised_at=?,source_ids=?,thread_id=? WHERE id=? AND company_id=? AND owner_id=?"
         )
         .run(
           next.text,
@@ -225,21 +225,21 @@ export class Following {
           JSON.stringify(next.sourceIds),
           next.threadId,
           id,
-          workspaceId,
+          companyId,
           owner.id
         );
       // Even an unchanged correction is retained with its exact words.
-      const latest = this.list(workspaceId, owner).find(
+      const latest = this.list(companyId, owner).find(
         (each) => each.id === id
       )!;
       if (latest.revision === input.revision) {
         this.database
           .query(
-            "INSERT INTO intake_check_revision(check_id,workspace_id,owner_id,at,previous,current) VALUES(?,?,?,?,?,?)"
+            "INSERT INTO intake_check_revision(check_id,company_id,owner_id,at,previous,current) VALUES(?,?,?,?,?,?)"
           )
           .run(
             id,
-            workspaceId,
+            companyId,
             owner.id,
             Date.now(),
             JSON.stringify(current.check),
@@ -248,17 +248,17 @@ export class Following {
       }
       this.database
         .query(
-          "UPDATE intake_check_revision SET action=?,quote=? WHERE id=(SELECT max(id) FROM intake_check_revision WHERE check_id=? AND workspace_id=? AND owner_id=?)"
+          "UPDATE intake_check_revision SET action=?,quote=? WHERE id=(SELECT max(id) FROM intake_check_revision WHERE check_id=? AND company_id=? AND owner_id=?)"
         )
-        .run(input.action, input.quote, id, workspaceId, owner.id);
+        .run(input.action, input.quote, id, companyId, owner.id);
       this.database
         .query(
-          "UPDATE intake_delivery SET cancelled_at=? WHERE workspace_id=? AND owner_id=? AND delivered_at IS NULL AND EXISTS(SELECT 1 FROM json_each(check_ids) WHERE value=?)"
+          "UPDATE intake_delivery SET cancelled_at=? WHERE company_id=? AND owner_id=? AND delivered_at IS NULL AND EXISTS(SELECT 1 FROM json_each(check_ids) WHERE value=?)"
         )
-        .run(Date.now(), workspaceId, owner.id, id);
+        .run(Date.now(), companyId, owner.id, id);
     })();
-    const after = this.detail(workspaceId, owner, id);
-    this.audit.record(id, "feedback", workspaceId, owner.id, {
+    const after = this.detail(companyId, owner, id);
+    this.audit.record(id, "feedback", companyId, owner.id, {
       input,
       before,
       after,
@@ -267,18 +267,18 @@ export class Following {
   }
 
   /** All that intake holds for the person: its sources, its updates of the last week, what it keeps, and their feedback. */
-  overview(workspaceId: string, owner: User, query = ""): FollowingOverview {
-    this.workspaces.requireMember(workspaceId, owner);
+  overview(companyId: string, owner: User, query = ""): FollowingOverview {
+    this.companies.requireMember(companyId, owner);
     return {
-      sources: this.recall.sourceStatus(workspaceId, owner),
-      updates: this.updates(workspaceId, owner),
-      kept: this.kept(workspaceId, owner, query),
-      feedback: this.feedbackOf(workspaceId, owner),
+      sources: this.recall.sourceStatus(companyId, owner),
+      updates: this.updates(companyId, owner),
+      kept: this.kept(companyId, owner, query),
+      feedback: this.feedbackOf(companyId, owner),
       blocked: this.database
         .query(
-          "SELECT id,kind,label,created_at AS createdAt FROM intake_block WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC"
+          "SELECT id,kind,label,created_at AS createdAt FROM intake_block WHERE company_id=? AND owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC"
         )
-        .all(workspaceId, owner.id) as IntakeBlock[],
+        .all(companyId, owner.id) as IntakeBlock[],
     };
   }
 
@@ -288,8 +288,8 @@ export class Following {
    * waiting updates that rest on one are cancelled, and the checks that rest only on them are deleted. Returns the ids of the deleted observations, whose files
    * `IntakeArchives.forget` takes away.
    */
-  deleteUpdate(workspaceId: string, owner: User, id: string): string[] {
-    const update = this.updates(workspaceId, owner).find(
+  deleteUpdate(companyId: string, owner: User, id: string): string[] {
+    const update = this.updates(companyId, owner).find(
       (each) => each.id === id
     );
     if (!update) {
@@ -302,7 +302,7 @@ export class Following {
       .query("SELECT evidence_ids FROM intake_delivery WHERE id=?")
       .get(id) as { evidence_ids: string };
     const sources = this.rows(
-      workspaceId,
+      companyId,
       owner,
       JSON.parse(delivery.evidence_ids) as string[]
     ).filter((row) => !(JSON.parse(row.payload) as WatchedItem).fromOwner);
@@ -323,11 +323,11 @@ export class Following {
       for (const key of blocks.values()) {
         this.database
           .query(
-            "INSERT INTO intake_block(id,workspace_id,owner_id,credential_id,kind,value,label,created_at) VALUES(?,?,?,?,?,?,?,?)"
+            "INSERT INTO intake_block(id,company_id,owner_id,credential_id,kind,value,label,created_at) VALUES(?,?,?,?,?,?,?,?)"
           )
           .run(
             randomUUID(),
-            workspaceId,
+            companyId,
             owner.id,
             key.credentialId,
             key.kind,
@@ -338,9 +338,9 @@ export class Following {
       }
       const rows = this.database
         .query(
-          "SELECT id,credential_id,payload FROM intake_item WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL"
+          "SELECT id,credential_id,payload FROM intake_item WHERE company_id=? AND owner_id=? AND deleted_at IS NULL"
         )
-        .all(workspaceId, owner.id) as Pick<
+        .all(companyId, owner.id) as Pick<
         ItemRow,
         "id" | "credential_id" | "payload"
       >[];
@@ -360,17 +360,17 @@ export class Following {
         .run(now, JSON.stringify(deleted));
       this.database
         .query(
-          "UPDATE intake_delivery SET cancelled_at=? WHERE workspace_id=? AND owner_id=? AND delivered_at IS NULL AND cancelled_at IS NULL AND (id=? OR EXISTS(SELECT 1 FROM json_each(evidence_ids) e JOIN intake_item i ON i.id=e.value WHERE i.deleted_at IS NOT NULL))"
+          "UPDATE intake_delivery SET cancelled_at=? WHERE company_id=? AND owner_id=? AND delivered_at IS NULL AND cancelled_at IS NULL AND (id=? OR EXISTS(SELECT 1 FROM json_each(evidence_ids) e JOIN intake_item i ON i.id=e.value WHERE i.deleted_at IS NOT NULL))"
         )
-        .run(now, workspaceId, owner.id, id);
+        .run(now, companyId, owner.id, id);
       // A check that rests only on deleted observations goes too.
       this.database
         .query(
-          "UPDATE intake_check SET deleted_at=? WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL AND json_array_length(source_ids)>0 AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) s JOIN intake_item i ON i.id=s.value WHERE i.deleted_at IS NULL)"
+          "UPDATE intake_check SET deleted_at=? WHERE company_id=? AND owner_id=? AND deleted_at IS NULL AND json_array_length(source_ids)>0 AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) s JOIN intake_item i ON i.id=s.value WHERE i.deleted_at IS NULL)"
         )
-        .run(now, workspaceId, owner.id);
+        .run(now, companyId, owner.id);
     })();
-    this.audit.record(id, "update.deleted", workspaceId, owner.id, {
+    this.audit.record(id, "update.deleted", companyId, owner.id, {
       blocked: [...blocks.values()],
       deleted,
     });
@@ -378,22 +378,22 @@ export class Following {
   }
 
   /** Lets intake read a blocked sender or thread again; what it deleted stays deleted. */
-  unblock(workspaceId: string, owner: User, id: string): void {
-    this.workspaces.requireMember(workspaceId, owner);
+  unblock(companyId: string, owner: User, id: string): void {
+    this.companies.requireMember(companyId, owner);
     const changed = this.database
       .query(
-        "UPDATE intake_block SET deleted_at=? WHERE id=? AND workspace_id=? AND owner_id=? AND deleted_at IS NULL"
+        "UPDATE intake_block SET deleted_at=? WHERE id=? AND company_id=? AND owner_id=? AND deleted_at IS NULL"
       )
-      .run(Date.now(), id, workspaceId, owner.id).changes;
+      .run(Date.now(), id, companyId, owner.id).changes;
     if (!changed) {
       throw notFound();
     }
-    this.audit.record(id, "block.removed", workspaceId, owner.id, {});
+    this.audit.record(id, "block.removed", companyId, owner.id, {});
   }
 
   /** Whether the person blocked the sender or the thread of an observation that a source gives. */
   blocks(
-    credential: { id: string; workspaceId: string; ownerId: string },
+    credential: { id: string; companyId: string; ownerId: string },
     item: WatchedItem
   ): boolean {
     const key = blockKey(credential.id, item);
@@ -401,10 +401,10 @@ export class Following {
       key !== null &&
       this.database
         .query(
-          "SELECT 1 FROM intake_block WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL AND kind=? AND value=? AND credential_id IS ?"
+          "SELECT 1 FROM intake_block WHERE company_id=? AND owner_id=? AND deleted_at IS NULL AND kind=? AND value=? AND credential_id IS ?"
         )
         .get(
-          credential.workspaceId,
+          credential.companyId,
           credential.ownerId,
           key.kind,
           key.value,
@@ -417,8 +417,8 @@ export class Following {
    * Every update that waits to be posted, newest first, for the agents to read beside what intake keeps; reading
    * changes nothing, so each still goes to its thread at the 08:00 review or when the person writes there.
    */
-  waiting(workspaceId: string, owner: User) {
-    return this.updates(workspaceId, owner)
+  waiting(companyId: string, owner: User) {
+    return this.updates(companyId, owner)
       .filter(
         (update) => update.deliveredAt === null && update.cancelledAt === null
       )
@@ -437,12 +437,12 @@ export class Following {
 
   /** Posts a waiting update at the next minute, or cancels it. */
   changeUpdate(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     id: string,
     action: "now" | "cancel"
   ): IntakeUpdate {
-    const update = this.updates(workspaceId, owner).find(
+    const update = this.updates(companyId, owner).find(
       (each) => each.id === id
     );
     if (!update) {
@@ -458,15 +458,15 @@ export class Following {
           : "UPDATE intake_delivery SET cancelled_at=? WHERE id=? AND delivered_at IS NULL AND cancelled_at IS NULL"
       )
       .run(...(action === "now" ? [id] : [Date.now(), id]));
-    this.audit.record(id, "update.changed", workspaceId, owner.id, {
+    this.audit.record(id, "update.changed", companyId, owner.id, {
       action,
     });
-    return this.updates(workspaceId, owner).find((each) => each.id === id)!;
+    return this.updates(companyId, owner).find((each) => each.id === id)!;
   }
 
   /** Keeps the person's words about what intake did; later assessments respect them like corrections. */
   feedback(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     target: string,
     quote: string
@@ -474,7 +474,7 @@ export class Following {
     if (!quote.trim() || quote.length > 8000) {
       throw new HttpError(400, "Give feedback of at most 8000 characters");
     }
-    const about = this.about(workspaceId, owner, target);
+    const about = this.about(companyId, owner, target);
     if (about === null) {
       throw notFound();
     }
@@ -487,36 +487,36 @@ export class Following {
     };
     this.database
       .query(
-        "INSERT INTO intake_feedback(id,workspace_id,owner_id,target,about,quote,created_at) VALUES(?,?,?,?,?,?,?)"
+        "INSERT INTO intake_feedback(id,company_id,owner_id,target,about,quote,created_at) VALUES(?,?,?,?,?,?,?)"
       )
       .run(
         feedback.id,
-        workspaceId,
+        companyId,
         owner.id,
         target,
         about,
         feedback.quote,
         feedback.createdAt
       );
-    this.audit.record(target, "feedback", workspaceId, owner.id, feedback);
+    this.audit.record(target, "feedback", companyId, owner.id, feedback);
     return feedback;
   }
 
-  corrections(workspaceId: string, owner: User) {
-    this.workspaces.requireMember(workspaceId, owner);
-    const feedback = this.feedbackOf(workspaceId, owner).map((each) => ({
+  corrections(companyId: string, owner: User) {
+    this.companies.requireMember(companyId, owner);
+    const feedback = this.feedbackOf(companyId, owner).map((each) => ({
       id: `feedback:${each.id}`,
       text: each.about,
       state: "feedback",
       quote: each.quote,
     }));
     const checks: { id: string; text: string; state: string; quote: string }[] =
-      this.list(workspaceId, owner).flatMap((check) => {
+      this.list(companyId, owner).flatMap((check) => {
         const row = this.database
           .query(
-            "SELECT quote FROM intake_check_revision WHERE check_id=? AND workspace_id=? AND owner_id=? AND quote IS NOT NULL ORDER BY id DESC LIMIT 1"
+            "SELECT quote FROM intake_check_revision WHERE check_id=? AND company_id=? AND owner_id=? AND quote IS NOT NULL ORDER BY id DESC LIMIT 1"
           )
-          .get(check.id, workspaceId, owner.id) as { quote: string } | null;
+          .get(check.id, companyId, owner.id) as { quote: string } | null;
         return row
           ? [
               {
@@ -531,18 +531,18 @@ export class Following {
     return [...checks, ...feedback];
   }
 
-  private updates(workspaceId: string, owner: User): IntakeUpdate[] {
-    const titles = this.threadTitles(workspaceId, owner);
+  private updates(companyId: string, owner: User): IntakeUpdate[] {
+    const titles = this.threadTitles(companyId, owner);
     const rows = this.database
       .query(
-        "SELECT * FROM intake_delivery WHERE workspace_id=? AND owner_id=? AND ((delivered_at IS NULL AND cancelled_at IS NULL) OR created_at>?) ORDER BY created_at DESC LIMIT 100"
+        "SELECT * FROM intake_delivery WHERE company_id=? AND owner_id=? AND ((delivered_at IS NULL AND cancelled_at IS NULL) OR created_at>?) ORDER BY created_at DESC LIMIT 100"
       )
-      .all(workspaceId, owner.id, Date.now() - WEEK) as (Delivery & {
+      .all(companyId, owner.id, Date.now() - WEEK) as (Delivery & {
       created_at: number;
     })[];
     return rows.flatMap((row) => {
       const ids = JSON.parse(row.evidence_ids) as string[];
-      const sources = this.rows(workspaceId, owner, ids);
+      const sources = this.rows(companyId, owner, ids);
       // Like delivery itself: an update shows only while the person sees its thread and all its sources.
       if (
         (row.thread_id !== null && !titles.has(row.thread_id)) ||
@@ -574,14 +574,14 @@ export class Following {
     });
   }
 
-  private kept(workspaceId: string, owner: User, query: string): IntakeKept[] {
-    const titles = this.threadTitles(workspaceId, owner);
+  private kept(companyId: string, owner: User, query: string): IntakeKept[] {
+    const titles = this.threadTitles(companyId, owner);
     const channels = new Map(
-      this.workspaces
-        .channelsIn(workspaceId, owner.id)
+      this.companies
+        .channelsIn(companyId, owner.id)
         .map((channel) => [channel.id, channel.name])
     );
-    const rows = this.recall.items(workspaceId, owner, query, 100);
+    const rows = this.recall.items(companyId, owner, query, 100);
     const evidence = this.recall.evidence(rows);
     return rows.map((row, index) => {
       const channel = row.archived_id
@@ -616,34 +616,30 @@ export class Following {
     });
   }
 
-  private feedbackOf(workspaceId: string, owner: User): IntakeFeedback[] {
+  private feedbackOf(companyId: string, owner: User): IntakeFeedback[] {
     return (
       this.database
         .query(
-          "SELECT id,target,about,quote,created_at AS createdAt FROM intake_feedback WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?"
+          "SELECT id,target,about,quote,created_at AS createdAt FROM intake_feedback WHERE company_id=? AND owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?"
         )
-        .all(workspaceId, owner.id, FEEDBACK) as IntakeFeedback[]
-    ).filter((each) => this.about(workspaceId, owner, each.target) !== null);
+        .all(companyId, owner.id, FEEDBACK) as IntakeFeedback[]
+    ).filter((each) => this.about(companyId, owner, each.target) !== null);
   }
 
   /** What a feedback target names, in a line for the assessment; null when the person cannot see it. */
-  private about(
-    workspaceId: string,
-    owner: User,
-    target: string
-  ): string | null {
+  private about(companyId: string, owner: User, target: string): string | null {
     const [kind, ...rest] = target.split(":");
     const id = rest.join(":");
     if (kind === "item") {
       const [evidence] = this.recall.evidence(
-        this.rows(workspaceId, owner, [id])
+        this.rows(companyId, owner, [id])
       );
       return evidence
         ? `Observation ${id} (${evidence.source}): ${evidence.text.slice(0, 300)}`
         : null;
     }
     if (kind === "update") {
-      const update = this.updates(workspaceId, owner).find(
+      const update = this.updates(companyId, owner).find(
         (each) => each.id === id
       );
       return update
@@ -652,17 +648,17 @@ export class Following {
     }
     if (kind === "source") {
       const source = this.recall
-        .sourceStatus(workspaceId, owner)
+        .sourceStatus(companyId, owner)
         .find((each) => each.id === id);
       return source ? `Everything from ${source.name}` : null;
     }
     return null;
   }
 
-  private threadTitles(workspaceId: string, owner: User) {
+  private threadTitles(companyId: string, owner: User) {
     return new Map(
-      this.workspaces
-        .threadsIn(workspaceId, owner.id)
+      this.companies
+        .threadsIn(companyId, owner.id)
         .map((thread) => [thread.id, thread.title])
     );
   }
@@ -676,34 +672,34 @@ export class Following {
     }
   }
 
-  private rows(workspaceId: string, owner: User, ids: string[]): ItemRow[] {
+  private rows(companyId: string, owner: User, ids: string[]): ItemRow[] {
     return ids.flatMap((id) => {
       const row = this.database
         .query(
-          "SELECT * FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+          "SELECT * FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
         )
-        .get(id, workspaceId, owner.id) as ItemRow | null;
-      return row ? this.recall.visible(workspaceId, owner, [row]) : [];
+        .get(id, companyId, owner.id) as ItemRow | null;
+      return row ? this.recall.visible(companyId, owner, [row]) : [];
     });
   }
 
   private visible(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     check: CheckSnapshot
   ): boolean {
     return (
       (!check.threadId ||
-        this.workspaces
-          .threadsIn(workspaceId, owner.id)
+        this.companies
+          .threadsIn(companyId, owner.id)
           .some((thread) => thread.id === check.threadId)) &&
-      this.rows(workspaceId, owner, check.sourceIds).length ===
+      this.rows(companyId, owner, check.sourceIds).length ===
         check.sourceIds.length
     );
   }
 
   private async correct(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     detail: FollowingDetail,
     quote: string
@@ -719,17 +715,17 @@ export class Following {
       currentTime: new Date().toISOString(),
     });
     const trace = `correction:${randomUUID()}`;
-    this.audit.record(trace, "model.request", workspaceId, owner.id, {
+    this.audit.record(trace, "model.request", companyId, owner.id, {
       system,
       text,
     });
     const result = await this.llm.complete(system, text, undefined, undefined, {
-      workspaceId,
+      companyId,
       userId: owner.id,
       source: "intake",
       threadId: null,
     });
-    this.audit.record(trace, "model.response", workspaceId, owner.id, {
+    this.audit.record(trace, "model.response", companyId, owner.id, {
       result,
     });
     const value = JSON.parse(

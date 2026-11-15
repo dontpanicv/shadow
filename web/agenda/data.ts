@@ -10,54 +10,54 @@ import type {
 } from "../app/types.ts";
 
 /** What Shadow runs for the person and what waits for them. */
-export function upcomingQuery(workspaceId: string) {
+export function upcomingQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "upcoming"],
+    queryKey: ["companies", companyId, "upcoming"],
     queryFn: ({ signal }) =>
-      request<Upcoming>(`/workspaces/${workspaceId}/upcoming`, { signal }),
+      request<Upcoming>(`/companies/${companyId}/upcoming`, { signal }),
   });
 }
 
 /** Loads the agenda again, and the routines of the channels, which an accepted suggestion or a pause changes. */
-function refresh(workspaceId: string) {
+function refresh(companyId: string) {
   return Promise.all([
     queryClient.invalidateQueries({
-      queryKey: upcomingQuery(workspaceId).queryKey,
+      queryKey: upcomingQuery(companyId).queryKey,
     }),
     queryClient.invalidateQueries({
-      queryKey: ["workspaces", workspaceId, "routines"],
+      queryKey: ["companies", companyId, "routines"],
     }),
   ]);
 }
 
 /** Accepts or declines a suggestion: accepting makes the routine or the reminder as the person's own. */
-export function useAnswerSuggestion(workspaceId: string) {
+export function useAnswerSuggestion(companyId: string) {
   return useMutation({
     mutationFn: ({ id, accept }: { id: string; accept: boolean }) =>
-      request(`/workspaces/${workspaceId}/suggestions/${id}`, {
+      request(`/companies/${companyId}/suggestions/${id}`, {
         method: "POST",
         body: { accept },
       }),
-    onSettled: () => refresh(workspaceId),
+    onSettled: () => refresh(companyId),
   });
 }
 
-export function useCancelReminder(workspaceId: string) {
+export function useCancelReminder(companyId: string) {
   return useMutation({
     mutationFn: (id: string) =>
-      request(`/workspaces/${workspaceId}/reminders/${id}`, {
+      request(`/companies/${companyId}/reminders/${id}`, {
         method: "DELETE",
       }),
-    onSettled: () => refresh(workspaceId),
+    onSettled: () => refresh(companyId),
   });
 }
 
 /** Pauses or resumes a routine. */
-export function useRoutineEnabled(workspaceId: string) {
+export function useRoutineEnabled(companyId: string) {
   return useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       request(`/routines/${id}`, { method: "PUT", body: { enabled } }),
-    onSettled: () => refresh(workspaceId),
+    onSettled: () => refresh(companyId),
   });
 }
 

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { createContext, type ReactNode, useContext } from "react";
 import type { Reminder, Routine, Suggestion } from "../app/types.ts";
+import { channelsOf } from "../companies/data.ts";
+import { PanelHeader } from "../companies/shell.tsx";
 import {
   Badge,
   Button,
@@ -20,8 +22,6 @@ import {
   weekdayTime,
 } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
-import { channelsOf } from "../workspaces/data.ts";
-import { PanelHeader } from "../workspaces/shell.tsx";
 import {
   type AgendaItem,
   agendaGroups,
@@ -33,18 +33,18 @@ import {
   useRoutineEnabled,
 } from "./data.ts";
 
-const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId");
+const companyRoute = getRouteApi("/signed-in/c/$companyId");
 
-/** The names of the workspace's channels, which routine rows show. */
+/** The names of the company's channels, which routine rows show. */
 const ChannelNames = createContext<ReadonlyMap<string, string>>(new Map());
 
 /** What Shadow runs for the person and what waits for them, in groups from what needs them to what is paused. */
 export function UpcomingPage() {
-  const { workspaceId } = workspaceRoute.useParams();
-  const { data: upcoming } = useQuery(upcomingQuery(workspaceId));
+  const { companyId } = companyRoute.useParams();
+  const { data: upcoming } = useQuery(upcomingQuery(companyId));
   const groups = upcoming ? agendaGroups(upcoming, Date.now()) : [];
   const { data: channels = [] } = useLiveQuery({
-    query: (q) => q.from({ channel: channelsOf(workspaceId) }),
+    query: (q) => q.from({ channel: channelsOf(companyId) }),
   });
   return (
     <section className="conversation">
@@ -62,12 +62,12 @@ export function UpcomingPage() {
                 <SettingsCard>
                   {group.items.map((item) => (
                     <AgendaRow
+                      companyId={companyId}
                       item={item}
                       key={`${item.kind}:${itemId(item)}`}
                       soon={
                         group.title === "Today" || group.title === "Tomorrow"
                       }
-                      workspaceId={workspaceId}
                     />
                   ))}
                 </SettingsCard>
@@ -82,9 +82,9 @@ export function UpcomingPage() {
 
 /** The suggestions that wait for the person, above the composer of their Shadow. */
 export function SuggestionCards() {
-  const { workspaceId } = workspaceRoute.useParams();
+  const { companyId } = companyRoute.useParams();
   const suggestions =
-    useQuery(upcomingQuery(workspaceId)).data?.suggestions ?? [];
+    useQuery(upcomingQuery(companyId)).data?.suggestions ?? [];
   return suggestions.map((suggestion) => (
     <section aria-label="Suggestion" className="suggestion" key={suggestion.id}>
       <Icon name={suggestion.kind === "routine" ? "play" : "clock"} />
@@ -92,17 +92,17 @@ export function SuggestionCards() {
         <strong>{suggestion.name}</strong>
         <span>{suggestionWhen(suggestion)}</span>
       </div>
-      <SuggestionActions suggestion={suggestion} workspaceId={workspaceId} />
+      <SuggestionActions companyId={companyId} suggestion={suggestion} />
     </section>
   ));
 }
 
 function AgendaRow({
-  workspaceId,
+  companyId,
   item,
   soon,
 }: {
-  workspaceId: string;
+  companyId: string;
   item: AgendaItem;
   /** Today and Tomorrow show only the time. */
   soon: boolean;
@@ -116,15 +116,15 @@ function AgendaRow({
           label={item.approval.text}
           lead={<Icon name="key" />}
         >
-          <OpenThread threadId={item.threadId} workspaceId={workspaceId} />
+          <OpenThread companyId={companyId} threadId={item.threadId} />
         </SettingsRow>
       );
     case "failed":
       return (
         <RoutineRow
+          companyId={companyId}
           routine={item.routine}
           when={item.routine.lastRun?.error ?? undefined}
-          workspaceId={workspaceId}
         >
           <Badge label="Failed" tone="danger" />
         </RoutineRow>
@@ -145,14 +145,15 @@ function AgendaRow({
             <DayStrip at={item.suggestion.at} />
           )}
           <SuggestionActions
+            companyId={companyId}
             suggestion={item.suggestion}
-            workspaceId={workspaceId}
           />
         </SettingsRow>
       );
     case "reminder":
       return (
         <ReminderRow
+          companyId={companyId}
           reminder={item.reminder}
           when={
             item.reminder.place && item.reminder.triggeredAt === null
@@ -163,19 +164,18 @@ function AgendaRow({
                 )
               : when(item.reminder.dueAt)
           }
-          workspaceId={workspaceId}
         />
       );
     default:
       return (
         <RoutineRow
+          companyId={companyId}
           routine={item.routine}
           when={
             item.routine.nextRunAt === null
               ? undefined
               : when(item.routine.nextRunAt)
           }
-          workspaceId={workspaceId}
         />
       );
   }
@@ -183,18 +183,18 @@ function AgendaRow({
 
 /** A routine: its time and channel, a switch that pauses it, and its thread. */
 function RoutineRow({
-  workspaceId,
+  companyId,
   routine,
   when,
   children,
 }: {
-  workspaceId: string;
+  companyId: string;
   routine: Routine;
   when?: string;
   children?: ReactNode;
 }) {
   const channel = useContext(ChannelNames).get(routine.channelId);
-  const enabled = useRoutineEnabled(workspaceId);
+  const enabled = useRoutineEnabled(companyId);
   return (
     <SettingsRow
       compact
@@ -222,22 +222,22 @@ function RoutineRow({
         }
       />
       {routine.threadId ? (
-        <OpenThread threadId={routine.threadId} workspaceId={workspaceId} />
+        <OpenThread companyId={companyId} threadId={routine.threadId} />
       ) : null}
     </SettingsRow>
   );
 }
 
 function ReminderRow({
-  workspaceId,
+  companyId,
   reminder,
   when,
 }: {
-  workspaceId: string;
+  companyId: string;
   reminder: Reminder;
   when: string;
 }) {
-  const cancel = useCancelReminder(workspaceId);
+  const cancel = useCancelReminder(companyId);
   return (
     <SettingsRow
       compact
@@ -259,10 +259,10 @@ function ReminderRow({
 }
 
 function OpenThread({
-  workspaceId,
+  companyId,
   threadId,
 }: {
-  workspaceId: string;
+  companyId: string;
   threadId: string;
 }) {
   const navigate = useNavigate();
@@ -272,8 +272,8 @@ function OpenThread({
       label="Open thread"
       onClick={() =>
         navigate({
-          to: "/w/$workspaceId/thread/$threadId",
-          params: { workspaceId, threadId },
+          to: "/c/$companyId/thread/$threadId",
+          params: { companyId, threadId },
         })
       }
       size="icon"
@@ -283,13 +283,13 @@ function OpenThread({
 }
 
 function SuggestionActions({
-  workspaceId,
+  companyId,
   suggestion,
 }: {
-  workspaceId: string;
+  companyId: string;
   suggestion: Suggestion;
 }) {
-  const answer = useAnswerSuggestion(workspaceId);
+  const answer = useAnswerSuggestion(companyId);
   return (
     <>
       <Button

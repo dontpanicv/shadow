@@ -10,7 +10,7 @@ member. A routine's script cannot send.
 Settings shows the steps that set up each integration: click ⓘ on it. The steps are the `guide` of its connector, in
 `src/integrations/`.
 
-Google, Netatmo, and Tesla need an OAuth client of your own, which the server's owner (the first of `allowed_emails`)
+Google, Netatmo, and Tesla need an OAuth client of your own, which an admin
 sets with **Client** on the integration; the next sign-in uses it at once. Until then, only the owner sees it. Google
 also needs `gog` on the Shadow machine, Slack `slackcli`, WhatsApp `wacli`, and Tesla `tesla-control`, in the `PATH` of
 the Shadow service; install them, for example with `brew install gogcli`, `brew install shaharia-lab/tap/slackcli`, and
@@ -28,10 +28,10 @@ which Shadow renews with its refresh token. One client serves all accounts: pers
 person. Google shows that it has not verified the app; an app that is not verified can have up to 100 users.
 
 Agents search and read mail, save its attachments to the thread's channel, make drafts, and send mail or one of your drafts after you allow it, with files of the
-workspace attached; gog blocks sending in every other tool. For a draft, the approval shows the draft as it is in
+company attached; gog blocks sending in every other tool. For a draft, the approval shows the draft as it is in
 Gmail, and Shadow sends nothing when the draft changed after you allowed it. Agents use only these tools for mail, never a mail app on a machine. They read calendars, find free time, and create, change, and delete events; the guests get an email about it only when the agent asks for it and you allow it.
 They search Drive, read Docs and Sheets, create Docs, and change only the Docs that they created. They upload files of
-the workspace to Drive and share the files that they uploaded or created, with anyone who has the link, a person, or a
+the company to Drive and share the files that they uploaded or created, with anyone who has the link, a person, or a
 domain; Google sends no invitation email.
 
 ## Slack
@@ -41,6 +41,29 @@ app and no administrator. In Slack's web app, copy a request to `api/` from the 
 in Shadow: slackcli checks the session with Slack, and Shadow keeps it encrypted and names the account after the Slack
 workspace. Add each Slack workspace on its own. The session gives the same access as your login, and it ends when you
 sign out of Slack in that browser.
+
+### The Slack bot of the company
+
+The channels that every member sees copy the public channels of the company's Slack; nobody makes them by hand. An
+admin connects the bot once in Company settings:
+
+1. At [api.slack.com/apps](https://api.slack.com/apps), make an app from scratch in the company's Slack workspace.
+2. Under **OAuth & Permissions**, add the bot token scopes `channels:read`, `channels:history`, `channels:join`,
+   `files:read`, and `users:read`, and install the app to the Slack workspace. Keep it an app of your own workspace:
+   Slack gives such an app the normal limits on reading history.
+3. Copy the **Bot User OAuth Token** (`xoxb-…`), and paste it under **Slack** in Company settings.
+
+Shadow checks the token with Slack, keeps it encrypted, and lists the public channels at once and then every 5
+minutes. A new Slack channel gets its channel, with Slack's purpose as its summary; a renamed one is renamed; one that
+Slack archives or deletes is hidden with its threads until Slack has it again. Slack's general channel takes over
+`#general`, where each person's own thread lives.
+
+A new channel also gets the last 30 days of its Slack channel at once, and every 15 minutes what happened since. The bot
+joins each public channel, and keeps each day as one Markdown file of the channel, `slack-YYYY-MM-DD.md`: each
+message with its author and time, the replies of its thread under it, and its attachments as files of the channel that
+it links. Each sync reads the last 30 days again, so a new reply to an older message, an edit, and a delete all reach
+the files; a day file is written again only when its text changes, and older versions stay. Search finds the files, and
+the channel's brief reads each new or changed message once. Each person's own Slack account below stays theirs.
 
 Agents search and read messages, channels, threads, unread messages, and canvases, find people, make drafts that you
 send from Slack, and send messages after you allow each one. Each command runs in a home of its own, which Shadow
@@ -55,7 +78,7 @@ Your phone sends Shadow the newest messages of each thread, often only some days
 message while it runs. The copy and the device's keys are in `data/integrations/<credential-id>/`. Agents read threads and
 messages, search them, find contacts, and save the picture, video, audio, or document of a message to the thread's
 channel; when WhatsApp no longer keeps it, your phone sends it again if it is online. For older messages, ask an agent to load them: it asks your phone, which must
-be online, for up to 5000 older messages of a thread at a time. They send a text message or a file of the workspace after you allow it, or make a
+be online, for up to 5000 older messages of a thread at a time. They send a text message or a file of the company after you allow it, or make a
 `wa.me` link that opens WhatsApp with the text, which you send. Deleting the credential removes the device from your number.
 
 ## X
@@ -104,7 +127,7 @@ most that access. T3 Code gives no refresh token: after 30 days, connect it agai
 
 Agents read the weather stations of the person's Netatmo account through Netatmo's API: the current values of each
 module, indoor and outdoor, and their history. They change nothing. Netatmo gives tokens only to an app that someone
-made at dev.netatmo.com, with the redirect URI `https://localhost/shadow-sign-in`; the server's owner pastes its client
+made at dev.netatmo.com, with the redirect URI `https://localhost/shadow-sign-in`; an admin pastes its client
 ID and client secret with **Client**, and each person then clicks **Connect**.
 
 ## Salus

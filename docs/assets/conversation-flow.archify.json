@@ -97,13 +97,13 @@
     {
       "id": "facts",
       "type": "database",
-      "label": "Workspace facts",
+      "label": "Company facts",
       "sublabel": "family writes them",
       "stage": 2,
       "row": 1,
       "sources": [
         {
-          "path": "src/workspaces/workspaces.ts",
+          "path": "src/companies/companies.ts",
           "line": 340,
           "label": "factsOf"
         },
@@ -309,7 +309,7 @@
       "items": [
         "The topic brief is rewritten after 10 quiet minutes",
         "The learning loop keeps facts about people and how-tos",
-        "Workspace facts are what the family writes itself"
+        "Company facts are what the family writes itself"
       ]
     }
   ]

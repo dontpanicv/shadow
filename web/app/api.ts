@@ -21,7 +21,7 @@ export interface RequestOptions {
  * other errors throw with the server's message.
  *
  * @example
- * const { user, workspaces } = await request<Me>("/me");
+ * const { user, companies } = await request<Me>("/me");
  */
 export async function request<T>(
   path: string,
@@ -55,9 +55,9 @@ export async function request<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-/** The address of a file of the workspace, in a channel or its own. */
-export function fileHref(workspaceId: string, fileId: string): string {
-  return `/api/v1/workspaces/${workspaceId}/files/${fileId}`;
+/** The address of a file of the company, in a channel or its own. */
+export function fileHref(companyId: string, fileId: string): string {
+  return `/api/v1/companies/${companyId}/files/${fileId}`;
 }
 
 /**

@@ -8,7 +8,7 @@ import { LLAMA_BUILD, LlamaServer } from "../platform/llama.ts";
 export interface Embedder {
   /** One L2-normalized vector per input. Text already carries its prompt prefix; media gets none. */
   embed: (inputs: readonly EmbedInput[]) => Promise<Float32Array[]>;
-  /** Identifies the vectors: when it changes, every workspace index re-embeds. */
+  /** Identifies the vectors: when it changes, every company index re-embeds. */
   readonly fingerprint: string;
   /** Whether vectors can be made now; until then search uses keywords only. */
   ready: () => boolean;

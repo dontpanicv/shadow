@@ -196,7 +196,7 @@ export function whatsAppConnector(binary: string): Connector {
       {
         name: "whatsapp_send_file",
         description:
-          "Sends a file of the workspace as the person, after they allow it: a picture, video, or audio as itself, any other file as a document.",
+          "Sends a file of the company as the person, after they allow it: a picture, video, or audio as itself, any other file as a document.",
         parameters: Type.Object({
           to: RECIPIENT,
           file: Type.String({

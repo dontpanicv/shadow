@@ -5,9 +5,11 @@ import { ProfilePictures } from "../accounts/accounts.ts";
 import { Agenda } from "../agenda/agenda.ts";
 import { Artifacts } from "../artifacts/artifacts.ts";
 import { Browser, browserRequirements } from "../browser/browser.ts";
+import { Companies } from "../companies/companies.ts";
 import { FeedbackReports } from "../feedback/feedback.ts";
 import { Intake } from "../intake/intake.ts";
 import { Integrations } from "../integrations/integrations.ts";
+import { SlackBot } from "../integrations/slack-bot.ts";
 import { Llm, type LlmProvider } from "../llm/llm.ts";
 import { transcribeRequirements } from "../llm/transcribe.ts";
 import { Notifications } from "../notifications/notifications.ts";
@@ -24,7 +26,6 @@ import type { Embedder } from "../search/embedder.ts";
 import { extractRequirements, jpeg, readText } from "../search/extract.ts";
 import { Indexer, RecentSearches } from "../search/search.ts";
 import { Threads } from "../threads/threads.ts";
-import { Workspaces } from "../workspaces/workspaces.ts";
 
 export interface App {
   readonly config: Config;
@@ -33,7 +34,7 @@ export interface App {
   readonly pictures: ProfilePictures;
   readonly llm: Llm;
   readonly threads: Threads;
-  readonly workspaces: Workspaces;
+  readonly companies: Companies;
   readonly integrations: Integrations;
   readonly artifacts: Artifacts;
   readonly notifications: Notifications;
@@ -44,6 +45,7 @@ export interface App {
   readonly reminders: Reminders;
   readonly agenda: Agenda;
   readonly intake: Intake;
+  readonly slackBot: SlackBot;
   readonly feedback: FeedbackReports;
 }
 
@@ -83,58 +85,57 @@ export async function createApp(
     database,
     resolvedSecrets,
     llmProvider,
-    config.allowedEmails[0] ?? null,
+    (user, companyId) => companies.isAdmin(user, companyId),
     (spend, data) =>
       audit.record(
         `model:${spend?.source ?? "background"}:${spend?.threadId ?? ""}`,
         "model.call",
-        spend?.workspaceId ?? "",
+        spend?.companyId ?? "",
         spend?.userId ?? "",
         data
       )
   );
   // New connector tools reach the agents' next runs.
-  const reloadTools = (workspaceId: string) => {
+  const reloadTools = (companyId: string) => {
     threads
-      .reloadTools(workspaceId)
+      .reloadTools(companyId)
       .catch((error: unknown) =>
         console.error("reloading the tools failed", error)
       );
   };
   const pictures = new ProfilePictures(database);
-  const workspaces = new Workspaces(database, auth, pictures, reloadTools);
-  const integrations = new Integrations(database, resolvedSecrets, workspaces, {
+  const companies = new Companies(database, auth, pictures, reloadTools);
+  const integrations = new Integrations(database, resolvedSecrets, companies, {
     directory: join(config.dataDirectory, "integrations"),
-    owner: config.allowedEmails[0] ?? null,
     baseUrl: config.baseUrl,
     changed: reloadTools,
   });
   // The change hooks point at the indexer, which reads the threads and the artifacts.
-  const artifacts = new Artifacts(database, workspaces, config, (workspaceId) =>
-    indexer.touch(workspaceId)
+  const artifacts = new Artifacts(database, companies, config, (companyId) =>
+    indexer.touch(companyId)
   );
   const browser = new Browser();
-  const notifications = new Notifications(database, workspaces);
+  const notifications = new Notifications(database, companies);
   // The recall port points at the indexer too; files read as search reads them.
   // The routine tools come from routines, which runs its work in threads.
   const threads: Threads = new Threads(
     config.dataDirectory,
     llm,
-    workspaces,
+    companies,
     integrations,
     artifacts,
     browser,
     notifications,
     {
-      audit: (workspaceId, ownerId, trace, stage, data) =>
-        audit.record(trace, stage, workspaceId, ownerId, data),
-      recall: (workspaceId, query, limit, personId) =>
-        indexer.search(workspaceId, query, limit, personId),
-      changed: (workspaceId) => indexer.touch(workspaceId),
-      observedContext: (workspaceId, threadId, ownerId, claim) =>
-        intake.contextFor(workspaceId, threadId, ownerId, claim),
-      answered: (workspaceId, threadId, personId) =>
-        intake.finishClaims(workspaceId, threadId, personId),
+      audit: (companyId, ownerId, trace, stage, data) =>
+        audit.record(trace, stage, companyId, ownerId, data),
+      recall: (companyId, query, limit, personId) =>
+        indexer.search(companyId, query, limit, personId),
+      changed: (companyId) => indexer.touch(companyId),
+      observedContext: (companyId, threadId, ownerId, claim) =>
+        intake.contextFor(companyId, threadId, ownerId, claim),
+      answered: (companyId, threadId, personId) =>
+        intake.finishClaims(companyId, threadId, personId),
       sourceRead: (thread, ownerId, read) =>
         intake.recordSourceRead(thread, ownerId, read),
       moved: (threadId, channelId) => {
@@ -146,40 +147,40 @@ export async function createApp(
         agenda.moveChannel(from, to);
         intake.moveChannel(from, to);
       },
-      tools: async (workspaceId) => [
-        ...(await routines.tools(workspaceId)),
-        ...reminders.tools(workspaceId),
-        ...intake.tools(workspaceId),
-        ...feedback.tools(workspaceId),
+      tools: async (companyId) => [
+        ...(await routines.tools(companyId)),
+        ...reminders.tools(companyId),
+        ...intake.tools(companyId),
+        ...feedback.tools(companyId),
       ],
-      automations: (workspaceId, personId) =>
-        agenda.automations(workspaceId, personId),
-      suggest: (workspaceId, threadId, channelId, suggestion) =>
-        agenda.offer(workspaceId, threadId, channelId, suggestion),
+      automations: (companyId, personId) =>
+        agenda.automations(companyId, personId),
+      suggest: (companyId, threadId, channelId, suggestion) =>
+        agenda.offer(companyId, threadId, channelId, suggestion),
       read: readText,
       picture: jpeg,
     }
   );
   const indexer = new Indexer(
     config.dataDirectory,
-    workspaces,
+    companies,
     threads,
     artifacts,
     embedder
   );
-  const places = new Places(database, workspaces);
+  const places = new Places(database, companies);
   const routines = new Routines(
     database,
-    workspaces,
+    companies,
     integrations,
     threads,
     indexer,
     places
   );
-  const reminders = new Reminders(database, workspaces, threads, places);
+  const reminders = new Reminders(database, companies, threads, places);
   const agenda = new Agenda(
     database,
-    workspaces,
+    companies,
     threads,
     routines,
     reminders,
@@ -187,7 +188,7 @@ export async function createApp(
   );
   const intake = new Intake(
     database,
-    workspaces,
+    companies,
     integrations,
     threads,
     indexer,
@@ -196,12 +197,33 @@ export async function createApp(
     notifications,
     reminders
   );
-  const feedback = new FeedbackReports(
+  // The Slack bot works for no person; the files of a channel take the member that background work acts as.
+  const slackBot = new SlackBot(
     database,
-    workspaces,
-    threads,
-    config.allowedEmails[0] ?? null
+    resolvedSecrets,
+    companies,
+    (companyId) => threads.channelsChanged(companyId),
+    {
+      writeFile: (companyId, channelId, file, replaces) =>
+        threads.writeFile(
+          companyId,
+          channelId,
+          companies.agentMember(companyId),
+          file,
+          replaces
+        ),
+      deleteFile: async (companyId, fileId) => {
+        await threads.deleteFile(
+          companyId,
+          companies.agentMember(companyId),
+          fileId
+        );
+      },
+      brief: (companyId, channelId, messages) =>
+        threads.briefFromSlack(companyId, channelId, messages),
+    }
   );
+  const feedback = new FeedbackReports(database, companies, threads);
   return {
     config,
     database,
@@ -209,7 +231,7 @@ export async function createApp(
     pictures,
     llm,
     threads,
-    workspaces,
+    companies,
     integrations,
     artifacts,
     notifications,
@@ -220,11 +242,13 @@ export async function createApp(
     reminders,
     agenda,
     intake,
+    slackBot,
     feedback,
   };
 }
 
 export async function closeApp(app: App): Promise<void> {
+  await app.slackBot.close();
   await app.intake.close();
   app.reminders.close();
   app.routines.close();

@@ -74,11 +74,11 @@ Restart Shadow. Shadow does not start if `client_id` or `client_secret` is empty
 - **Web**: open `https://shadow.example.com` and click **Continue with Google**.
 - **iOS**: type `https://shadow.example.com` in **Server**, then tap **Continue with Google**.
 
-To add your partner to a workspace, they must sign in one time. Then open the workspace settings and add their email
+To add your partner to a company, they must sign in one time. Then open the company settings and add their email
 under **Members**.
 
 If you made an account with a password before Google sign-in, sign in with Google with the same email. Shadow connects
-the Google account to it, and you keep your workspaces.
+the Google account to it, and you keep your companies.
 
 ## Problems
 

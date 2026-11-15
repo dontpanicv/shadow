@@ -1,16 +1,16 @@
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
 import type { Inbox } from "../app/types.ts";
-import { inboxQuery } from "../workspaces/data.ts";
+import { inboxQuery } from "../companies/data.ts";
 
-/** Marks one notification read, or all of the workspace's without `id`. */
+/** Marks one notification read, or all of the company's without `id`. */
 export async function readNotifications(
-  workspaceId: string,
+  companyId: string,
   id?: string
 ): Promise<void> {
   const inbox = await request<Inbox>(
-    `/workspaces/${workspaceId}/notifications/read`,
+    `/companies/${companyId}/notifications/read`,
     { method: "POST", body: id ? { id } : {} }
   );
-  queryClient.setQueryData(inboxQuery(workspaceId).queryKey, inbox);
+  queryClient.setQueryData(inboxQuery(companyId).queryKey, inbox);
 }

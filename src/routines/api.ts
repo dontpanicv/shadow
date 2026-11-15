@@ -5,9 +5,9 @@ import { json, type Route } from "../app/http.ts";
 export const routineApiRoutes: readonly Route[] = [
   [
     "GET",
-    "/api/v1/workspaces/:workspace/channels/:channel/routines",
+    "/api/v1/companies/:company/channels/:channel/routines",
     api(async ({ app, user, params }) =>
-      json(app.routines.inChannel(params.workspace!, params.channel!, user))
+      json(app.routines.inChannel(params.company!, params.channel!, user))
     ),
   ],
   [

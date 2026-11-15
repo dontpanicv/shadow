@@ -1,16 +1,16 @@
 import type { Database } from "bun:sqlite";
 import { randomInt } from "node:crypto";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import type { Companies, Realm, ThreadRef } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import type { Config } from "../platform/config.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
-import type { Realm, ThreadRef, Workspaces } from "../workspaces/workspaces.ts";
 import { artifactTools } from "./tools.ts";
 
 export type Visibility = "public" | "members";
 
 /**
- * A page or small app that an agent made. It belongs to a channel, or to the workspace when `channelId` is null, as the
+ * A page or small app that an agent made. It belongs to a channel, or to the company when `channelId` is null, as the
  * orchestrator's do, and stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `shadow`.
  */
 export interface Artifact {
@@ -58,8 +58,8 @@ export interface Me {
   readonly member: boolean;
 }
 
-export type ArtifactWorkspaces = Pick<
-  Workspaces,
+export type ArtifactCompanies = Pick<
+  Companies,
   | "allChannelsIn"
   | "channel"
   | "channelsIn"
@@ -152,7 +152,7 @@ export const CONTENT_POLICY = [
 
 interface ArtifactRow {
   readonly id: string;
-  readonly workspaceId: string;
+  readonly companyId: string;
   readonly channelId: string | null;
   readonly threadId: string;
   readonly title: string;
@@ -163,7 +163,7 @@ interface ArtifactRow {
 }
 
 const ARTIFACT_COLUMNS =
-  "id, workspace_id AS workspaceId, channel_id AS channelId, thread_id AS threadId, title, visibility, created_at AS createdAt, updated_at AS updatedAt, (SELECT count(*) FROM artifact_visitor v WHERE v.artifact_id = artifact.id AND v.deleted_at IS NULL) AS visitors";
+  "id, company_id AS companyId, channel_id AS channelId, thread_id AS threadId, title, visibility, created_at AS createdAt, updated_at AS updatedAt, (SELECT count(*) FROM artifact_visitor v WHERE v.artifact_id = artifact.id AND v.deleted_at IS NULL) AS visitors";
 
 /**
  * The artifacts of every channel, and the runtime their pages call. A visitor writes only their own records; members
@@ -175,22 +175,22 @@ export class Artifacts {
 
   constructor(
     private readonly database: Database,
-    private readonly workspaces: ArtifactWorkspaces,
+    private readonly companies: ArtifactCompanies,
     private readonly addresses: Pick<Config, "baseUrl" | "shareUrl">,
-    /** Tells search that an artifact of the workspace changed. */
-    private readonly changed: (workspaceId: string) => void
+    /** Tells search that an artifact of the company changed. */
+    private readonly changed: (companyId: string) => void
   ) {}
 
-  /** The agent tools of a workspace; `realmOf` gives whose artifacts a turn sees. */
+  /** The agent tools of a company; `realmOf` gives whose artifacts a turn sees. */
   tools(
-    workspaceId: string,
+    companyId: string,
     realmOf: (conversationId: ConversationId) => Promise<Realm>
   ) {
-    return artifactTools(this, this.workspaces, workspaceId, realmOf);
+    return artifactTools(this, this.companies, companyId, realmOf);
   }
 
   /**
-   * Makes an artifact in a thread, for a channel of its workspace or, for a null `channelId`, for the workspace. The
+   * Makes an artifact in a thread, for a channel of its company or, for a null `channelId`, for the company. The
    * same `requestKey` again returns the artifact it made before.
    */
   create(
@@ -209,11 +209,11 @@ export class Artifacts {
     }
     this.database
       .query(
-        "INSERT INTO artifact (id, workspace_id, channel_id, thread_id, title, html, visibility, request_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'shadow', ?, ?)"
+        "INSERT INTO artifact (id, company_id, channel_id, thread_id, title, html, visibility, request_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'shadow', ?, ?)"
       )
       .run(
         this.newName(),
-        thread.workspaceId,
+        thread.companyId,
         channelId,
         thread.id,
         title,
@@ -226,18 +226,18 @@ export class Artifacts {
     const row = this.database
       .query(`SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE request_key = ?`)
       .get(input.requestKey) as ArtifactRow;
-    this.changed(thread.workspaceId);
+    this.changed(thread.companyId);
     return this.artifact(row);
   }
 
-  /** Changes an artifact of a workspace; its data stays. */
+  /** Changes an artifact of a company; its data stays. */
   update(
-    workspaceId: string,
+    companyId: string,
     id: string,
     changes: Partial<ArtifactInput>
   ): Artifact {
     const row = this.row(id);
-    if (row?.workspaceId !== workspaceId) {
+    if (row?.companyId !== companyId) {
       throw notFound();
     }
     this.database
@@ -253,32 +253,30 @@ export class Artifacts {
         Date.now(),
         id
       );
-    this.changed(workspaceId);
+    this.changed(companyId);
     return this.artifact(this.row(id)!);
   }
 
-  /** The artifacts of a workspace that `realm` sees, newest first: the workspace's own and those of its channels. */
-  inWorkspace(workspaceId: string, realm: Realm): Artifact[] {
+  /** The artifacts of a company that `realm` sees, newest first: the company's own and those of its channels. */
+  inCompany(companyId: string, realm: Realm): Artifact[] {
     const channels = new Set(
-      this.workspaces
-        .channelsIn(workspaceId, realm)
-        .map((channel) => channel.id)
+      this.companies.channelsIn(companyId, realm).map((channel) => channel.id)
     );
-    return this.allInWorkspace(workspaceId).filter(
+    return this.allInCompany(companyId).filter(
       (artifact) =>
         artifact.channelId === null || channels.has(artifact.channelId)
     );
   }
 
-  /** Every live artifact of a workspace, private channels' too, newest first, for background work such as search. */
-  allInWorkspace(workspaceId: string): Artifact[] {
-    const channels = this.liveChannels(workspaceId);
+  /** Every live artifact of a company, private channels' too, newest first, for background work such as search. */
+  allInCompany(companyId: string): Artifact[] {
+    const channels = this.liveChannels(companyId);
     return (
       this.database
         .query(
-          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`
+          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE company_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`
         )
-        .all(workspaceId) as ArtifactRow[]
+        .all(companyId) as ArtifactRow[]
     )
       .filter((row) => row.channelId === null || channels.has(row.channelId))
       .map((row) => this.artifact(row));
@@ -301,29 +299,25 @@ export class Artifacts {
   }
 
   /**
-   * The artifacts of a channel of the person's workspace from every thread, settled or not, or the workspace's own for
+   * The artifacts of a channel of the person's company from every thread, settled or not, or the company's own for
    * a null `channelId`; newest first.
    */
-  inPlace(
-    workspaceId: string,
-    channelId: string | null,
-    user: User
-  ): Artifact[] {
+  inPlace(companyId: string, channelId: string | null, user: User): Artifact[] {
     if (channelId === null) {
-      this.workspaces.requireMember(workspaceId, user);
+      this.companies.requireMember(companyId, user);
     } else {
-      this.workspaces.channel(workspaceId, channelId, user);
+      this.companies.channel(companyId, channelId, user);
     }
     return (
       this.database
         .query(
-          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE workspace_id = ? AND channel_id IS ? AND deleted_at IS NULL ORDER BY created_at DESC`
+          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE company_id = ? AND channel_id IS ? AND deleted_at IS NULL ORDER BY created_at DESC`
         )
-        .all(workspaceId, channelId) as ArtifactRow[]
+        .all(companyId, channelId) as ArtifactRow[]
     ).map((row) => this.artifact(row));
   }
 
-  /** An artifact of the person's workspace in a place they see, to manage it. */
+  /** An artifact of the person's company in a place they see, to manage it. */
   get(id: string, user: User): Artifact {
     const row = this.row(id);
     if (!row) {
@@ -335,9 +329,9 @@ export class Artifacts {
 
   /** Not found unless the person is a member and sees the artifact's channel, which a private channel's owner alone does. */
   private requireSeen(row: ArtifactRow, user: User): void {
-    this.workspaces.requireMember(row.workspaceId, user);
+    this.companies.requireMember(row.companyId, user);
     if (row.channelId !== null) {
-      this.workspaces.channel(row.workspaceId, row.channelId, user);
+      this.companies.channel(row.companyId, row.channelId, user);
     }
   }
 
@@ -352,7 +346,7 @@ export class Artifacts {
 
   setVisibility(id: string, user: User, visibility: unknown): Artifact {
     const artifact = this.get(id, user);
-    return this.update(this.row(artifact.id)!.workspaceId, artifact.id, {
+    return this.update(this.row(artifact.id)!.companyId, artifact.id, {
       visibility: visibility as Visibility,
     });
   }
@@ -360,11 +354,11 @@ export class Artifacts {
   /** Nothing is removed: a deleted artifact stays, hidden, with its data, and its name is never given out again. */
   delete(id: string, user: User): void {
     this.get(id, user);
-    const { workspaceId } = this.row(id)!;
+    const { companyId } = this.row(id)!;
     this.database
       .query("UPDATE artifact SET deleted_at = ? WHERE id = ?")
       .run(Date.now(), id);
-    this.changed(workspaceId);
+    this.changed(companyId);
   }
 
   /**
@@ -548,7 +542,7 @@ export class Artifacts {
       .run(now, id, SHARED, key);
   }
 
-  /** Deletes a record, by its `ArtifactRecord.id`, of an artifact of the person's workspace. */
+  /** Deletes a record, by its `ArtifactRecord.id`, of an artifact of the person's company. */
   deleteRecordFor(id: string, user: User, recordId: string): void {
     this.get(id, user);
     const [owner = "", key = ""] = recordId
@@ -558,7 +552,7 @@ export class Artifacts {
   }
 
   /**
-   * Deletes every record and visitor of an artifact of the person's workspace. The records move aside, with `~<time>`
+   * Deletes every record and visitor of an artifact of the person's company. The records move aside, with `~<time>`
    * after their scope, so they stay but no longer count toward the limits.
    */
   clearData(id: string, user: User): void {
@@ -578,7 +572,7 @@ export class Artifacts {
     })();
   }
 
-  /** The records of an artifact of the person's workspace. */
+  /** The records of an artifact of the person's company. */
   dataFor(id: string, user: User): ArtifactRecord[] {
     return this.records(this.get(id, user).id);
   }
@@ -650,8 +644,8 @@ export class Artifacts {
   }
 
   /**
-   * A live artifact: not deleted, and not in a deleted channel or workspace. The workspace's own artifacts have no
-   * channel; a live workspace keeps one channel at least, and a deleted one has none.
+   * A live artifact: not deleted, and not in a deleted channel or company. The company's own artifacts have no
+   * channel; a live company keeps one channel at least, and a deleted one has none.
    */
   private row(id: string): ArtifactRow | null {
     const row = this.database
@@ -662,7 +656,7 @@ export class Artifacts {
     if (!row) {
       return null;
     }
-    const channels = this.liveChannels(row.workspaceId);
+    const channels = this.liveChannels(row.companyId);
     return (
       row.channelId === null
         ? channels.size > 0
@@ -672,14 +666,14 @@ export class Artifacts {
       : null;
   }
 
-  private liveChannels(workspaceId: string): Set<string> {
+  private liveChannels(companyId: string): Set<string> {
     return new Set(
-      this.workspaces.allChannelsIn(workspaceId).map((channel) => channel.id)
+      this.companies.allChannelsIn(companyId).map((channel) => channel.id)
     );
   }
 
   private artifact(row: ArtifactRow): Artifact {
-    const { workspaceId: _, ...artifact } = row;
+    const { companyId: _, ...artifact } = row;
     const { baseUrl, shareUrl } = this.addresses;
     return {
       ...artifact,

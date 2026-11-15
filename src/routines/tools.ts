@@ -3,26 +3,26 @@ import { type ConversationId, defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
 import type {
   Routine,
+  RoutineCompanies,
   RoutineInput,
   RoutinePlaces,
   Routines,
   RoutineThreads,
-  RoutineWorkspaces,
 } from "./routines.ts";
 
 const routineParameter = Type.String({ description: "The routine id" });
 
 /**
- * The tools that let agents create, change, test, and delete the routines of their workspace. People ask in plain
+ * The tools that let agents create, change, test, and delete the routines of their company. People ask in plain
  * words; the agent writes the schedule or the place, the instructions, and the script, and tests the script before it
  * saves it.
  */
 export function routineTools(
   routines: Routines,
-  workspaces: RoutineWorkspaces,
+  companies: RoutineCompanies,
   threads: RoutineThreads,
   places: RoutinePlaces,
-  workspaceId: string,
+  companyId: string,
   declarations: string
 ) {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -45,7 +45,7 @@ export function routineTools(
     ),
   };
   const membersOf = () =>
-    workspaces.members(workspaceId, workspaces.agentMember(workspaceId));
+    companies.members(companyId, companies.agentMember(companyId));
   /** The place of a routine, which its person and the person who asks both use; undefined without one. */
   const placeOf = (
     args: { place?: string; event?: "arrive" | "leave"; person?: string },
@@ -60,7 +60,7 @@ export function routineTools(
         (member) => member.name.toLowerCase() === args.person!.toLowerCase()
       );
       if (matches.length !== 1) {
-        throw new Error("Name exactly one member of this workspace.");
+        throw new Error("Name exactly one member of this company.");
       }
       personId = matches[0]!.userId;
     }
@@ -68,10 +68,10 @@ export function routineTools(
       throw new Error("Name the person whose arrival or departure runs it.");
     }
     const asker = new Set(
-      places.usable(workspaceId, askerId ?? personId).map(({ id }) => id)
+      places.usable(companyId, askerId ?? personId).map(({ id }) => id)
     );
     const known = places
-      .usable(workspaceId, personId)
+      .usable(companyId, personId)
       .filter(({ id }) => asker.has(id));
     const found = known.find(
       ({ name }) => name.toLowerCase() === args.place!.toLowerCase()
@@ -88,13 +88,13 @@ export function routineTools(
   const describe = (routine: Routine, channel: string | undefined) =>
     describeRoutine(routine, channel, membersOf());
   const realmOf = (conversationId: ConversationId) =>
-    threads.realm(workspaceId, conversationId);
+    threads.realm(companyId, conversationId);
   const channelOf = async (
     name: string | undefined,
     conversationId: ConversationId
   ) => {
-    const channels = workspaces.channelsIn(
-      workspaceId,
+    const channels = companies.channelsIn(
+      companyId,
       await realmOf(conversationId)
     );
     if (name) {
@@ -108,7 +108,7 @@ export function routineTools(
       }
       return channel;
     }
-    const thread = workspaces.threadOf(workspaceId, conversationId);
+    const thread = companies.threadOf(companyId, conversationId);
     const channel = channels.find(
       (candidate) => candidate.id === thread?.channelId
     );
@@ -122,15 +122,15 @@ export function routineTools(
     defineTool({
       name: "routines_list",
       description:
-        "List the routines of this workspace: what runs on a schedule or at a place in each channel, and how its last run went.",
+        "List the routines of this company: what runs on a schedule or at a place in each channel, and how its last run went.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: async (_args, api) => {
         const realm = await realmOf(api.conversationId);
-        const channels = workspaces.channelsIn(workspaceId, realm);
+        const channels = companies.channelsIn(companyId, realm);
         const text =
           routines
-            .inWorkspace(workspaceId, realm)
+            .inCompany(companyId, realm)
             .map((routine) =>
               describe(
                 routine,
@@ -138,7 +138,7 @@ export function routineTools(
                   ?.name
               )
             )
-            .join("\n\n") || "This workspace has no routines.";
+            .join("\n\n") || "This company has no routines.";
         return { output: [{ type: "text", text }] };
       },
     }),
@@ -173,16 +173,16 @@ export function routineTools(
         const channel = await channelOf(args.channel, api.conversationId);
         // Its runs are the turns of the person who asked for it, with their own integrations.
         const requester = await threads.requester(
-          workspaceId,
+          companyId,
           api.conversationId
         );
-        const routine = routines.create(workspaceId, channel.id, {
+        const routine = routines.create(companyId, channel.id, {
           name: args.name,
           schedule: args.schedule,
           place: placeOf(args, requester?.id ?? null),
           instructions: args.instructions,
           script: args.script,
-          id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
+          id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           createdBy: requester?.id ?? "shadow",
         });
         return {
@@ -219,11 +219,11 @@ export function routineTools(
         api
       ) => {
         const requester = await threads.requester(
-          workspaceId,
+          companyId,
           api.conversationId
         );
         const routine = routines.update(
-          workspaceId,
+          companyId,
           await realmOf(api.conversationId),
           routineId,
           {
@@ -247,7 +247,7 @@ export function routineTools(
       replay: "safe",
       execute: async (args, api) => {
         const routine = routines.remove(
-          workspaceId,
+          companyId,
           await realmOf(api.conversationId),
           args.routine
         );
@@ -272,11 +272,11 @@ export function routineTools(
       }),
       execute: async (args, api) => {
         const requester = await threads.requester(
-          workspaceId,
+          companyId,
           api.conversationId
         );
         const result = await routines.test(
-          workspaceId,
+          companyId,
           await realmOf(api.conversationId),
           args.script,
           args.routine,

@@ -7,7 +7,7 @@ export function saveCheck(
   check: Assessment["checks"][number],
   scope: {
     id: string;
-    workspaceId: string;
+    companyId: string;
     ownerId: string;
     threadId: string | null;
     checkAt: number;
@@ -16,9 +16,9 @@ export function saveCheck(
 ): void {
   const prior = database
     .query(
-      "SELECT source_ids,check_at,next_review_at,explicit_time FROM intake_check WHERE id=? AND workspace_id=? AND owner_id=?"
+      "SELECT source_ids,check_at,next_review_at,explicit_time FROM intake_check WHERE id=? AND company_id=? AND owner_id=?"
     )
-    .get(scope.id, scope.workspaceId, scope.ownerId) as {
+    .get(scope.id, scope.companyId, scope.ownerId) as {
     source_ids: string;
     check_at: number;
     next_review_at: number;
@@ -36,11 +36,11 @@ export function saveCheck(
   const explicitTime = statedTime ? 1 : 0;
   database
     .query(
-      "INSERT INTO intake_check(id,workspace_id,owner_id,thread_id,text,source_ids,explicit_time,check_at,next_review_at,revised_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,source_ids=excluded.source_ids,explicit_time=excluded.explicit_time,check_at=excluded.check_at,next_review_at=excluded.next_review_at,thread_id=coalesce(excluded.thread_id,intake_check.thread_id),revised_at=excluded.revised_at,state='open',notified_at=CASE WHEN check_at != excluded.check_at THEN NULL ELSE notified_at END WHERE intake_check.state != 'stopped'"
+      "INSERT INTO intake_check(id,company_id,owner_id,thread_id,text,source_ids,explicit_time,check_at,next_review_at,revised_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,source_ids=excluded.source_ids,explicit_time=excluded.explicit_time,check_at=excluded.check_at,next_review_at=excluded.next_review_at,thread_id=coalesce(excluded.thread_id,intake_check.thread_id),revised_at=excluded.revised_at,state='open',notified_at=CASE WHEN check_at != excluded.check_at THEN NULL ELSE notified_at END WHERE intake_check.state != 'stopped'"
     )
     .run(
       scope.id,
-      scope.workspaceId,
+      scope.companyId,
       scope.ownerId,
       scope.threadId,
       check.text,

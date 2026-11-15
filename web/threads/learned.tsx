@@ -3,6 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Learned } from "../app/types.ts";
 import {
+  channelsOf,
+  membersQuery,
+  orchestratorQuery,
+} from "../companies/data.ts";
+import {
   Button,
   Empty,
   SettingsCard,
@@ -11,29 +16,24 @@ import {
 } from "../ui/components.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { showError } from "../ui/toast.tsx";
-import {
-  channelsOf,
-  membersQuery,
-  orchestratorQuery,
-} from "../workspaces/data.ts";
 import { learnedOf } from "./data.ts";
 
 /**
  * What Shadow learned from the threads: facts about each person, then the how-tos of each channel and of the person's
  * own Shadow. Each person corrects or deletes what they see.
  */
-export function LearnedSection({ workspaceId }: { workspaceId: string }) {
+export function LearnedSection({ companyId }: { companyId: string }) {
   const { data: entries = [], isReady } = useLiveQuery({
-    query: (q) => q.from({ entry: learnedOf(workspaceId) }),
+    query: (q) => q.from({ entry: learnedOf(companyId) }),
   });
   const { data: channels = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ channel: channelsOf(workspaceId) })
+        .from({ channel: channelsOf(companyId) })
         .orderBy(({ channel }) => channel.order),
   });
-  const members = useQuery(membersQuery(workspaceId)).data ?? [];
-  const orchestrator = useQuery(orchestratorQuery(workspaceId)).data;
+  const members = useQuery(membersQuery(companyId)).data ?? [];
+  const orchestrator = useQuery(orchestratorQuery(companyId)).data;
   if (!isReady) {
     return <SettingsCard>{null}</SettingsCard>;
   }
@@ -72,20 +72,20 @@ export function LearnedSection({ workspaceId }: { workspaceId: string }) {
     .filter((group) => group.entries.length > 0)
     .map((group) => (
       <LearnedGroup
+        companyId={companyId}
         entries={group.entries}
         key={group.title}
         title={group.title}
-        workspaceId={workspaceId}
       />
     ));
 }
 
 function LearnedGroup({
-  workspaceId,
+  companyId,
   title,
   entries,
 }: {
-  workspaceId: string;
+  companyId: string;
   title: string;
   entries: readonly Learned[];
 }) {
@@ -94,7 +94,7 @@ function LearnedGroup({
       <h3>{title}</h3>
       <SettingsCard>
         {entries.map((entry) => (
-          <LearnedRow entry={entry} key={entry.id} workspaceId={workspaceId} />
+          <LearnedRow companyId={companyId} entry={entry} key={entry.id} />
         ))}
       </SettingsCard>
     </>
@@ -103,14 +103,14 @@ function LearnedGroup({
 
 /** An entry, which a click on Edit turns into a field; Enter saves it and Escape keeps the old text. */
 function LearnedRow({
-  workspaceId,
+  companyId,
   entry,
 }: {
-  workspaceId: string;
+  companyId: string;
   entry: Learned;
 }) {
   const [editing, setEditing] = useState(false);
-  const learned = learnedOf(workspaceId);
+  const learned = learnedOf(companyId);
   if (editing) {
     return (
       <form

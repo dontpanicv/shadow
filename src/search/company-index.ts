@@ -3,7 +3,7 @@ import { createStemmer } from "multilingual-stemmer";
 import { DIMENSIONS, fromBlob, toBlob } from "./embedder.ts";
 
 /**
- * One workspace's search index: `data/workspaces/<workspace>/index.sqlite`. Derived data; deleting it re-indexes.
+ * One company's search index: `data/companies/<company>/index.sqlite`. Derived data; deleting it re-indexes.
  * Sources (a thread, a file) are split into segments. Each segment has keywords in FTS5 and, when it reads as prose,
  * a 768 × float16 L2-normalized EmbeddingGemma 2 vector compared by brute force. Ranking follows DigUp
  * (github.com/ARahim3/DigUp, MIT): a per-query z-score of meaning plus keyword coverage.
@@ -58,7 +58,7 @@ const SCHEMA = `
 	CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	CREATE TABLE IF NOT EXISTS sources (
 		id INTEGER PRIMARY KEY,
-		uri TEXT NOT NULL UNIQUE,      -- thread:<id>, artifact:<id>, or <folder>/<path> under the workspace folder
+		uri TEXT NOT NULL UNIQUE,      -- thread:<id>, artifact:<id>, or <folder>/<path> under the company folder
 		kind TEXT NOT NULL,            -- thread | artifact | note | file | capture
 		title TEXT NOT NULL,
 		thread_id TEXT,
@@ -111,7 +111,7 @@ const STOPWORDS = new Set(
   )
 );
 
-export class WorkspaceIndex {
+export class CompanyIndex {
   private readonly database: Database;
   private vectors: {
     ids: Int32Array;

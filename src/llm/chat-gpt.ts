@@ -5,7 +5,7 @@ import type { LlmProvider } from "./llm.ts";
 /** The idle timeout of Codex itself: a model that reasons for long is silent, so this is not short. */
 const IDLE_TIMEOUT_MS = 5 * 60_000;
 
-/** ChatGPT through the Codex device login: one subscription for every workspace's agents. */
+/** ChatGPT through the Codex device login: one subscription for every company's agents. */
 export const chatGpt: LlmProvider = {
   provider: withIdleTimeout(
     withVerbosity(openaiCodexProvider(), "medium"),

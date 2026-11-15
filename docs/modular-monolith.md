@@ -7,8 +7,8 @@ entry file. `test/architecture.test.ts` enforces the rules on this page.
 ## Why
 
 The code was first split by technical layer: all JSON routes in `src/api.ts`, all web routes in `src/web.ts`, all
-pages in `src/ui/pages.ts`, and six jobs in `src/workspaces.ts`. A feature touched files all over `src/`, and the
-dependencies went in circles (`threads` ↔ `search`, `llm` → `workspaces`). Now a feature lives in one folder, and
+pages in `src/ui/pages.ts`, and six jobs in `src/companies.ts`. A feature touched files all over `src/`, and the
+dependencies went in circles (`threads` ↔ `search`, `llm` → `companies`). Now a feature lives in one folder, and
 the dependencies go in one direction.
 
 ## Layout
@@ -25,18 +25,18 @@ src/
 ├── platform/                Shared code that knows no domain
 │   ├── config.ts, secrets.ts, database.ts, auth.ts, errors.ts, requirements.ts
 ├── accounts/                Sign-in and sign-out (better-auth is in platform/auth.ts)
-├── workspaces/              Workspaces, members, channels, and the thread registry
+├── companies/              Companies, members, channels, and the thread registry
 ├── llm/                     The shared LLM provider, its stored login, and the agents' web search
-├── integrations/            The connectors, their tools, and the credentials of workspaces and people
+├── integrations/            The connectors, their tools, and the credentials of companies and people
 ├── places/                  The places that people mark on a map, each person's last state at them, and the map tiles
 ├── artifacts/               The pages and small apps agents make for a channel, their link pages, and their data
 ├── browser/                 The headless Chrome of each thread and person, which agents visit websites with
 ├── notifications/           Each person's inbox
-├── threads/                 One Pi Durable session per workspace, a conversation per thread, the agent tools, and the
+├── threads/                 One Pi Durable session per company, a conversation per thread, the agent tools, and the
 │                            files of each channel
-├── search/                  Extraction, embeddings, and the index of each workspace
+├── search/                  Extraction, embeddings, and the index of each company
 ├── routines/                Scheduled scripts and instructions of each channel, and their runs
-├── reminders/               One-time workspace reminders and their agent tools
+├── reminders/               One-time company reminders and their agent tools
 ├── agenda/                  Each person's Upcoming, and the automations Shadow suggests to them
 ├── feedback/                What agents report about Shadow itself, for the server's owner
 ```
@@ -51,7 +51,7 @@ Each module has the same files, when it needs them:
 | `pages.ts` | The HTML of those pages |
 | `*.test.ts` | The tests of the module |
 
-`search/` also has internal files: `extract.ts`, `embedder.ts`, and `workspace-index.ts`; `llm/` has `search.ts` and
+`search/` also has internal files: `extract.ts`, `embedder.ts`, and `company-index.ts`; `llm/` has `search.ts` and
 `tools.ts`; `artifacts/`, `browser/`, and `routines/` have `tools.ts`.
 
 ## The web app
@@ -64,7 +64,7 @@ module uses only `app/`, `ui/`, and the modules before it, and never the server'
 
 ## Rules
 
-1. **One direction.** The modules are in this order: `accounts`, `workspaces`, `llm`, `hands`, `integrations`,
+1. **One direction.** The modules are in this order: `accounts`, `companies`, `llm`, `hands`, `integrations`,
    `places`, `artifacts`, `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `phone`, `feedback`. A module uses only the modules before it. `platform/` uses no module.
 2. **Entry files only.** A service uses another module only through its `<module>.ts`. Routes and pages can also
    use another module's `pages.ts`. Only `app/routes.ts` imports `web.ts` and `api.ts`.
@@ -72,8 +72,8 @@ module uses only `app/`, `ui/`, and the modules before it, and never the server'
 3. **Services do not know HTTP routes.** A service throws `HttpError` from `platform/errors.ts` for bad input or
    missing access, and never imports from `app/`. `app/app.ts` makes the services; routes get them from `input.app`.
 4. **One owner per table.** Only the owner module queries a table (see the comment in `platform/database.ts`). The
-   indexer reads workspaces and threads through `Workspaces.ids` and `Workspaces.threadsIn`.
-5. **Membership in one place.** Every workspace read and write calls `Workspaces.requireMember` first. Non-members
+   indexer reads companies and threads through `Companies.ids` and `Companies.threadsIn`.
+5. **Membership in one place.** Every company read and write calls `Companies.requireMember` first. Non-members
    get `404`.
 6. **Ports for the backward edges.** `threads` needs search for its recall tool, and search reads threads. So
    `threads` declares the port it needs (`ThreadHooks.recall`, with its own `RecallResult` type), and
@@ -97,7 +97,7 @@ per module would need a bookkeeping table and an upgrade step on every machine, 
 
 ## Add a feature
 
-1. Put the logic in the module's service, with a membership check if it reads or writes a workspace.
+1. Put the logic in the module's service, with a membership check if it reads or writes a company.
 2. Add the JSON route to `api.ts`, and the screen to the module's folder in `web/`: its data in `data.ts`, as a
    TanStack DB collection when people change it, and its components next to it.
 3. Document the JSON route in `docs/api.md`, and add the same screen to the iOS app.

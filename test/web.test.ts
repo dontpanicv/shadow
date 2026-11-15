@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { $ } from "bun";
 import { clientKey } from "../src/artifacts/web.ts";
+import type { ThreadRef } from "../src/companies/companies.ts";
 import type { User } from "../src/platform/auth.ts";
-import type { ThreadRef } from "../src/workspaces/workspaces.ts";
 import { cookies, startTestApp, type TestApp, until } from "./harness.ts";
 
 function location(response: Response): string | null {
@@ -15,7 +15,7 @@ describe("the web app", () => {
   let alice: User;
   let aliceCookie: string;
   let bobCookie: string;
-  let workspaceId: string;
+  let companyId: string;
   let generalId: string;
   let thread: ThreadRef;
 
@@ -31,17 +31,17 @@ describe("the web app", () => {
     alice = shadow.app.database
       .query("SELECT id, name, email FROM user WHERE email = ?")
       .get("alice@example.com") as User;
-    const workspace = await shadow.app.workspaces.create(alice, "Family");
-    workspaceId = workspace.id;
-    generalId = shadow.app.workspaces.channels(workspaceId, alice)[0]!.id;
+    const company = await shadow.app.companies.create(alice, "Family");
+    companyId = company.id;
+    generalId = shadow.app.companies.channels(companyId, alice)[0]!.id;
     const summary = await shadow.app.threads.create(
-      workspaceId,
+      companyId,
       alice,
       generalId,
       "Plan the trip"
     );
-    thread = shadow.app.workspaces
-      .allThreadsIn(workspaceId)
+    thread = shadow.app.companies
+      .allThreadsIn(companyId)
       .find((candidate) => candidate.id === summary.id)!;
   });
 
@@ -52,8 +52,8 @@ describe("the web app", () => {
       "/",
       "/login",
       "/settings",
-      "/workspaces/new",
-      `/w/${workspaceId}/t/${thread.id}`,
+      "/companies/new",
+      `/c/${companyId}/t/${thread.id}`,
     ]) {
       const page = await shadow.call(path);
       expect([path, page.status]).toEqual([path, 200]);
@@ -81,7 +81,7 @@ describe("the web app", () => {
     });
     expect(await me.json()).toMatchObject({ user: { name: "Alice" } });
     const create = (origin: string) =>
-      shadow.call(`/api/v1/workspaces/${workspaceId}/channels`, {
+      shadow.call(`/api/v1/companies/${companyId}/channels`, {
         body: { name: `from-${new URL(origin).hostname.split(".")[0]}` },
         headers: { cookie: aliceCookie, origin },
       });
@@ -204,7 +204,7 @@ describe("the web app", () => {
       "/",
       "/login",
       "/api/v1/me",
-      `/w/${workspaceId}`,
+      `/c/${companyId}`,
       "/assets/styles.css",
       script,
     ]) {
@@ -237,7 +237,7 @@ describe("the web app", () => {
       expect(response.status).toBe(404);
     }
     const [artifact] = shadow.app.artifacts.inPlace(
-      workspaceId,
+      companyId,
       generalId,
       alice
     );
@@ -385,6 +385,8 @@ describe("the ChatGPT device login", () => {
       toAuth: async () => ({}),
     };
     token = await shadow.signIn("Alice", "alice@example.com");
+    // The first allowed person starts the company as its admin.
+    await shadow.call("/api/v1/me", { token });
   });
 
   afterAll(() => shadow.close());

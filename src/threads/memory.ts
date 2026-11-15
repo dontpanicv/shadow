@@ -20,7 +20,7 @@ const CONTEXT_BYTES = 8000;
 const SOURCE_CHARACTERS = 32_000;
 /** How much of one message zoom gives the agent at once. */
 const PAGE_CHARACTERS = 100_000;
-/** Summary calls of one workspace at the same time. */
+/** Summary calls of one company at the same time. */
 const CALLS = 4;
 /** How often a summary call asks again for a line that is too long. */
 const TRIES = 3;
@@ -46,7 +46,7 @@ A result from another thread starts with its link, [title](thread:<id>), followe
 /** One message of the conversation, with its author and any worker result that it answers. */
 export interface Said {
   readonly threadId: string;
-  /** The message's entry id, which grows in the order that messages come in, across all threads of the workspace. */
+  /** The message's entry id, which grows in the order that messages come in, across all threads of the company. */
   readonly messageId: number;
   readonly text: string;
 }
@@ -75,7 +75,7 @@ interface Job {
 }
 
 /**
- * The zoom tool and the compaction hook of the orchestrators of a workspace; each finds the memory of its own
+ * The zoom tool and the compaction hook of the orchestrators of a company; each finds the memory of its own
  * orchestrator by its conversation. A compaction first adds the orchestrator's newest messages, which can come in the
  * middle of its turn, before they reach the memory the usual way.
  */
@@ -130,7 +130,7 @@ export function memoryExtension(
 
 /**
  * The memory of one person's orchestrator, after UniiChat (github.com/VictorTaelin/UniiChat, Apache-2.0), in
- * `data/workspaces/<workspace>/threads/<orchestrator>/memory.sqlite`. Each message of the conversation, including
+ * `data/companies/<company>/threads/<orchestrator>/memory.sqlite`. Each message of the conversation, including
  * the full worker result that an answer responds to, is a leaf: one line of at most `LINE_BYTES`, the message itself
  * when it fits, else a summary. Neighbouring lines merge in pairs into a binary tree: node (level, position) covers
  * the messages from `position × 2^level` on, `2^level` of them. The model writes summaries in the background. A

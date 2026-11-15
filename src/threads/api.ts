@@ -2,15 +2,15 @@ import { api, eventStream } from "../app/api.ts";
 import { fileResponse, json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
 
-/** Threads, and the files of channels and of the workspace, for the web app. Messages and files post as JSON, or as a multipart form with files. */
+/** Threads, and the files of channels and of the company, for the web app. Messages and files post as JSON, or as a multipart form with files. */
 export const threadApiRoutes: readonly Route[] = [
   [
     "GET",
-    "/api/v1/workspaces/:workspace/threads",
+    "/api/v1/companies/:company/threads",
     api(async ({ app, user, params, request }) => {
       const query = new URL(request.url).searchParams;
       return json({
-        threads: app.threads.list(params.workspace!, user, {
+        threads: app.threads.list(params.company!, user, {
           channel: query.get("channel") ?? undefined,
           since: query.get("since") ?? undefined,
           before: query.get("before") ?? undefined,
@@ -24,11 +24,11 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/threads",
+    "/api/v1/companies/:company/threads",
     api(async ({ app, user, params, body, files }) =>
       json(
         await app.threads.create(
-          params.workspace!,
+          params.company!,
           user,
           body.channelId as string,
           body.text as string | undefined,
@@ -39,16 +39,16 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/orchestrator",
+    "/api/v1/companies/:company/orchestrator",
     api(async ({ app, user, params }) =>
-      json(summary(await app.threads.orchestrator(params.workspace!, user)))
+      json(summary(await app.threads.orchestrator(params.company!, user)))
     ),
   ],
   [
     "GET",
     "/api/v1/threads/:thread",
     api(async ({ app, user, params }) => {
-      const thread = app.workspaces.thread(params.thread!, user);
+      const thread = app.companies.thread(params.thread!, user);
       return json({
         thread: summary(thread),
         ...(await app.threads.messages(thread)),
@@ -57,14 +57,14 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/threads/:thread/settled",
+    "/api/v1/companies/:company/threads/:thread/settled",
     api(async ({ app, user, params, body }) => {
       if (typeof body.settled !== "boolean") {
         throw new HttpError(400, "Settled must be true or false");
       }
       return json(
-        app.workspaces.setThreadSettled(
-          params.workspace!,
+        app.companies.setThreadSettled(
+          params.company!,
           params.thread!,
           user,
           body.settled
@@ -74,7 +74,7 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/threads/:thread/channel",
+    "/api/v1/companies/:company/threads/:thread/channel",
     api(async ({ app, user, params, body }) => {
       if (typeof body.channelId !== "string") {
         throw new HttpError(400, "Choose a channel");
@@ -82,7 +82,7 @@ export const threadApiRoutes: readonly Route[] = [
       return json(
         summary(
           await app.threads.move(
-            params.workspace!,
+            params.company!,
             user,
             params.thread!,
             body.channelId
@@ -95,13 +95,13 @@ export const threadApiRoutes: readonly Route[] = [
     "GET",
     "/api/v1/threads/:thread/events",
     api(async ({ app, user, params }) => {
-      const thread = app.workspaces.thread(params.thread!, user);
+      const thread = app.companies.thread(params.thread!, user);
       return eventStream(
         async (send) => {
           const stop = await app.threads.watch(thread, (state) => {
             // The thread as it is now, such as in the channel it moved to; nothing once the person no longer sees it.
-            const current = app.workspaces
-              .threadsIn(thread.workspaceId, user.id)
+            const current = app.companies
+              .threadsIn(thread.companyId, user.id)
               .find((candidate) => candidate.id === thread.id);
             if (current) {
               send("thread", { thread: summary(current), ...state });
@@ -114,22 +114,22 @@ export const threadApiRoutes: readonly Route[] = [
             await stop();
           };
         },
-        () => app.workspaces.thread(params.thread!, user)
+        () => app.companies.thread(params.thread!, user)
       );
     }),
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/working",
+    "/api/v1/companies/:company/working",
     api(async ({ app, user, params }) => {
       // A non-member gets 404 before the stream starts.
-      app.workspaces.requireMember(params.workspace!, user);
+      app.companies.requireMember(params.company!, user);
       return eventStream(
         (send) =>
-          app.threads.watchWorking(params.workspace!, user, (threadIds) =>
+          app.threads.watchWorking(params.company!, user, (threadIds) =>
             send("working", { threadIds })
           ),
-        () => app.workspaces.requireMember(params.workspace!, user)
+        () => app.companies.requireMember(params.company!, user)
       );
     }),
   ],
@@ -173,24 +173,24 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/channels/:channel/files",
+    "/api/v1/companies/:company/channels/:channel/files",
     api(async ({ app, user, params }) =>
       json({
         files: await app.threads.files(
-          app.threads.place(params.workspace!, params.channel!, user)
+          app.threads.place(params.company!, params.channel!, user)
         ),
       })
     ),
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/channels/:channel/merge",
+    "/api/v1/companies/:company/channels/:channel/merge",
     api(async ({ app, user, params, body }) => {
       if (typeof body.into !== "string") {
         throw new HttpError(400, "Choose a channel");
       }
       await app.threads.merge(
-        params.workspace!,
+        params.company!,
         user,
         params.channel!,
         body.into
@@ -200,24 +200,20 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/channels/:channel/brief",
+    "/api/v1/companies/:company/channels/:channel/brief",
     api(async ({ app, user, params }) =>
       json({
-        brief: await app.threads.brief(
-          params.workspace!,
-          params.channel!,
-          user
-        ),
+        brief: await app.threads.brief(params.company!, params.channel!, user),
       })
     ),
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/channels/:channel/files",
+    "/api/v1/companies/:company/channels/:channel/files",
     api(async ({ app, user, params, files }) =>
       json({
         files: await app.threads.upload(
-          params.workspace!,
+          params.company!,
           params.channel!,
           user,
           files
@@ -227,30 +223,30 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/files",
+    "/api/v1/companies/:company/files",
     api(async ({ app, user, params }) =>
       json({
         files: await app.threads.files(
-          app.threads.place(params.workspace!, null, user)
+          app.threads.place(params.company!, null, user)
         ),
       })
     ),
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/files",
+    "/api/v1/companies/:company/files",
     api(async ({ app, user, params, files }) =>
       json({
-        files: await app.threads.upload(params.workspace!, null, user, files),
+        files: await app.threads.upload(params.company!, null, user, files),
       })
     ),
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/files/:file",
+    "/api/v1/companies/:company/files/:file",
     api(async ({ app, user, params }) => {
       const { path, name } = await app.threads.file(
-        params.workspace!,
+        params.company!,
         user,
         params.file!
       );
@@ -259,10 +255,10 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/files/:file/picture",
+    "/api/v1/companies/:company/files/:file/picture",
     api(async ({ app, user, params }) => {
       const jpeg = await app.threads.picture(
-        params.workspace!,
+        params.company!,
         user,
         params.file!
       );
@@ -280,10 +276,10 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "DELETE",
-    "/api/v1/workspaces/:workspace/files/:file",
+    "/api/v1/companies/:company/files/:file",
     api(async ({ app, user, params }) => {
       const { files } = await app.threads.deleteFile(
-        params.workspace!,
+        params.company!,
         user,
         params.file!
       );
@@ -292,18 +288,18 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/learned",
+    "/api/v1/companies/:company/learned",
     api(async ({ app, user, params }) =>
-      json({ learned: app.threads.learnedFor(params.workspace!, user) })
+      json({ learned: app.threads.learnedFor(params.company!, user) })
     ),
   ],
   [
     "PUT",
-    "/api/v1/workspaces/:workspace/learned/:id",
+    "/api/v1/companies/:company/learned/:id",
     api(async ({ app, user, params, body }) =>
       json(
         app.threads.changeLearned(
-          params.workspace!,
+          params.company!,
           user,
           Number(params.id),
           body.text
@@ -313,9 +309,9 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "DELETE",
-    "/api/v1/workspaces/:workspace/learned/:id",
+    "/api/v1/companies/:company/learned/:id",
     api(async ({ app, user, params }) => {
-      app.threads.removeLearned(params.workspace!, user, Number(params.id));
+      app.threads.removeLearned(params.company!, user, Number(params.id));
       return new Response(null, { status: 204 });
     }),
   ],

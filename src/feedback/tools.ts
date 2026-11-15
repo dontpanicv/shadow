@@ -1,16 +1,16 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
+import type { Companies } from "../companies/companies.ts";
 import type { Threads } from "../threads/threads.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 import type { FeedbackReports } from "./feedback.ts";
 
-/** The agent tool that reports a problem with Shadow itself to the server's owner. */
+/** The agent tool that reports a problem with Shadow itself to an admin. */
 export function feedbackTools(
   feedback: Pick<FeedbackReports, "report">,
-  workspaces: Pick<Workspaces, "threadOf">,
+  companies: Pick<Companies, "threadOf">,
   threads: Pick<Threads, "requester">,
-  workspaceId: string
+  companyId: string
 ) {
   return [
     defineTool({
@@ -37,11 +37,11 @@ export function feedbackTools(
       }),
       replay: "safe",
       execute: async (args, api) => {
-        const thread = workspaces.threadOf(workspaceId, api.conversationId);
-        const person = await threads.requester(workspaceId, api.conversationId);
-        feedback.report(workspaceId, {
+        const thread = companies.threadOf(companyId, api.conversationId);
+        const person = await threads.requester(companyId, api.conversationId);
+        feedback.report(companyId, {
           ...args,
-          id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
+          id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           threadId: thread?.id ?? null,
           personId: person?.id ?? null,
         });

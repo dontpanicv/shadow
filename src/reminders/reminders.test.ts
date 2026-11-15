@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { authDatabase } from "../../test/database.ts";
+import type { Companies } from "../companies/companies.ts";
 import { Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { migrate } from "../platform/database.ts";
 import type { Threads } from "../threads/threads.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 import { Reminders } from "./reminders.ts";
 
 const alice: User = { id: "alice", name: "Alice", email: "alice@example.com" };
@@ -20,12 +20,12 @@ function setup(
 ) {
   const database = authDatabase();
   migrate(database);
-  const threadsOf = (workspaceId: string) =>
-    workspaceId === "home"
+  const threadsOf = (companyId: string) =>
+    companyId === "home"
       ? [
           {
             id: "thread",
-            workspaceId,
+            companyId,
             channelId: "general",
             conversationId: 1,
             title: "Plans",
@@ -36,15 +36,15 @@ function setup(
           },
         ]
       : [];
-  const workspaces = {
-    requireMember(workspaceId: string, user: User) {
-      if (workspaceId !== "home" || ![alice.id, bob.id].includes(user.id)) {
+  const companies = {
+    requireMember(companyId: string, user: User) {
+      if (companyId !== "home" || ![alice.id, bob.id].includes(user.id)) {
         throw new Error("Not found");
       }
-      return { id: "home", name: "Home", role: "owner" };
+      return { id: "home", name: "Home", role: "admin" };
     },
-    members(workspaceId: string, user: User) {
-      if (workspaceId !== "home" || ![alice.id, bob.id].includes(user.id)) {
+    members(companyId: string, user: User) {
+      if (companyId !== "home" || ![alice.id, bob.id].includes(user.id)) {
         throw new Error("Not found");
       }
       return [
@@ -52,7 +52,7 @@ function setup(
           userId: alice.id,
           name: alice.name,
           email: alice.email,
-          role: "owner",
+          role: "admin",
         },
         { userId: bob.id, name: bob.name, email: bob.email, role: "member" },
       ];
@@ -60,14 +60,14 @@ function setup(
     agentMember() {
       return alice;
     },
-    threadsIn: (workspaceId: string) => threadsOf(workspaceId),
-    allThreadsIn: (workspaceId: string) => threadsOf(workspaceId),
-    threadOf: (workspaceId: string, conversationId: number) =>
-      threadsOf(workspaceId).find(
+    threadsIn: (companyId: string) => threadsOf(companyId),
+    allThreadsIn: (companyId: string) => threadsOf(companyId),
+    threadOf: (companyId: string, conversationId: number) =>
+      threadsOf(companyId).find(
         (thread) => thread.conversationId === conversationId
       ) ?? null,
   } as unknown as Pick<
-    Workspaces,
+    Companies,
     | "agentMember"
     | "allThreadsIn"
     | "requireMember"
@@ -94,7 +94,7 @@ function setup(
     realm: async () => null,
   } as unknown as Pick<Threads, "instruct" | "realm" | "requester">;
   // OpenStreetMap's search, which has every place that it is asked for.
-  const places = new Places(database, workspaces, (async (url: string) => {
+  const places = new Places(database, companies, (async (url: string) => {
     const osmId = new URL(url).searchParams.get("osm_ids");
     return Response.json([
       {
@@ -112,10 +112,10 @@ function setup(
   }) as unknown as typeof fetch);
   return {
     database,
-    workspaces,
+    companies,
     threads,
     places,
-    reminders: new Reminders(database, workspaces, threads, places),
+    reminders: new Reminders(database, companies, threads, places),
     calls,
     requesters,
     asking,
@@ -123,7 +123,7 @@ function setup(
 }
 
 test("one-time reminders run once, also when the machine starts after their due time", async () => {
-  const { database, workspaces, threads, places, reminders, calls } = setup();
+  const { database, companies, threads, places, reminders, calls } = setup();
   const reminder = reminders.create("home", alice, "thread", alice.id, {
     id: "first",
     createdBy: alice.id,
@@ -132,7 +132,7 @@ test("one-time reminders run once, also when the machine starts after their due 
   });
   expect(reminder.dueAt).toBe(Date.UTC(2090, 10, 1, 8));
   expect(reminders.tick(reminder.dueAt - 1)).toEqual([]);
-  const restarted = new Reminders(database, workspaces, threads, places);
+  const restarted = new Reminders(database, companies, threads, places);
   await Promise.all(restarted.tick(reminder.dueAt + 60_000));
   expect(calls).toEqual(["reminder:first:0"]);
   expect(reminders.get("home", alice, null, "first").deliveredAt).toBeNumber();
@@ -185,7 +185,7 @@ test("a failed reminder retries, a quiet one is done, and a cancelled one stays 
   database.close();
 });
 
-test("reminders stay in their workspace and reject a wrong time-zone offset", () => {
+test("reminders stay in their company and reject a wrong time-zone offset", () => {
   const { database, reminders } = setup();
   expect(reminders.tools("home").map((tool) => tool.name)).toEqual([
     "reminders_create",
@@ -220,7 +220,7 @@ test("reminders stay in their workspace and reject a wrong time-zone offset", ()
   database.close();
 });
 
-test("the agent tool creates a workspace reminder for the person who asked", async () => {
+test("the agent tool creates a company reminder for the person who asked", async () => {
   const { database, reminders } = setup();
   const tool = reminders
     .tools("home")
@@ -268,7 +268,7 @@ test("the agent tool creates a workspace reminder for the person who asked", asy
   database.close();
 });
 
-test("an agent without a current person can name a workspace recipient", async () => {
+test("an agent without a current person can name a company recipient", async () => {
   const { database, reminders } = setup(() => "Done", null);
   const tool = reminders
     .tools("home")
@@ -584,7 +584,7 @@ test("a reminder at a point of interest is only for the person who asks, and fir
 test("a person waits at 12 points of interest at most, and more reminders can wait at one of them", () => {
   const { database, reminders } = setup();
   const insert = database.query(
-    "INSERT INTO place (id, workspace_id, owner_id, name, latitude, longitude, radius, shared, created_at, osm_id) VALUES (?, 'home', ?, ?, 49, 16, 150, 0, 0, ?)"
+    "INSERT INTO place (id, company_id, owner_id, name, latitude, longitude, radius, shared, created_at, osm_id) VALUES (?, 'home', ?, ?, 49, 16, 150, 0, 0, ?)"
   );
   for (let index = 1; index <= 13; index += 1) {
     insert.run(`point-${index}`, alice.id, `Shop ${index}`, `N${index}`);

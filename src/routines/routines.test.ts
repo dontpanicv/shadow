@@ -19,7 +19,7 @@ import { Routines, type RoutineThreads } from "./routines.ts";
 
 let shadow: TestApp;
 let alice: User;
-let workspaceId: string;
+let companyId: string;
 let channelId: string;
 /** The routines of the test, with a school connector; the app's own routines serve the agents' tools. */
 let routines: Routines;
@@ -65,21 +65,22 @@ beforeAll(async () => {
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
-  channelId = shadow.app.workspaces.createChannel(
-    workspaceId,
-    alice,
-    "school"
+  companyId = (await shadow.app.companies.create(alice, "Family")).id;
+  channelId = shadow.app.companies.addChannel(
+    companyId,
+    "school",
+    alice.id,
+    null
   ).id;
   integrations = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     { directory: shadow.app.config.dataDirectory, catalog: [connector] }
   );
   routines = new Routines(
     shadow.app.database,
-    shadow.app.workspaces,
+    shadow.app.companies,
     integrations,
     shadow.app.threads,
     shadow.app.indexer,
@@ -161,23 +162,23 @@ function agent(context: Context) {
 /** The texts of Alice's notifications that open the thread. */
 function noticesOf(threadId: string): string[] {
   return shadow.app.notifications
-    .inbox(workspaceId, alice)
+    .inbox(companyId, alice)
     .notifications.filter((notice) => notice.threadId === threadId)
     .map((notice) => notice.text);
 }
 
 function threadOf(threadId: string | null) {
-  return shadow.app.workspaces
-    .allThreadsIn(workspaceId)
+  return shadow.app.companies
+    .allThreadsIn(companyId)
     .find((thread) => thread.id === threadId)!;
 }
 
 test("a script that finds nothing ends the run quietly, without the agent or a thread", async () => {
-  await integrations.addCredential(workspaceId, alice, "school", {
+  await integrations.addCredential(companyId, alice, "school", {
     label: "Anna",
     secret: "school-password",
   });
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Quiet school",
     schedule: "0 7 * * *",
@@ -197,7 +198,7 @@ test("a script that finds nothing ends the run quietly, without the agent or a t
   // A deleted routine stays, hidden, and never runs again.
   expect(() => routines.get(routine.id, alice)).toThrow("Not found");
   expect(
-    routines.inWorkspace(workspaceId, null).some(({ id }) => id === routine.id)
+    routines.inCompany(companyId, null).some(({ id }) => id === routine.id)
   ).toBe(false);
   expect(
     shadow.app.database
@@ -209,7 +210,7 @@ test("a script that finds nothing ends the run quietly, without the agent or a t
 });
 
 test("the agent judges what the script found: quiet answers stay out of the thread", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "School",
     schedule: "0 7 * * *",
@@ -237,7 +238,7 @@ test("the agent judges what the script found: quiet answers stay out of the thre
   ]);
   // A run's answer stays in its thread; only the agent's notify tool notifies.
   expect(noticesOf(thread.id)).toEqual([]);
-  const { runs } = routines.inChannel(workspaceId, channelId, alice);
+  const { runs } = routines.inChannel(companyId, channelId, alice);
   expect(runs.slice(0, 2).map((run) => run.outcome)).toEqual([
     "posted",
     "quiet",
@@ -246,7 +247,7 @@ test("the agent judges what the script found: quiet answers stay out of the thre
 });
 
 test("what the script found waits for the next run when the agent cannot answer", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Exams",
     schedule: "0 7 * * *",
@@ -280,7 +281,7 @@ test("what the script found waits for the next run when the agent cannot answer"
 });
 
 test("a failing script fails the run, goes to the agent to repair, and notifies its person every time", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Failing",
     schedule: "0 7 * * *",
@@ -311,7 +312,7 @@ test("a connector without a credential fails the script", async () => {
   const other = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: shadow.app.config.dataDirectory,
       catalog: [{ ...connector, id: "school-2", name: "School 2" }],
@@ -319,13 +320,13 @@ test("a connector without a credential fails the script", async () => {
   );
   const scripts = new Routines(
     shadow.app.database,
-    shadow.app.workspaces,
+    shadow.app.companies,
     other,
     shadow.app.threads,
     shadow.app.indexer,
     shadow.app.places
   );
-  const result = await scripts.test(workspaceId, null, SCRIPT, undefined, null);
+  const result = await scripts.test(companyId, null, SCRIPT, undefined, null);
   expect(result).toMatchObject({ ok: false });
   expect(!result.ok && result.error).toContain(
     "School 2 is not connected. Connect it in Settings"
@@ -333,7 +334,7 @@ test("a connector without a credential fails the script", async () => {
 });
 
 test("a paused routine does not run, and a routine runs once however many runs it missed", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Paused",
     schedule: "*/5 * * * *",
@@ -354,16 +355,16 @@ test("a paused routine does not run, and a routine runs once however many runs i
 
 test("a routine runs as the person who last wrote its script, and not after its person leaves", async () => {
   await shadow.signIn("Bob", "bob@example.com");
-  await shadow.app.workspaces.addMember(workspaceId, alice, "bob@example.com");
-  const bob = shadow.app.workspaces
-    .members(workspaceId, alice)
+  await shadow.app.companies.addMember(companyId, alice, "bob@example.com");
+  const bob = shadow.app.companies
+    .members(companyId, alice)
     .find((member) => member.email === "bob@example.com")!;
   const bobUser: User = { id: bob.userId, name: bob.name, email: bob.email };
-  await integrations.addCredential(workspaceId, bobUser, "school", {
+  await integrations.addCredential(companyId, bobUser, "school", {
     label: "Bob",
     secret: "bob-password",
   });
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Taken over",
     schedule: "0 7 * * *",
@@ -378,7 +379,7 @@ test("a routine runs as the person who last wrote its script, and not after its 
   };
   secretsSeen.length = 0;
   routines.update(
-    workspaceId,
+    companyId,
     null,
     routine.id,
     { schedule: "0 8 * * *" },
@@ -388,10 +389,10 @@ test("a routine runs as the person who last wrote its script, and not after its 
   expect(secretsSeen).toEqual(["school-password"]);
   // Only the routine's own person tests with the values its runs stored.
   await expect(
-    routines.test(workspaceId, null, SCRIPT, routine.id, bob.userId)
+    routines.test(companyId, null, SCRIPT, routine.id, bob.userId)
   ).rejects.toThrow("Only the person who last wrote this routine");
   routines.update(
-    workspaceId,
+    companyId,
     null,
     routine.id,
     { script: `${SCRIPT}\n` },
@@ -400,12 +401,12 @@ test("a routine runs as the person who last wrote its script, and not after its 
   await runOnce();
   expect(secretsSeen).toEqual(["school-password", "bob-password"]);
   expect(
-    (await routines.test(workspaceId, null, SCRIPT, routine.id, bob.userId)).ok
+    (await routines.test(companyId, null, SCRIPT, routine.id, bob.userId)).ok
   ).toBe(true);
 
   shadow.app.database
     .query("DELETE FROM member WHERE organizationId = ? AND userId = ?")
-    .run(workspaceId, bob.userId);
+    .run(companyId, bob.userId);
   secretsSeen.length = 0;
   expect(await runOnce()).toMatchObject({
     outcome: "failed",
@@ -416,7 +417,7 @@ test("a routine runs as the person who last wrote its script, and not after its 
 });
 
 test("a routine runs at most every 15 minutes, whatever its schedule says", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Every minute",
     schedule: "* * * * *",
@@ -431,7 +432,7 @@ test("a routine runs at most every 15 minutes, whatever its schedule says", asyn
 });
 
 test("a routine at a place runs each time its person arrives or leaves, at most every 15 minutes", async () => {
-  const cottage = shadow.app.places.create(workspaceId, alice, {
+  const cottage = shadow.app.places.create(companyId, alice, {
     name: "Cottage",
     latitude: 49.1,
     longitude: 16.2,
@@ -449,7 +450,7 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
     personId: alice.id,
   } as const;
   expect(() =>
-    routines.create(workspaceId, channelId, {
+    routines.create(companyId, channelId, {
       ...input,
       id: crypto.randomUUID(),
       schedule: "0 7 * * *",
@@ -457,13 +458,13 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
     })
   ).toThrow("Give a routine a schedule or a place.");
   expect(() =>
-    routines.create(workspaceId, channelId, {
+    routines.create(companyId, channelId, {
       ...input,
       id: crypto.randomUUID(),
       place: { ...place, id: "elsewhere" },
     })
   ).toThrow("Give a place that the person and the writer use");
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     ...input,
     id: crypto.randomUUID(),
     place,
@@ -474,13 +475,11 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
     place: { name: "Cottage", event: "arrive", personId: alice.id },
   });
   // Only its person's arrival at its place runs it.
-  expect(routines.atPlace(workspaceId, alice.id, cottage.id, "leave")).toEqual(
+  expect(routines.atPlace(companyId, alice.id, cottage.id, "leave")).toEqual(
     []
   );
-  expect(routines.atPlace(workspaceId, "bob", cottage.id, "arrive")).toEqual(
-    []
-  );
-  const [run] = routines.atPlace(workspaceId, alice.id, cottage.id, "arrive");
+  expect(routines.atPlace(companyId, "bob", cottage.id, "arrive")).toEqual([]);
+  const [run] = routines.atPlace(companyId, alice.id, cottage.id, "arrive");
   expect(await run).toMatchObject({ outcome: "posted" });
   const ran = routines.get(routine.id, alice);
   expect(
@@ -488,13 +487,13 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
       ?.text
   ).toBe("The heating is on.");
   // A second arrival soon after, as at the edge of the circle, runs nothing.
-  expect(routines.atPlace(workspaceId, alice.id, cottage.id, "arrive")).toEqual(
+  expect(routines.atPlace(companyId, alice.id, cottage.id, "arrive")).toEqual(
     []
   );
   // A pause and a new name keep its place, and a schedule takes its place.
   expect(
     shadow.app.routines.update(
-      workspaceId,
+      companyId,
       null,
       routine.id,
       { name: "Warm cottage" },
@@ -502,7 +501,7 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
     ).place?.name
   ).toBe("Cottage");
   const scheduled = routines.update(
-    workspaceId,
+    companyId,
     null,
     routine.id,
     { schedule: "0 7 * * *" },
@@ -510,7 +509,7 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
   );
   expect(scheduled).toMatchObject({ place: null, schedule: "0 7 * * *" });
   expect(scheduled.nextRunAt).toBeNumber();
-  expect(routines.atPlace(workspaceId, alice.id, cottage.id, "arrive")).toEqual(
+  expect(routines.atPlace(companyId, alice.id, cottage.id, "arrive")).toEqual(
     []
   );
   routines.delete(routine.id, alice);
@@ -522,11 +521,11 @@ test("a run that a stop cuts off goes on at the next start, and the agent does i
   // As Shadow stops: the agent got the task, then its harness closes while the run waits for the answer.
   const stopping: RoutineThreads = {
     messages: (thread) => threads.messages(thread),
-    requester: (workspace, conversation) =>
-      threads.requester(workspace, conversation),
-    realm: (workspace, conversation) => threads.realm(workspace, conversation),
-    startAgentThread: (workspace, channel, title) =>
-      threads.startAgentThread(workspace, channel, title),
+    requester: (company, conversation) =>
+      threads.requester(company, conversation),
+    realm: (company, conversation) => threads.realm(company, conversation),
+    startAgentThread: (company, channel, title) =>
+      threads.startAgentThread(company, channel, title),
     observe: (...args) => threads.observe(...args),
     instruct: (...args) => {
       answered = threads.instruct(...args);
@@ -536,13 +535,13 @@ test("a run that a stop cuts off goes on at the next start, and the agent does i
   };
   const beforeStop = new Routines(
     shadow.app.database,
-    shadow.app.workspaces,
+    shadow.app.companies,
     integrations,
     stopping,
     shadow.app.indexer,
     shadow.app.places
   );
-  const routine = beforeStop.create(workspaceId, channelId, {
+  const routine = beforeStop.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Backfill",
     schedule: "0 7 * * *",
@@ -571,7 +570,7 @@ test("a run that a stop cuts off goes on at the next start, and the agent does i
 });
 
 test("a script run that a stop cut off goes on with what the script found, and one of a deleted routine fails", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Exams later",
     schedule: "0 7 * * *",
@@ -579,7 +578,7 @@ test("a script run that a stop cut off goes on with what the script found, and o
     script: SCRIPT,
     createdBy: alice.id,
   });
-  const deleted = routines.create(workspaceId, channelId, {
+  const deleted = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Gone",
     schedule: "0 7 * * *",
@@ -639,7 +638,7 @@ test("a script run that a stop cut off goes on with what the script found, and o
 function restart(): Routines {
   const started = new Routines(
     shadow.app.database,
-    shadow.app.workspaces,
+    shadow.app.companies,
     integrations,
     shadow.app.threads,
     shadow.app.indexer,
@@ -665,7 +664,7 @@ function outcomeOf(runId: string) {
 }
 
 test("the agent reads this run's pending records before its scan state commits, and failed runs keep the old state", async () => {
-  const routine = routines.create(workspaceId, channelId, {
+  const routine = routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Current records",
     schedule: "0 7 * * *",
@@ -743,16 +742,15 @@ test("a restart before input admission uses the saved instructions, script resul
   const { threads } = shadow.app;
   const beforeStop = new Routines(
     shadow.app.database,
-    shadow.app.workspaces,
+    shadow.app.companies,
     integrations,
     {
       messages: (thread) => threads.messages(thread),
-      requester: (workspace, conversation) =>
-        threads.requester(workspace, conversation),
-      realm: (workspace, conversation) =>
-        threads.realm(workspace, conversation),
-      startAgentThread: (workspace, channel, title) =>
-        threads.startAgentThread(workspace, channel, title),
+      requester: (company, conversation) =>
+        threads.requester(company, conversation),
+      realm: (company, conversation) => threads.realm(company, conversation),
+      startAgentThread: (company, channel, title) =>
+        threads.startAgentThread(company, channel, title),
       observe: (...args) => threads.observe(...args),
       instruct: () => {
         beforeStop.close();
@@ -762,7 +760,7 @@ test("a restart before input admission uses the saved instructions, script resul
     shadow.app.indexer,
     shadow.app.places
   );
-  const routine = beforeStop.create(workspaceId, channelId, {
+  const routine = beforeStop.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Saved input",
     schedule: "0 7 * * *",
@@ -772,7 +770,7 @@ test("a restart before input admission uses the saved instructions, script resul
   });
   const interrupted = await beforeStop.tick(routine.nextRunAt!)[0]!;
   routines.update(
-    workspaceId,
+    companyId,
     null,
     routine.id,
     {
@@ -801,7 +799,7 @@ test("a restart before input admission uses the saved instructions, script resul
 
 test("agents create routines and test scripts", async () => {
   const thread = await shadow.app.threads.create(
-    workspaceId,
+    companyId,
     alice,
     channelId,
     "Check the school every morning"
@@ -817,7 +815,7 @@ test("agents create routines and test scripts", async () => {
     "Created the routine.\nSchool (routine "
   );
   expect(toolResults.at(-1)).toContain("in #school");
-  const [created] = shadow.app.routines.inWorkspace(workspaceId, null);
+  const [created] = shadow.app.routines.inCompany(companyId, null);
   expect(created).toMatchObject({
     name: "School",
     channelId,
@@ -834,7 +832,7 @@ test("agents create routines and test scripts", async () => {
   expect(toolResults.at(-1)).toContain(
     'The schedule "every morning" is not a cron expression'
   );
-  expect(shadow.app.routines.inWorkspace(workspaceId, null)).toHaveLength(1);
+  expect(shadow.app.routines.inCompany(companyId, null)).toHaveLength(1);
 
   await shadow.app.threads.send(thread.id, alice, "Test a script");
   await until(
@@ -845,7 +843,7 @@ test("agents create routines and test scripts", async () => {
     "The agent would get:\nhello\n[\n  1,\n  2\n]"
   );
 
-  shadow.app.places.create(workspaceId, alice, {
+  shadow.app.places.create(companyId, alice, {
     name: "Cabin",
     latitude: 49.1,
     longitude: 16.2,

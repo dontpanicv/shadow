@@ -24,7 +24,7 @@ interface Station extends StationModule {
 
 /**
  * Netatmo weather stations through Netatmo's API (https://dev.netatmo.com/apidocumentation/weather), with a sign-in to
- * the app that the server's owner made at dev.netatmo.com. Agents only read.
+ * the app that an admin made at dev.netatmo.com. Agents only read.
  */
 export function netatmoConnector(request: typeof fetch = fetch): Connector {
   async function call<Body>(

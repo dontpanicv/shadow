@@ -8,13 +8,13 @@ import {
 import type { Conversation } from "@earendil-works/pi-durable";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import { Browser } from "../browser/browser.ts";
+import type { ThreadRef, ThreadSummary } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
-import type { ThreadRef, ThreadSummary } from "../workspaces/workspaces.ts";
 import { Threads } from "./threads.ts";
 
 let shadow: TestApp;
 let alice: User;
-let workspaceId: string;
+let companyId: string;
 let channelId: string;
 let reopened: Threads | undefined;
 
@@ -26,8 +26,8 @@ beforeEach(async () => {
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
-  channelId = shadow.app.workspaces.channels(workspaceId, alice)[0]!.id;
+  companyId = (await shadow.app.companies.create(alice, "Family")).id;
+  channelId = shadow.app.companies.channels(companyId, alice)[0]!.id;
   reopened = undefined;
   respond(() => fauxAssistantMessage("Done."));
 });
@@ -44,7 +44,7 @@ test("one hundred routine runs keep one thread and a bounded context, with the f
     return fauxAssistantMessage("Saved.");
   });
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Daily"
   );
@@ -72,15 +72,15 @@ test("one hundred routine runs keep one thread and a bounded context, with the f
     100
   );
   expect(
-    shadow.app.workspaces
-      .allThreadsIn(workspaceId)
+    shadow.app.companies
+      .allThreadsIn(companyId)
       .filter((candidate) => candidate.id === thread.id)
   ).toHaveLength(1);
 }, 15_000);
 
 test("recovery after the context boundary reuses it, and a settled input never resets a later run", async () => {
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Daily"
   );
@@ -111,7 +111,7 @@ test("recovery after the context boundary reuses it, and a settled input never r
 
 test("a run admitted by the previous server resumes without a new context boundary", async () => {
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Existing run"
   );
@@ -154,7 +154,7 @@ test("a new routine waits for active work, and a person's concurrent message fol
     return fauxAssistantMessage("Done.");
   });
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Daily"
   );
@@ -223,7 +223,7 @@ test("a tool result survives a real session restart without repeating the file s
     );
   });
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Daily"
   );
@@ -245,7 +245,7 @@ test("a tool result survives a real session restart without repeating the file s
   ).toBe("File saved.");
   const recovered = await conversationOf(reopened, thread);
   expect((await recovered.context(BACKGROUND_CONTEXT)).head!.id).toBe(head);
-  expect(await reopened.files({ workspaceId, channelId })).toHaveLength(1);
+  expect(await reopened.files({ companyId, channelId })).toHaveLength(1);
   expect((await reopened.messages(thread)).messages).toHaveLength(1);
 });
 
@@ -258,7 +258,7 @@ test("tool-using routine answers are posted and notify, while reminders keep the
         })
   );
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Daily"
   );
@@ -266,7 +266,7 @@ test("tool-using routine answers are posted and notify, while reminders keep the
     await instruct(shadow.app.threads, thread, "Routine source", "routine")
   ).toBe("New item archived.");
   expect(
-    shadow.app.notifications.inbox(workspaceId, alice).notifications[0]?.text
+    shadow.app.notifications.inbox(companyId, alice).notifications[0]?.text
   ).toBe("New item archived.");
   respond(() => fauxAssistantMessage("Reminder delivered."));
   await shadow.app.threads.instruct(
@@ -290,7 +290,7 @@ test("an oversized routine input is refused before the provider is called", asyn
     return fauxAssistantMessage("Unexpected.");
   });
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Daily"
   );
@@ -328,7 +328,7 @@ test("a long run compacts between complete tool rounds and keeps its source and 
         );
   });
   const thread = await shadow.app.threads.startAgentThread(
-    workspaceId,
+    companyId,
     channelId,
     "Long run"
   );
@@ -384,7 +384,7 @@ function reopenThreads(): Threads {
   return new Threads(
     shadow.dataDirectory,
     app.llm,
-    app.workspaces,
+    app.companies,
     app.integrations,
     app.artifacts,
     new Browser(),

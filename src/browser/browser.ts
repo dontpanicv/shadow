@@ -60,22 +60,22 @@ export class Browser {
     private readonly egress = new Egress()
   ) {}
 
-  /** The agent tools of a workspace; `requesterOf` gives the person of a conversation's turn. */
+  /** The agent tools of a company; `requesterOf` gives the person of a conversation's turn. */
   tools(
-    workspaceId: string,
+    companyId: string,
     requesterOf: (conversationId: ConversationId) => Promise<string | null>
   ) {
-    return browserTools(this, workspaceId, requesterOf);
+    return browserTools(this, companyId, requesterOf);
   }
 
   /** A picture of the page in the browser of a thread and person, or null when it cannot take one. */
   async screenshot(
-    workspaceId: string,
+    companyId: string,
     conversationId: number,
     personId: string | null
   ): Promise<Uint8Array | null> {
     const { screenshot } = await this.browse(
-      browserSession(workspaceId, conversationId, personId),
+      browserSession(companyId, conversationId, personId),
       [],
       true
     );

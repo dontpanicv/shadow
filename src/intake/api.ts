@@ -6,11 +6,11 @@ import { HttpError } from "../platform/errors.ts";
 export const intakeApiRoutes: readonly Route[] = [
   [
     "GET",
-    "/api/v1/workspaces/:workspace/following/overview",
+    "/api/v1/companies/:company/following/overview",
     api(async ({ app, params, user, request }) =>
       json(
         app.intake.following.overview(
-          params.workspace!,
+          params.company!,
           user,
           new URL(request.url).searchParams.get("q") ?? ""
         )
@@ -19,7 +19,7 @@ export const intakeApiRoutes: readonly Route[] = [
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/following/feedback",
+    "/api/v1/companies/:company/following/feedback",
     api(async ({ app, params, user, body }) => {
       if (
         !(typeof body.target === "string" && typeof body.quote === "string")
@@ -28,7 +28,7 @@ export const intakeApiRoutes: readonly Route[] = [
       }
       return json(
         app.intake.following.feedback(
-          params.workspace!,
+          params.company!,
           user,
           body.target,
           body.quote
@@ -38,14 +38,14 @@ export const intakeApiRoutes: readonly Route[] = [
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/following/updates/:update",
+    "/api/v1/companies/:company/following/updates/:update",
     api(async ({ app, params, user, body }) => {
       if (!(body.action === "now" || body.action === "cancel")) {
         throw new HttpError(400, "Send action now or cancel");
       }
       return json(
         app.intake.following.changeUpdate(
-          params.workspace!,
+          params.company!,
           user,
           params.update!,
           body.action
@@ -55,37 +55,37 @@ export const intakeApiRoutes: readonly Route[] = [
   ],
   [
     "DELETE",
-    "/api/v1/workspaces/:workspace/following/updates/:update",
+    "/api/v1/companies/:company/following/updates/:update",
     api(async ({ app, params, user }) => {
-      await app.intake.deleteUpdate(params.workspace!, user, params.update!);
+      await app.intake.deleteUpdate(params.company!, user, params.update!);
       return new Response(null, { status: 204 });
     }),
   ],
   [
     "DELETE",
-    "/api/v1/workspaces/:workspace/following/blocks/:block",
+    "/api/v1/companies/:company/following/blocks/:block",
     api(async ({ app, params, user }) => {
-      app.intake.following.unblock(params.workspace!, user, params.block!);
+      app.intake.following.unblock(params.company!, user, params.block!);
       return new Response(null, { status: 204 });
     }),
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/following",
+    "/api/v1/companies/:company/following",
     api(async ({ app, params, user }) =>
-      json({ checks: app.intake.following.list(params.workspace!, user) })
+      json({ checks: app.intake.following.list(params.company!, user) })
     ),
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/following/:check",
+    "/api/v1/companies/:company/following/:check",
     api(async ({ app, params, user }) =>
-      json(app.intake.following.detail(params.workspace!, user, params.check!))
+      json(app.intake.following.detail(params.company!, user, params.check!))
     ),
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/following/:check",
+    "/api/v1/companies/:company/following/:check",
     api(async ({ app, params, user, body }) => {
       if (
         !(
@@ -101,7 +101,7 @@ export const intakeApiRoutes: readonly Route[] = [
       }
       return json(
         await app.intake.following.change(
-          params.workspace!,
+          params.company!,
           user,
           params.check!,
           {
@@ -121,11 +121,11 @@ export const intakeApiRoutes: readonly Route[] = [
 
   [
     "GET",
-    "/api/v1/workspaces/:workspace/intake",
+    "/api/v1/companies/:company/intake",
     api(async ({ app, params, user, request }) =>
       json(
         app.intake.status(
-          params.workspace!,
+          params.company!,
           user,
           new URL(request.url).searchParams.get("q") ?? ""
         )

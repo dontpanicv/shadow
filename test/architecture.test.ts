@@ -6,7 +6,7 @@ const SOURCE = join(import.meta.dir, "../src");
 /** Modules in dependency order: a module may use only the modules before it. */
 const MODULES = [
   "accounts",
-  "workspaces",
+  "companies",
   "llm",
   "integrations",
   "places",
@@ -85,13 +85,13 @@ function isServiceFile(path: string): boolean {
 }
 
 test("the rules catch a module that reaches past its neighbours", () => {
-  expect(allowed("workspaces/workspaces.ts", "threads/threads.ts")).toBe(false);
-  expect(allowed("threads/threads.ts", "workspaces/workspaces.ts")).toBe(true);
+  expect(allowed("companies/companies.ts", "threads/threads.ts")).toBe(false);
+  expect(allowed("threads/threads.ts", "companies/companies.ts")).toBe(true);
   expect(allowed("search/search.ts", "threads/pages.ts")).toBe(false);
-  expect(allowed("artifacts/web.ts", "workspaces/pages.ts")).toBe(true);
+  expect(allowed("artifacts/web.ts", "companies/pages.ts")).toBe(true);
   expect(allowed("routines/api.ts", "llm/web.ts")).toBe(false);
   expect(allowed("llm/llm.ts", "app/web.ts")).toBe(false);
-  expect(allowed("platform/auth.ts", "workspaces/workspaces.ts")).toBe(false);
+  expect(allowed("platform/auth.ts", "companies/companies.ts")).toBe(false);
   expect(allowed("app/app.ts", "search/embedder.ts")).toBe(true);
   expect(allowed("app/app.ts", "search/web.ts")).toBe(false);
 });
@@ -103,7 +103,7 @@ const WEB = join(import.meta.dir, "../web");
  */
 const WEB_MODULES = [
   "accounts",
-  "workspaces",
+  "companies",
   "llm",
   "integrations",
   "places",
@@ -157,8 +157,8 @@ function webAllowed(file: string, target: string): boolean {
 }
 
 test("the web rules catch a module that reaches past its neighbours", () => {
-  expect(webAllowed("threads/pages.tsx", "workspaces/shell.tsx")).toBe(true);
-  expect(webAllowed("workspaces/shell.tsx", "threads/data.ts")).toBe(false);
+  expect(webAllowed("threads/pages.tsx", "companies/shell.tsx")).toBe(true);
+  expect(webAllowed("companies/shell.tsx", "threads/data.ts")).toBe(false);
   expect(webAllowed("ui/components.tsx", "app/api.ts")).toBe(false);
   expect(webAllowed("app/query.ts", "ui/toast.tsx")).toBe(true);
   expect(webAllowed("threads/data.ts", "../src/threads/threads.ts")).toBe(

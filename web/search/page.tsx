@@ -15,12 +15,12 @@ import type {
   SearchResponse,
   SearchResult,
 } from "../app/types.ts";
+import { channelsOf, useMe } from "../companies/data.ts";
+import { FloatingSidebarButton } from "../companies/shell.tsx";
 import { Empty } from "../ui/components.tsx";
 import { previewLink } from "../ui/file-preview.tsx";
 import { day, dayTime } from "../ui/format.ts";
 import { Icon, type IconName } from "../ui/icon.tsx";
-import { channelsOf, useMe } from "../workspaces/data.ts";
-import { FloatingSidebarButton } from "../workspaces/shell.tsx";
 
 const KIND_ICONS: Record<SearchKind, IconName> = {
   thread: "compose",
@@ -37,37 +37,37 @@ const MEDIA_ICONS: Partial<Record<Modality, IconName>> = {
 // The Markdown renderer loads on its own, once a search shows results.
 const Snippet = lazy(() => import("./snippet.tsx"));
 
-const route = getRouteApi("/signed-in/w/$workspaceId/search");
+const route = getRouteApi("/signed-in/c/$companyId/search");
 
-function searchesQuery(workspaceId: string) {
+function searchesQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "searches"],
+    queryKey: ["companies", companyId, "searches"],
     queryFn: ({ signal }) =>
       request<{ searches: RecentSearch[] }>(
-        `/workspaces/${workspaceId}/searches`,
+        `/companies/${companyId}/searches`,
         { signal }
       ),
   });
 }
 
 /** Saves a search the person acted on or that found something; the list of recent searches is only a help, so a failure stays quiet. */
-function saveSearch(workspaceId: string, query: string): void {
+function saveSearch(companyId: string, query: string): void {
   if (!query.trim()) {
     return;
   }
-  request<{ searches: RecentSearch[] }>(`/workspaces/${workspaceId}/searches`, {
+  request<{ searches: RecentSearch[] }>(`/companies/${companyId}/searches`, {
     method: "POST",
     body: { query },
   })
     .then((saved) =>
-      queryClient.setQueryData(searchesQuery(workspaceId).queryKey, saved)
+      queryClient.setQueryData(searchesQuery(companyId).queryKey, saved)
     )
     .catch(() => undefined);
 }
 
-/** Search across one workspace: results update as you type. Before a query, the person's recent searches show, then Shadow. */
+/** Search across one company: results update as you type. Before a query, the person's recent searches show, then Shadow. */
 export function SearchPage() {
-  const { workspaceId } = route.useParams();
+  const { companyId } = route.useParams();
   const { q = "" } = route.useSearch();
   const navigate = route.useNavigate();
   const [query, setQuery] = useState(q);
@@ -75,18 +75,18 @@ export function SearchPage() {
   useEffect(() => {
     navigate({ search: { q: debounced || undefined }, replace: true });
   }, [debounced, navigate]);
-  const workspace = useMe().workspaces.find(
-    (candidate) => candidate.id === workspaceId
+  const company = useMe().companies.find(
+    (candidate) => candidate.id === companyId
   );
   const { data: channels = [] } = useLiveQuery({
-    query: (builder) => builder.from({ channel: channelsOf(workspaceId) }),
+    query: (builder) => builder.from({ channel: channelsOf(companyId) }),
   });
-  const { data: recent } = useQuery(searchesQuery(workspaceId));
+  const { data: recent } = useQuery(searchesQuery(companyId));
   const { data: response, isPlaceholderData } = useQuery({
-    queryKey: ["workspaces", workspaceId, "search", debounced],
+    queryKey: ["companies", companyId, "search", debounced],
     queryFn: ({ signal }) =>
       request<SearchResponse>(
-        `/workspaces/${workspaceId}/search?q=${encodeURIComponent(debounced)}`,
+        `/companies/${companyId}/search?q=${encodeURIComponent(debounced)}`,
         { signal }
       ),
     enabled: debounced.trim() !== "",
@@ -98,9 +98,9 @@ export function SearchPage() {
     if (query !== debounced || isPlaceholderData || !response?.results.length) {
       return;
     }
-    const timer = setTimeout(() => saveSearch(workspaceId, debounced), 1000);
+    const timer = setTimeout(() => saveSearch(companyId, debounced), 1000);
     return () => clearTimeout(timer);
-  }, [query, debounced, isPlaceholderData, response, workspaceId]);
+  }, [query, debounced, isPlaceholderData, response, companyId]);
   const names = new Map(channels.map((channel) => [channel.id, channel.name]));
   return (
     <section className="conversation">
@@ -117,10 +117,10 @@ export function SearchPage() {
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
-                  saveSearch(workspaceId, query);
+                  saveSearch(companyId, query);
                 }
               }}
-              placeholder={`Search ${workspace?.name ?? ""}`}
+              placeholder={`Search ${company?.name ?? ""}`}
               type="search"
               value={query}
             />
@@ -130,7 +130,7 @@ export function SearchPage() {
               className="search-results"
               onClickCapture={(event) => {
                 if ((event.target as Element).closest("a.search-row")) {
-                  saveSearch(workspaceId, query);
+                  saveSearch(companyId, query);
                 }
               }}
             >
@@ -145,9 +145,9 @@ export function SearchPage() {
                     channelName={
                       result.channelId ? names.get(result.channelId) : undefined
                     }
+                    companyId={companyId}
                     key={result.uri}
                     result={result}
-                    workspaceId={workspaceId}
                   />
                 ))
               ) : (
@@ -171,8 +171,8 @@ export function SearchPage() {
               ))}
               <Link
                 className="list-row"
-                params={{ workspaceId }}
-                to="/w/$workspaceId/orchestrator"
+                params={{ companyId }}
+                to="/c/$companyId/orchestrator"
               >
                 <Icon name="shadow" />
                 <span className="name">Shadow</span>
@@ -186,11 +186,11 @@ export function SearchPage() {
 }
 
 function ResultRow({
-  workspaceId,
+  companyId,
   result,
   channelName,
 }: {
-  workspaceId: string;
+  companyId: string;
   result: SearchResult;
   channelName: string | undefined;
 }) {
@@ -214,22 +214,22 @@ function ResultRow({
   );
   const target = resultTarget(result);
   if (target.kind === "artifact") {
-    // An artifact opens in its channel, or in the orchestrator when it is the workspace's own.
+    // An artifact opens in its channel, or in the orchestrator when it is the company's own.
     return target.channelId ? (
       <Link
         className="search-row list-row"
-        params={{ workspaceId, channelId: target.channelId }}
+        params={{ companyId, channelId: target.channelId }}
         search={{ artifact: target.id }}
-        to="/w/$workspaceId/channel/$channelId"
+        to="/c/$companyId/channel/$channelId"
       >
         {body}
       </Link>
     ) : (
       <Link
         className="search-row list-row"
-        params={{ workspaceId }}
+        params={{ companyId }}
         search={{ artifact: target.id }}
-        to="/w/$workspaceId/orchestrator"
+        to="/c/$companyId/orchestrator"
       >
         {body}
       </Link>
@@ -239,7 +239,7 @@ function ResultRow({
     return (
       <a
         className="search-row list-row"
-        {...previewLink([{ href: fileHref(workspaceId, target.id) }], 0)}
+        {...previewLink([{ href: fileHref(companyId, target.id) }], 0)}
       >
         {body}
       </a>
@@ -249,8 +249,8 @@ function ResultRow({
     return (
       <Link
         className="search-row list-row"
-        params={{ workspaceId, threadId: target.id }}
-        to="/w/$workspaceId/thread/$threadId"
+        params={{ companyId, threadId: target.id }}
+        to="/c/$companyId/thread/$threadId"
       >
         {body}
       </Link>

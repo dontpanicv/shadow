@@ -37,8 +37,8 @@ function tomorrow(): string {
 }
 
 test("Shadow keeps few suggestions per person, drops ones that cannot run, and never asks again what a person declined", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Agenda");
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Agenda");
+  const [general] = shadow.app.companies.channels(home.id, alice);
   const offer = (name: string, schedule = "0 7 * * *") =>
     shadow.app.agenda.offer(home.id, "thread", general!.id, {
       kind: "routine",
@@ -67,24 +67,24 @@ test("Shadow keeps few suggestions per person, drops ones that cannot run, and n
   const [weather] = shadow.app.agenda.suggestions(home.id, alice);
   const token = await shadow.signIn("Alice", "alice@example.com");
   const declined = await shadow.call(
-    `/api/v1/workspaces/${home.id}/suggestions/${weather!.id}`,
+    `/api/v1/companies/${home.id}/suggestions/${weather!.id}`,
     { token, body: { accept: false } }
   );
   expect(declined.status).toBe(204);
   offer("Weather");
   expect(names()).toEqual(["Mail", "News"]);
-  expect(shadow.app.routines.inWorkspace(home.id, alice.id)).toEqual([]);
+  expect(shadow.app.routines.inCompany(home.id, alice.id)).toEqual([]);
   expect(shadow.app.agenda.automations(home.id, alice.id)).toContain(
     'Suggested routine "Weather": declined'
   );
   // Another person cannot answer it.
   const bobToken = await shadow.signIn("Bob", "bob@example.com");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
   const [mail] = shadow.app.agenda.suggestions(home.id, alice);
   expect(
     (
       await shadow.call(
-        `/api/v1/workspaces/${home.id}/suggestions/${mail!.id}`,
+        `/api/v1/companies/${home.id}/suggestions/${mail!.id}`,
         { token: bobToken, body: { accept: true } }
       )
     ).status
@@ -92,8 +92,8 @@ test("Shadow keeps few suggestions per person, drops ones that cannot run, and n
 });
 
 test("an accepted reminder waits in the person's orchestrator, shows in Upcoming, and the person cancels it there", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Reminders");
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Reminders");
+  const [general] = shadow.app.companies.channels(home.id, alice);
   shadow.app.agenda.offer(home.id, "thread", general!.id, {
     kind: "reminder",
     personId: alice.id,
@@ -106,7 +106,7 @@ test("an accepted reminder waits in the person's orchestrator, shows in Upcoming
 
   const token = await shadow.signIn("Alice", "alice@example.com");
   const upcoming = (await (
-    await shadow.call(`/api/v1/workspaces/${home.id}/upcoming`, { token })
+    await shadow.call(`/api/v1/companies/${home.id}/upcoming`, { token })
   ).json()) as {
     reminders: { id: string; text: string; threadId: string }[];
     suggestions: unknown[];
@@ -120,9 +120,9 @@ test("an accepted reminder waits in the person's orchestrator, shows in Upcoming
     ["Call the dentist", orchestrator.id],
   ]);
 
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
   const bobToken = await shadow.signIn("Bob", "bob@example.com");
-  const path = `/api/v1/workspaces/${home.id}/reminders/${upcoming.reminders[0]!.id}`;
+  const path = `/api/v1/companies/${home.id}/reminders/${upcoming.reminders[0]!.id}`;
   expect(
     (await shadow.call(path, { token: bobToken, method: "DELETE" })).status
   ).toBe(404);
@@ -133,8 +133,8 @@ test("an accepted reminder waits in the person's orchestrator, shows in Upcoming
 });
 
 test("the iPhone watches the places of its person's reminders and routines, and Shadow decides what a report makes due", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Places");
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Places");
+  const [general] = shadow.app.companies.channels(home.id, alice);
   const cottage = shadow.app.places.create(home.id, alice, {
     name: "Cottage",
     latitude: 49.1,
@@ -164,7 +164,7 @@ test("the iPhone watches the places of its person's reminders and routines, and 
     createdBy: alice.id,
   });
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const base = `/api/v1/workspaces/${home.id}/watched-places`;
+  const base = `/api/v1/companies/${home.id}/watched-places`;
   expect(await (await shadow.call(base, { token })).json()).toEqual({
     places: [
       {
@@ -226,7 +226,7 @@ test("the iPhone watches the places of its person's reminders and routines, and 
 });
 
 test("a state at a place that the phone stopped watching does not make a new reminder there due", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Stale");
+  const home = await shadow.app.companies.create(alice, "Stale");
   const flat = shadow.app.places.create(home.id, alice, {
     name: "Flat",
     latitude: 50.1,
@@ -250,7 +250,7 @@ test("a state at a place that the phone stopped watching does not make a new rem
     initial: false,
   });
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const base = `/api/v1/workspaces/${home.id}/watched-places`;
+  const base = `/api/v1/companies/${home.id}/watched-places`;
   expect(await (await shadow.call(base, { token })).json()).toEqual({
     places: [],
   });

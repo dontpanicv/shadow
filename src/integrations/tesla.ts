@@ -190,7 +190,7 @@ export interface TeslaOptions {
 
 /**
  * Tesla cars through the Fleet API (https://developer.tesla.com/docs/fleet-api), with a sign-in to the app that the
- * server's owner made at developer.tesla.com. Agents read the cars and send commands, which tesla-control
+ * admin made at developer.tesla.com. Agents read the cars and send commands, which tesla-control
  * (https://github.com/teslamotors/vehicle-command) signs with Shadow's key; the cars take them after the person adds
  * that key in the Tesla app. While Shadow runs, it logs the charge sessions of each account.
  */

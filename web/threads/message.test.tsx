@@ -28,18 +28,18 @@ async function render(node: ReactNode): Promise<string> {
 test("an answer's thread links open the thread, its files show, and nothing in it runs", async () => {
   const html = await render(
     <Markdown
+      companyId="family"
       text={[
         "Started [Dinner <b>plan</b>](thread:abc-1), <i>*soon*</i>, and read ![the list](file:f-1).",
         '<img src="x" onerror="alert(1)"><script>alert(2)</script>',
         '[bad](javascript:alert(3)) <a href="https://example.com" onclick="alert(4)">site</a>',
         '<iframe src="https://example.com"></iframe>',
       ].join("\n\n")}
-      workspaceId="family"
     />
   );
-  expect(html).toContain('class="thread-link" href="/w/family/thread/abc-1"');
+  expect(html).toContain('class="thread-link" href="/c/family/thread/abc-1"');
   expect(html).toContain("Dinner <b>plan</b>");
-  expect(html).toContain('src="/api/v1/workspaces/family/files/f-1"');
+  expect(html).toContain('src="/api/v1/companies/family/files/f-1"');
   expect(html).toContain('href="https://example.com"');
   expect(html).toContain('target="_blank"');
   expect(html).toContain("<i><em>soon</em></i>");
@@ -57,12 +57,12 @@ test("an answer's thread links open the thread, its files show, and nothing in i
 test("a picture from another site shows as a link, and loads nothing", async () => {
   const html = await render(
     <Markdown
+      companyId="family"
       text={[
         "![the dog](https://example.com/p.png)",
         '<img src="https://example.com/q.png">',
         '<picture><source srcset="https://example.com/r.png"></picture>',
       ].join("\n\n")}
-      workspaceId="family"
     />
   );
   expect(html).toContain('href="https://example.com/p.png"');
@@ -74,16 +74,16 @@ test("a picture from another site shows as a link, and loads nothing", async () 
 test("only a link to a path of this site opens in the app; one to another site opens a new tab", async () => {
   const html = await render(
     <Markdown
+      companyId="family"
       text={[
-        "[home](/w/family)",
+        "[home](/c/family)",
         "[evil](//evil.example/a)",
         '<a href="/&#9;/evil.example/b">tab</a>',
         '<a href="/\\evil.example/c">slash</a>',
       ].join("\n\n")}
-      workspaceId="family"
     />
   );
-  expect(html).toContain('<a href="/w/family">home</a>');
+  expect(html).toContain('<a href="/c/family">home</a>');
   for (const link of html.match(/<a [^>]*evil\.example[^>]*>/g) ?? []) {
     expect(link).toContain('target="_blank"');
   }
@@ -92,7 +92,7 @@ test("only a link to a path of this site opens in the app; one to another site o
 
 test("an artifact in an answer runs in its own sandboxed page", async () => {
   const html = await render(
-    <Markdown text="![Votes](artifact:amber-fox)" workspaceId="family" />
+    <Markdown companyId="family" text="![Votes](artifact:amber-fox)" />
   );
   expect(html).toContain('<iframe class="message-artifact"');
   expect(html).toContain('src="/a/amber-fox"');
@@ -124,13 +124,13 @@ const call = (text: string) => ({
 test("the work before an answer is open while the agent works, then folds and says how long it took", async () => {
   const working = await render(
     <MessageView
+      companyId="w"
       message={message({
         startedAt: Date.now() - 12_000,
         endedAt: null,
         stopped: false,
         steps: [{ ...call("Prague"), tool: "web_search", running: true }],
       })}
-      workspaceId="w"
     />
   );
   expect(working).toContain('<details class="work working" open="">');
@@ -139,13 +139,13 @@ test("the work before an answer is open while the agent works, then folds and sa
 
   const done = await render(
     <MessageView
+      companyId="w"
       message={message({
         startedAt: 1000,
         endedAt: 9000,
         stopped: false,
         steps: [],
       })}
-      workspaceId="w"
     />
   );
   expect(done).toContain('<details class="work">');
@@ -155,13 +155,13 @@ test("the work before an answer is open while the agent works, then folds and sa
 test("calls of one tool in a row fold into one row, and a stopped turn says so", async () => {
   const html = await render(
     <MessageView
+      companyId="w"
       message={message({
         startedAt: 1000,
         endedAt: 4000,
         stopped: true,
         steps: [call("[Dinner](thread:d-1)"), call("[Trip](thread:t-2)")],
       })}
-      workspaceId="w"
     />
   );
   expect(html).toContain("Stopped after 3s");
@@ -169,20 +169,20 @@ test("calls of one tool in a row fold into one row, and a stopped turn says so",
     '<span class="work-tool-name">Start thread</span><span class="work-tool-detail">2<!-- --> times</span>'
   );
   expect(html).toContain(
-    'class="thread-link" href="/w/w/thread/d-1">Dinner</a>'
+    'class="thread-link" href="/c/w/thread/d-1">Dinner</a>'
   );
 });
 
 test("a finished work shows one pixel for each tool call, and the face shows how the work went", async () => {
   const html = await render(
     <MessageView
+      companyId="w"
       message={message({
         startedAt: 1000,
         endedAt: 4000,
         stopped: false,
         steps: [call("a"), { ...call("b"), failed: true }],
       })}
-      workspaceId="w"
     />
   );
   expect(html).toContain(
@@ -193,6 +193,7 @@ test("a finished work shows one pixel for each tool call, and the face shows how
 test("a card block shows its cards; one that is not valid shows as code", async () => {
   const html = await render(
     <Markdown
+      companyId="w"
       text={[
         "```card",
         '[{"icon": "battery", "title": "Car", "value": "78 %", "detail": "412 km"}, {"value": "22 °C"}]',
@@ -202,7 +203,6 @@ test("a card block shows its cards; one that is not valid shows as code", async 
         '{"title": "No value"}',
         "```",
       ].join("\n")}
-      workspaceId="w"
     />
   );
   expect(html).toContain('<span class="card-title">Car</span>');
@@ -217,6 +217,7 @@ test("a card block shows its cards; one that is not valid shows as code", async 
 test("the working summary says the step Shadow is at, and an approval puts Allow first", async () => {
   const working = await render(
     <MessageView
+      companyId="w"
       message={message({
         startedAt: Date.now() - 5000,
         endedAt: null,
@@ -229,7 +230,6 @@ test("the working summary says the step Shadow is at, and an approval puts Allow
           },
         ],
       })}
-      workspaceId="w"
     />
   );
   expect(working).toContain(
@@ -275,7 +275,7 @@ test("a turn that another thread's answer started continues Shadow's message bef
   expect(continues(asked, asked)).toBe(false);
 
   const html = await render(
-    <MessageView continued message={relayed} workspaceId="w" />
+    <MessageView companyId="w" continued message={relayed} />
   );
   expect(html).toContain('class="message continued"');
   expect(html).not.toContain("message-meta");

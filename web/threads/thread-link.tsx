@@ -4,11 +4,11 @@ import { WorkingSpinner } from "../ui/components.tsx";
 
 /** A link that opens a thread, and its spinner while the thread's agent works. */
 export function ThreadLink({
-  workspaceId,
+  companyId,
   threadId,
   children,
 }: {
-  workspaceId: string;
+  companyId: string;
   threadId: string;
   children: ReactNode;
 }) {
@@ -16,8 +16,8 @@ export function ThreadLink({
     <>
       <Link
         className="thread-link"
-        params={{ workspaceId, threadId }}
-        to="/w/$workspaceId/thread/$threadId"
+        params={{ companyId, threadId }}
+        to="/c/$companyId/thread/$threadId"
       >
         {children}
       </Link>

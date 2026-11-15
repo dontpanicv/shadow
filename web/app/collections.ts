@@ -1,10 +1,10 @@
 /**
- * One collection for each key, such as a workspace id, made the first time a page asks for it and kept while the app
+ * One collection for each key, such as a company id, made the first time a page asks for it and kept while the app
  * runs, so every page that shows the same rows shares them.
  *
  * @example
- * const threadsOf = keyed((workspaceId: string) => createCollection(...));
- * threadsOf(workspaceId).update(threadId, (draft) => { draft.settledAt = Date.now(); });
+ * const threadsOf = keyed((companyId: string) => createCollection(...));
+ * threadsOf(companyId).update(threadId, (draft) => { draft.settledAt = Date.now(); });
  */
 export function keyed<Value>(
   make: (key: string) => Value

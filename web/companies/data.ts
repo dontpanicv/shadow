@@ -6,45 +6,46 @@ import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
 import type {
   Channel,
+  Company,
   Facts,
   Inbox,
   Member,
+  SlackBotStatus,
   ThreadSummary,
   User,
-  Workspace,
 } from "../app/types.ts";
 
 export const meQuery = queryOptions({
   queryKey: ["me"],
   queryFn: ({ signal }) =>
-    request<{ user: User; workspaces: Workspace[]; owner: boolean }>("/me", {
+    request<{ user: User; companies: Company[]; admin: boolean }>("/me", {
       signal,
     }),
 });
 
-/** The person and their workspaces; the signed-in routes render only once they are known. */
+/** The person and their companies; the signed-in routes render only once they are known. */
 export function useMe() {
   return useQuery(meQuery).data!;
 }
 
-/** The channels and the threads of a workspace come in one response, which both collections read. */
+/** The channels and the threads of a company come in one response, which both collections read. */
 const loading = new Map<string, Promise<{ channels: Channel[] }>>();
 
-function workspaceState(workspaceId: string) {
-  let pending = loading.get(workspaceId);
+function companyState(companyId: string) {
+  let pending = loading.get(companyId);
   if (!pending) {
     pending = request<{ channels: Channel[] }>(
-      `/workspaces/${workspaceId}`
-    ).finally(() => loading.delete(workspaceId));
-    loading.set(workspaceId, pending);
+      `/companies/${companyId}`
+    ).finally(() => loading.delete(companyId));
+    loading.set(companyId, pending);
   }
   return pending;
 }
 
-/** Loads the channels and threads of a workspace again, as agents start threads and channels while they work. */
-export function refreshWorkspace(workspaceId: string): Promise<void> {
+/** Loads the channels and threads of a company again, as agents start threads and channels while they work. */
+export function refreshCompany(companyId: string): Promise<void> {
   return queryClient.invalidateQueries({
-    queryKey: ["workspaces", workspaceId, "channels"],
+    queryKey: ["companies", companyId, "channels"],
   });
 }
 
@@ -53,33 +54,33 @@ export function refreshWorkspace(workspaceId: string): Promise<void> {
  * Channels are never deleted.
  */
 export async function mergeChannel(
-  workspaceId: string,
+  companyId: string,
   channelId: string,
   into: string
 ): Promise<void> {
-  await request(`/workspaces/${workspaceId}/channels/${channelId}/merge`, {
+  await request(`/companies/${companyId}/channels/${channelId}/merge`, {
     method: "POST",
     body: { into },
   });
-  await refreshWorkspace(workspaceId);
+  await refreshCompany(companyId);
 }
 
-/** The channels of a workspace, in the server's order. Renaming one shows at once. */
-export const channelsOf = keyed((workspaceId: string) =>
+/** The channels of a company, in the server's order. Renaming one shows at once. */
+export const channelsOf = keyed((companyId: string) =>
   createCollection(
     queryCollectionOptions({
-      id: `channels:${workspaceId}`,
-      queryKey: ["workspaces", workspaceId, "channels", "list"],
+      id: `channels:${companyId}`,
+      queryKey: ["companies", companyId, "channels", "list"],
       queryClient,
       queryFn: async () =>
-        (await workspaceState(workspaceId)).channels.map(
+        (await companyState(companyId)).channels.map(
           ({ threads, ...channel }, order) => ({ ...channel, order })
         ),
       getKey: (channel) => channel.id,
       // The collection loads again after it, with the name as the server keeps it.
       onUpdate: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(`/workspaces/${workspaceId}/channels/${mutation.key}`, {
+          await request(`/companies/${companyId}/channels/${mutation.key}`, {
             method: "PUT",
             body: { name: mutation.modified.name },
           });
@@ -89,15 +90,15 @@ export const channelsOf = keyed((workspaceId: string) =>
   )
 );
 
-/** The threads of every channel of a workspace. Settling or moving one shows at once. */
-export const threadsOf = keyed((workspaceId: string) =>
+/** The threads of every channel of a company. Settling or moving one shows at once. */
+export const threadsOf = keyed((companyId: string) =>
   createCollection(
     queryCollectionOptions({
-      id: `threads:${workspaceId}`,
-      queryKey: ["workspaces", workspaceId, "channels", "threads"],
+      id: `threads:${companyId}`,
+      queryKey: ["companies", companyId, "channels", "threads"],
       queryClient,
       queryFn: async () =>
-        (await workspaceState(workspaceId)).channels.flatMap(
+        (await companyState(companyId)).channels.flatMap(
           (channel) => channel.threads
         ),
       getKey: (thread) => thread.id,
@@ -105,8 +106,8 @@ export const threadsOf = keyed((workspaceId: string) =>
         for (const mutation of transaction.mutations) {
           await request(
             mutation.changes.channelId
-              ? `/workspaces/${workspaceId}/threads/${mutation.key}/channel`
-              : `/workspaces/${workspaceId}/threads/${mutation.key}/settled`,
+              ? `/companies/${companyId}/threads/${mutation.key}/channel`
+              : `/companies/${companyId}/threads/${mutation.key}/settled`,
             {
               method: "POST",
               body: mutation.changes.channelId
@@ -120,71 +121,82 @@ export const threadsOf = keyed((workspaceId: string) =>
   )
 );
 
-/** The person's notifications in a workspace, newest first; the sidebar shows how many are unread. */
-export function inboxQuery(workspaceId: string) {
+/** The person's notifications in a company, newest first; the sidebar shows how many are unread. */
+export function inboxQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "notifications"],
+    queryKey: ["companies", companyId, "notifications"],
     queryFn: ({ signal }) =>
-      request<Inbox>(`/workspaces/${workspaceId}/notifications`, { signal }),
+      request<Inbox>(`/companies/${companyId}/notifications`, { signal }),
   });
 }
 
 /** Loads the inbox again: a run that ends or a thread that opens changes it. */
-export function refreshInbox(workspaceId: string): Promise<void> {
+export function refreshInbox(companyId: string): Promise<void> {
   return queryClient.invalidateQueries({
-    queryKey: inboxQuery(workspaceId).queryKey,
+    queryKey: inboxQuery(companyId).queryKey,
   });
 }
 
-/** The workspace's thread that never ends; the first request makes it. */
-export function orchestratorQuery(workspaceId: string) {
+/** The company's thread that never ends; the first request makes it. */
+export function orchestratorQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "orchestrator"],
+    queryKey: ["companies", companyId, "orchestrator"],
     queryFn: ({ signal }) =>
-      request<ThreadSummary>(`/workspaces/${workspaceId}/orchestrator`, {
+      request<ThreadSummary>(`/companies/${companyId}/orchestrator`, {
         signal,
       }),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
 
-export function membersQuery(workspaceId: string) {
+export function membersQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "members"],
+    queryKey: ["companies", companyId, "members"],
     queryFn: ({ signal }) =>
-      request<Member[]>(`/workspaces/${workspaceId}/members`, { signal }),
+      request<Member[]>(`/companies/${companyId}/members`, { signal }),
   });
 }
 
 /** The address of a member's profile picture, or null for none or while the members load. */
 export function usePicture(
-  workspaceId: string,
+  companyId: string,
   userId: string | null
 ): string | null {
   return (
     useQuery({
-      ...membersQuery(workspaceId),
+      ...membersQuery(companyId),
       select: (members) =>
         members.find((member) => member.userId === userId)?.picture ?? null,
     }).data ?? null
   );
 }
 
-export function factsQuery(workspaceId: string) {
+/** The Slack bot of a company, for its admins. */
+export function slackBotQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "facts"],
+    queryKey: ["companies", companyId, "slack-bot"],
     queryFn: ({ signal }) =>
-      request<Facts>(`/workspaces/${workspaceId}/facts`, { signal }),
+      request<SlackBotStatus>(`/companies/${companyId}/slack-bot`, {
+        signal,
+      }),
+  });
+}
+
+export function factsQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "facts"],
+    queryFn: ({ signal }) =>
+      request<Facts>(`/companies/${companyId}/facts`, { signal }),
   });
 }
 
 /** Settles a thread, or brings it back. */
 export function setSettled(
-  workspaceId: string,
+  companyId: string,
   threadId: string,
   settled: boolean
 ) {
-  return threadsOf(workspaceId).update(threadId, (draft) => {
+  return threadsOf(companyId).update(threadId, (draft) => {
     draft.settledAt = settled ? Date.now() : null;
   });
 }
@@ -206,23 +218,23 @@ export function rememberOpenChannels(channelIds: string[]): void {
   localStorage.setItem(OPEN_CHANNELS, JSON.stringify(channelIds));
 }
 
-/** Remembers the channel or thread page, so the workspace opens on it next time. */
+/** Remembers the channel or thread page, so the company opens on it next time. */
 export function rememberOpened(path: string): void {
   localStorage.setItem(OPENED, path);
 }
 
-/** The workspace and the channel or thread id of the page `rememberOpened` saw last. */
+/** The company and the channel or thread id of the page `rememberOpened` saw last. */
 export function lastOpened():
-  | { workspaceId: string; channelId?: string; threadId?: string }
+  | { companyId: string; channelId?: string; threadId?: string }
   | undefined {
-  const [, workspaceId, kind, id] =
+  const [, companyId, kind, id] =
     localStorage
       .getItem(OPENED)
-      ?.match(/^\/w\/([^/]+)\/(channel|thread)\/([^/]+)$/) ?? [];
-  if (!workspaceId) {
+      ?.match(/^\/c\/([^/]+)\/(channel|thread)\/([^/]+)$/) ?? [];
+  if (!companyId) {
     return undefined;
   }
   return kind === "channel"
-    ? { workspaceId, channelId: id }
-    : { workspaceId, threadId: id };
+    ? { companyId, channelId: id }
+    : { companyId, threadId: id };
 }

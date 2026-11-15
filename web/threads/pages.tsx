@@ -13,6 +13,16 @@ import { queryClient } from "../app/query.ts";
 import type { ThreadSummary } from "../app/types.ts";
 import { ArtifactList, ArtifactPreview } from "../artifacts/panel.tsx";
 import {
+  channelsOf,
+  meQuery,
+  mergeChannel,
+  orchestratorQuery,
+  rememberOpened,
+  setSettled,
+  threadsOf,
+} from "../companies/data.ts";
+import { PanelHeader } from "../companies/shell.tsx";
+import {
   Button,
   Dialog,
   Empty,
@@ -23,16 +33,6 @@ import { previewLink } from "../ui/file-preview.tsx";
 import { dayTime, size } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
 import { showError } from "../ui/toast.tsx";
-import {
-  channelsOf,
-  meQuery,
-  mergeChannel,
-  orchestratorQuery,
-  rememberOpened,
-  setSettled,
-  threadsOf,
-} from "../workspaces/data.ts";
-import { PanelHeader } from "../workspaces/shell.tsx";
 import { ApprovalRequest } from "./approval.tsx";
 import { Composer } from "./composer.tsx";
 import {
@@ -49,10 +49,10 @@ import {
 import { continues, followEnd, MessageView } from "./message.tsx";
 import { followed, outbox, sendMessage } from "./outbox.ts";
 
-const threadRoute = getRouteApi("/signed-in/w/$workspaceId/thread/$threadId");
+const threadRoute = getRouteApi("/signed-in/c/$companyId/thread/$threadId");
 
 /**
- * A thread of the workspace in the address; a thread of another workspace is not found. `orchestratorCards` shows over
+ * A thread of the company in the address; a thread of another company is not found. `orchestratorCards` shows over
  * the composer of the person's orchestrator only.
  */
 export function ThreadPage({
@@ -60,13 +60,13 @@ export function ThreadPage({
 }: {
   orchestratorCards: ReactNode;
 }) {
-  const { workspaceId, threadId } = threadRoute.useParams();
-  const orchestrator = useQuery(orchestratorQuery(workspaceId)).data;
+  const { companyId, threadId } = threadRoute.useParams();
+  const orchestrator = useQuery(orchestratorQuery(companyId)).data;
   const isOrchestrator = orchestrator?.id === threadId;
   const { data: listed, isReady } = useLiveQuery({
     query: (q) =>
       q
-        .from({ thread: threadsOf(workspaceId) })
+        .from({ thread: threadsOf(companyId) })
         .where(({ thread: row }) => eq(row.id, threadId))
         .findOne(),
   });
@@ -82,23 +82,23 @@ export function ThreadPage({
   return (
     <Thread
       cards={isOrchestrator ? orchestratorCards : null}
+      companyId={companyId}
       isOrchestrator={isOrchestrator}
       thread={thread}
       threadId={threadId}
-      workspaceId={workspaceId}
     />
   );
 }
 
 /** A thread: its live transcript and composer, and the panel with its place's artifacts and files. */
 function Thread({
-  workspaceId,
+  companyId,
   threadId,
   thread,
   isOrchestrator,
   cards,
 }: {
-  workspaceId: string;
+  companyId: string;
   threadId: string;
   thread: ThreadSummary;
   isOrchestrator: boolean;
@@ -106,7 +106,7 @@ function Thread({
   cards: ReactNode;
 }) {
   const { data: channels = [] } = useLiveQuery({
-    query: (q) => q.from({ channel: channelsOf(workspaceId) }),
+    query: (q) => q.from({ channel: channelsOf(companyId) }),
   });
   const channel = channels.find(
     (candidate) => candidate.id === thread.channelId
@@ -117,9 +117,9 @@ function Thread({
         .from({ message: messagesOf(threadId) })
         .orderBy(({ message }) => message.time),
   });
-  // The orchestrator belongs to the workspace, not to its channel: its files and artifacts are the workspace's own.
+  // The orchestrator belongs to the company, not to its channel: its files and artifacts are the company's own.
   const place: Place = {
-    workspaceId,
+    companyId,
     channelId: isOrchestrator ? null : thread.channelId,
   };
   const key = placeKey(place);
@@ -140,7 +140,7 @@ function Thread({
         .orderBy(({ message }) => message.time),
   });
   const { running, approvals } = useThreadStream(
-    workspaceId,
+    companyId,
     threadId,
     placeChanged
   );
@@ -155,8 +155,8 @@ function Thread({
     };
   }, [threadId]);
   useEffect(
-    () => rememberOpened(`/w/${workspaceId}/thread/${threadId}`),
-    [workspaceId, threadId]
+    () => rememberOpened(`/c/${companyId}/thread/${threadId}`),
+    [companyId, threadId]
   );
   const settled = thread.settledAt !== null;
   return (
@@ -188,7 +188,7 @@ function Thread({
                     current: candidate.id === thread.channelId,
                     onSelect: () =>
                       moveThread(
-                        workspaceId,
+                        companyId,
                         threadId,
                         thread.channelId,
                         candidate.id
@@ -207,7 +207,7 @@ function Thread({
               <Button
                 icon={settled ? "inbox" : "check"}
                 label={settled ? "Un-settle thread" : "Settle thread"}
-                onClick={() => setSettled(workspaceId, threadId, !settled)}
+                onClick={() => setSettled(companyId, threadId, !settled)}
                 size="icon"
                 variant="ghost"
               />
@@ -223,10 +223,10 @@ function Thread({
         >
           {messages.map((message, index) => (
             <MessageView
+              companyId={companyId}
               continued={continues(message, messages[index - 1])}
               key={message.id}
               message={message}
-              workspaceId={workspaceId}
             />
           ))}
           {mine.map((approval) => (
@@ -238,10 +238,10 @@ function Thread({
           ))}
           {waiting.map((message) => (
             <MessageView
+              companyId={companyId}
               key={message.id}
               message={message}
               pending
-              workspaceId={workspaceId}
             />
           ))}
           {messages.length + waiting.length === 0 ? (
@@ -269,20 +269,18 @@ function Thread({
   );
 }
 
-const channelRoute = getRouteApi(
-  "/signed-in/w/$workspaceId/channel/$channelId"
-);
+const channelRoute = getRouteApi("/signed-in/c/$companyId/channel/$channelId");
 
 /**
  * A channel: its threads, settled ones folded away, in up to the top half; its details under them; and the panel with
  * the files and artifacts of all its threads.
  */
 export function ChannelPage({ details }: { details: ReactNode }) {
-  const { workspaceId, channelId } = channelRoute.useParams();
+  const { companyId, channelId } = channelRoute.useParams();
   const navigate = useNavigate();
   const [into, setInto] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const channels = channelsOf(workspaceId);
+  const channels = channelsOf(companyId);
   const { data: channel, isReady } = useLiveQuery({
     query: (q) =>
       q
@@ -293,7 +291,7 @@ export function ChannelPage({ details }: { details: ReactNode }) {
   const { data: active = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ thread: threadsOf(workspaceId) })
+        .from({ thread: threadsOf(companyId) })
         .where(({ thread }) => eq(thread.channelId, channelId))
         .where(({ thread }) => isNull(thread.settledAt))
         .orderBy(({ thread }) => thread.updatedAt, "desc"),
@@ -301,14 +299,14 @@ export function ChannelPage({ details }: { details: ReactNode }) {
   const { data: settled = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ thread: threadsOf(workspaceId) })
+        .from({ thread: threadsOf(companyId) })
         .where(({ thread }) => eq(thread.channelId, channelId))
         .where(({ thread }) => not(isNull(thread.settledAt)))
         .orderBy(({ thread }) => thread.settledAt, "desc"),
   });
   useEffect(
-    () => rememberOpened(`/w/${workspaceId}/channel/${channelId}`),
-    [workspaceId, channelId]
+    () => rememberOpened(`/c/${companyId}/channel/${channelId}`),
+    [companyId, channelId]
   );
   if (!channel) {
     return isReady ? (
@@ -318,23 +316,22 @@ export function ChannelPage({ details }: { details: ReactNode }) {
       </section>
     ) : null;
   }
-  // A channel that every member sees merges only into another such channel.
-  const targets = [...channels.values()].filter(
-    (other) =>
-      other.id !== channelId &&
-      (channel.ownerId !== null || other.ownerId === null)
-  );
+  // Only a private channel merges away; a channel that every member sees copies a Slack channel.
+  const targets =
+    channel.ownerId === null
+      ? []
+      : [...channels.values()].filter((other) => other.id !== channelId);
   const merge = async () => {
     if (!into) {
       return;
     }
     setBusy(true);
     try {
-      await mergeChannel(workspaceId, channelId, into.id);
+      await mergeChannel(companyId, channelId, into.id);
       setInto(null);
       navigate({
-        to: "/w/$workspaceId/channel/$channelId",
-        params: { workspaceId, channelId: into.id },
+        to: "/c/$companyId/channel/$channelId",
+        params: { companyId, channelId: into.id },
       });
     } catch (error) {
       showError(error);
@@ -382,9 +379,9 @@ export function ChannelPage({ details }: { details: ReactNode }) {
               <div className="list">
                 {active.map((thread) => (
                   <ThreadRow
+                    companyId={companyId}
                     key={thread.id}
                     thread={thread}
-                    workspaceId={workspaceId}
                   />
                 ))}
                 {settled.length > 0 ? (
@@ -392,9 +389,9 @@ export function ChannelPage({ details }: { details: ReactNode }) {
                     <summary>Settled ({settled.length})</summary>
                     {settled.map((thread) => (
                       <ThreadRow
+                        companyId={companyId}
                         key={thread.id}
                         thread={thread}
-                        workspaceId={workspaceId}
                       />
                     ))}
                   </details>
@@ -408,15 +405,10 @@ export function ChannelPage({ details }: { details: ReactNode }) {
         </div>
         <Composer
           onSend={async (text, files) => {
-            const thread = await startThread(
-              workspaceId,
-              channelId,
-              text,
-              files
-            );
+            const thread = await startThread(companyId, channelId, text, files);
             navigate({
-              to: "/w/$workspaceId/thread/$threadId",
-              params: { workspaceId, threadId: thread.id },
+              to: "/c/$companyId/thread/$threadId",
+              params: { companyId, threadId: thread.id },
             });
           }}
           placeholder={`Start a thread in #${channel.name}`}
@@ -432,16 +424,16 @@ export function ChannelPage({ details }: { details: ReactNode }) {
           <p>Its threads, files, artifacts, and routines move there.</p>
         </Dialog>
       </section>
-      <PlacePanel place={{ workspaceId, channelId }} />
+      <PlacePanel place={{ companyId, channelId }} />
     </>
   );
 }
 
 function ThreadRow({
-  workspaceId,
+  companyId,
   thread,
 }: {
-  workspaceId: string;
+  companyId: string;
   thread: {
     id: string;
     title: string;
@@ -454,8 +446,8 @@ function ThreadRow({
     <div className="file-row">
       <Link
         className="list-row"
-        params={{ workspaceId, threadId: thread.id }}
-        to="/w/$workspaceId/thread/$threadId"
+        params={{ companyId, threadId: thread.id }}
+        to="/c/$companyId/thread/$threadId"
       >
         <Icon name="compose" />
         <span className="name">{thread.title}</span>
@@ -465,7 +457,7 @@ function ThreadRow({
       <Button
         icon={settled ? "inbox" : "check"}
         label={settled ? "Un-settle thread" : "Settle thread"}
-        onClick={() => setSettled(workspaceId, thread.id, !settled)}
+        onClick={() => setSettled(companyId, thread.id, !settled)}
         size="icon"
         variant="ghost"
       />
@@ -510,7 +502,7 @@ function PanelToggle() {
   );
 }
 
-const placeRoute = getRouteApi("/signed-in/w/$workspaceId");
+const placeRoute = getRouteApi("/signed-in/c/$companyId");
 
 /**
  * The side panel of a place: its files and artifacts in tabs, and the preview of the artifact that `?artifact=` names,
@@ -572,9 +564,9 @@ function PlacePanel({ place }: { place: Place }) {
       {artifact ? (
         <ArtifactPreview
           artifactId={artifact}
+          companyId={place.companyId}
           onClose={() => openArtifact(undefined)}
           placeKey={key}
-          workspaceId={place.workspaceId}
         />
       ) : null}
       {!artifact && tab === "artifacts" ? (
@@ -617,7 +609,7 @@ function FileList({ place }: { place: Place }) {
       q.from({ file: files }).orderBy(({ file }) => file.time, "desc"),
   });
   const previews = rows.map((file) => ({
-    href: fileHref(place.workspaceId, file.id),
+    href: fileHref(place.companyId, file.id),
     name: file.name,
     size: file.size,
   }));

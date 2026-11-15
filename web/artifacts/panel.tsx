@@ -56,12 +56,12 @@ export function ArtifactList({
 
 /** The open artifact running, or the data it keeps, with its actions. */
 export function ArtifactPreview({
-  workspaceId,
+  companyId,
   placeKey,
   artifactId,
   onClose,
 }: {
-  workspaceId: string;
+  companyId: string;
   placeKey: string;
   artifactId: string;
   onClose: () => void;
@@ -121,8 +121,8 @@ export function ArtifactPreview({
               icon: "compose",
               onSelect: () =>
                 navigate({
-                  to: "/w/$workspaceId/thread/$threadId",
-                  params: { workspaceId, threadId: artifact.threadId },
+                  to: "/c/$companyId/thread/$threadId",
+                  params: { companyId, threadId: artifact.threadId },
                 }),
             },
             {

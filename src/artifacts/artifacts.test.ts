@@ -8,8 +8,8 @@ import {
   type TestApp,
   until,
 } from "../../test/harness.ts";
+import type { ThreadRef, ThreadSummary } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
-import type { ThreadRef, ThreadSummary } from "../workspaces/workspaces.ts";
 import type { Artifact } from "./artifacts.ts";
 
 let shadow: TestApp;
@@ -27,20 +27,21 @@ beforeAll(async () => {
   shadow = await startTestApp();
   alice = await userOf("Alice", "alice@example.com");
   eve = await userOf("Eve", "eve@example.com");
-  const workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
-  const channel = shadow.app.workspaces.createChannel(
-    workspaceId,
-    alice,
-    "trips"
+  const companyId = (await shadow.app.companies.create(alice, "Family")).id;
+  const channel = shadow.app.companies.addChannel(
+    companyId,
+    "trips",
+    alice.id,
+    null
   );
   shadow.faux.setResponses(Array.from({ length: 40 }, () => agent));
   const summary = await shadow.app.threads.create(
-    workspaceId,
+    companyId,
     alice,
     channel.id,
     "Plan the trip"
   );
-  thread = shadow.app.workspaces.thread(summary.id, alice);
+  thread = shadow.app.companies.thread(summary.id, alice);
 });
 afterAll(() => shadow.close());
 
@@ -93,7 +94,7 @@ async function useTool(
 
 function onlyArtifact(): Artifact {
   const artifacts = shadow.app.artifacts.inPlace(
-    thread.workspaceId,
+    thread.companyId,
     thread.channelId,
     alice
   );
@@ -234,7 +235,7 @@ test("visitors keep their own data, read everyone's, and only members change sha
     name: "Alice",
     member: true,
   });
-  // The author of a public artifact does not learn who of another workspace looks.
+  // The author of a public artifact does not learn who of another company looks.
   const stranger = artifacts.call(id, { user: eve }, "me", {}) as {
     id: string;
   };
@@ -287,9 +288,9 @@ test("a members artifact is only for members, and people delete its records, its
   expect(artifacts.dataFor(id, alice)).toEqual([]);
   expect(onlyArtifact().visitors).toBe(0);
   artifacts.delete(id, alice);
-  expect(
-    artifacts.inPlace(thread.workspaceId, thread.channelId, alice)
-  ).toEqual([]);
+  expect(artifacts.inPlace(thread.companyId, thread.channelId, alice)).toEqual(
+    []
+  );
   expect(() => artifacts.open(id, { user: alice })).toThrow("Not found");
   // Nothing is removed: the artifact, its records, and its visitors stay, marked deleted.
   const kept = (table: string, column: string) =>
@@ -336,7 +337,7 @@ test("an artifact keeps a limited number of visitors and bytes, and gets them ba
   });
   const visitors = () =>
     artifacts
-      .inPlace(thread.workspaceId, thread.channelId, alice)
+      .inPlace(thread.companyId, thread.channelId, alice)
       .find((artifact) => artifact.id === id)!.visitors;
   expect(visitors()).toBe(10_000);
 
@@ -421,17 +422,18 @@ test("the content policy and the runtime start every page, before any of the age
 });
 
 test("an artifact belongs to its channel: other threads see it after its thread is settled, and it goes with a merge", async () => {
-  const { artifacts, threads, workspaces } = shadow.app;
-  const workspaceId = (await workspaces.create(alice, "Kitchen")).id;
-  const recipes = workspaces.createChannel(workspaceId, alice, "recipes");
+  const { artifacts, threads, companies } = shadow.app;
+  const companyId = (await companies.create(alice, "Kitchen")).id;
+  // Only a private channel merges away.
+  const recipes = companies.createChannel(companyId, alice, "recipes");
   const made = await threads.create(
-    workspaceId,
+    companyId,
     alice,
     recipes.id,
     "Save banana bread"
   );
   const banana = artifacts.create(
-    workspaces.thread(made.id, alice),
+    companies.thread(made.id, alice),
     recipes.id,
     {
       title: "Banana bread",
@@ -439,25 +441,25 @@ test("an artifact belongs to its channel: other threads see it after its thread 
       requestKey: crypto.randomUUID(),
     }
   );
-  workspaces.setThreadSettled(workspaceId, made.id, alice, true);
-  await threads.create(workspaceId, alice, recipes.id, "Make it vegan");
+  companies.setThreadSettled(companyId, made.id, alice, true);
+  await threads.create(companyId, alice, recipes.id, "Make it vegan");
   expect(
     artifacts
-      .inPlace(workspaceId, recipes.id, alice)
+      .inPlace(companyId, recipes.id, alice)
       .map((artifact) => artifact.id)
   ).toEqual([banana.id]);
   expect(artifacts.get(banana.id, alice).channelId).toBe(recipes.id);
-  expect(() => artifacts.inPlace(workspaceId, recipes.id, eve)).toThrow(
+  expect(() => artifacts.inPlace(companyId, recipes.id, eve)).toThrow(
     "Not found"
   );
 
-  const general = workspaces
-    .channels(workspaceId, alice)
+  const general = companies
+    .channels(companyId, alice)
     .find((channel) => channel.name === "general")!;
   // The merge waits for the agents of the channel.
   await until(
     () =>
-      threads.merge(workspaceId, alice, recipes.id, general.id).then(
+      threads.merge(companyId, alice, recipes.id, general.id).then(
         () => true,
         () => false
       ),
@@ -465,19 +467,19 @@ test("an artifact belongs to its channel: other threads see it after its thread 
   );
   expect(artifacts.get(banana.id, alice).channelId).toBe(general.id);
   expect(
-    workspaces.channels(workspaceId, alice).map((channel) => channel.name)
+    companies.channels(companyId, alice).map((channel) => channel.name)
   ).toEqual(["general"]);
 });
 
-test("the orchestrator's artifacts belong to the workspace, and an agent puts one in a channel it names", async () => {
+test("the orchestrator's artifacts belong to the company, and an agent puts one in a channel it names", async () => {
   const { artifacts, threads } = shadow.app;
-  const orchestrator = await threads.orchestrator(thread.workspaceId, alice);
+  const orchestrator = await threads.orchestrator(thread.companyId, alice);
   await useTool(
     "artifacts_create",
     { title: "Chores", html: "<p>Dishes</p>" },
     orchestrator.id
   );
-  const [chores] = artifacts.inPlace(thread.workspaceId, null, alice);
+  const [chores] = artifacts.inPlace(thread.companyId, null, alice);
   expect(chores).toMatchObject({
     title: "Chores",
     channelId: null,
@@ -493,7 +495,7 @@ test("the orchestrator's artifacts belong to the workspace, and an agent puts on
   expect(named).toContain("Made the artifact.");
   expect(
     artifacts
-      .inPlace(thread.workspaceId, thread.channelId, alice)
+      .inPlace(thread.companyId, thread.channelId, alice)
       .map((artifact) => artifact.title)
   ).toContain("Packing list");
   expect(
@@ -503,5 +505,5 @@ test("the orchestrator's artifacts belong to the workspace, and an agent puts on
       orchestrator.id
     )
   ).toContain("There is no channel #nowhere.");
-  expect(await useTool("artifacts_list", {})).toContain("The workspace's");
+  expect(await useTool("artifacts_list", {})).toContain("The company's");
 });

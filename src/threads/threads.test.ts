@@ -24,9 +24,9 @@ import {
 import type { Conversation, ConversationId } from "@earendil-works/pi-durable";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import { Browser } from "../browser/browser.ts";
+import type { ThreadRef } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import { Egress } from "../platform/egress.ts";
-import type { ThreadRef } from "../workspaces/workspaces.ts";
 import { Memory } from "./memory.ts";
 import {
   emojiOf,
@@ -55,7 +55,7 @@ const agentInputs: string[] = [];
 /** A turn that waits in a tool call until `release`, then records whose turn it is. */
 const held = {
   release: undefined as (() => void) | undefined,
-  workspaceId: "",
+  companyId: "",
   conversationId: undefined as ConversationId | undefined,
   requesters: [] as (string | undefined)[],
 };
@@ -191,7 +191,7 @@ function agent(context: Context, options?: SimpleStreamOptions) {
     }
     if (last.role === "toolResult") {
       return shadow.app.threads
-        .requester(held.workspaceId, held.conversationId!)
+        .requester(held.companyId, held.conversationId!)
         .then((requester) => {
           held.requesters.push(requester?.id);
           return fauxAssistantMessage("Done.");
@@ -333,9 +333,9 @@ function agent(context: Context, options?: SimpleStreamOptions) {
   return fauxAssistantMessage("Ok.");
 }
 
-async function idle(workspaceId: string, threadId: string) {
-  const thread = shadow.app.workspaces
-    .allThreadsIn(workspaceId)
+async function idle(companyId: string, threadId: string) {
+  const thread = shadow.app.companies
+    .allThreadsIn(companyId)
     .find((candidate) => candidate.id === threadId)!;
   return until(
     () => shadow.app.threads.messages(thread),
@@ -345,9 +345,14 @@ async function idle(workspaceId: string, threadId: string) {
 
 test("an agent starts a thread in another channel, gets the answer back, and cannot keep the exchange going", async () => {
   const inputCount = agentInputs.length;
-  const family = await shadow.app.workspaces.create(alice, "Family");
-  const food = shadow.app.workspaces.createChannel(family.id, alice, "food");
-  const general = shadow.app.workspaces
+  const family = await shadow.app.companies.create(alice, "Family");
+  const food = shadow.app.companies.addChannel(
+    family.id,
+    "food",
+    alice.id,
+    null
+  );
+  const general = shadow.app.companies
     .channels(family.id, alice)
     .find((channel) => channel.name === "general")!;
   const asked = await shadow.app.threads.create(
@@ -358,7 +363,7 @@ test("an agent starts a thread in another channel, gets the answer back, and can
   );
 
   const started = await until(
-    async () => shadow.app.workspaces.channels(family.id, alice),
+    async () => shadow.app.companies.channels(family.id, alice),
     (channels) =>
       channels.find((channel) => channel.id === food.id)!.threads.length === 1
   );
@@ -431,9 +436,14 @@ test("an agent starts a thread in another channel, gets the answer back, and can
 });
 
 test("a thread that reports back leaves the notice to the asker, also for a person who writes in both", async () => {
-  const family = await shadow.app.workspaces.create(alice, "Reporting");
-  const food = shadow.app.workspaces.createChannel(family.id, alice, "food");
-  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const family = await shadow.app.companies.create(alice, "Reporting");
+  const food = shadow.app.companies.addChannel(
+    family.id,
+    "food",
+    alice.id,
+    null
+  );
+  const [general] = shadow.app.companies.channels(family.id, alice);
   const list = await shadow.app.threads.create(
     family.id,
     alice,
@@ -441,7 +451,7 @@ test("a thread that reports back leaves the notice to the asker, also for a pers
     "Hello"
   );
   const listed = () =>
-    shadow.app.threads.messages(shadow.app.workspaces.thread(list.id, alice));
+    shadow.app.threads.messages(shadow.app.companies.thread(list.id, alice));
   await until(listed, (state) => !state.running && state.messages.length === 2);
   const before = shadow.app.notifications.inbox(family.id, alice).notifications;
   const asking = await shadow.app.threads.create(
@@ -468,8 +478,8 @@ test("a thread that reports back leaves the notice to the asker, also for a pers
 });
 
 test("an answer waits while the thread it asked works, and notifies when that thread stops without a report", async () => {
-  const family = await shadow.app.workspaces.create(alice, "Waiting");
-  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const family = await shadow.app.companies.create(alice, "Waiting");
+  const [general] = shadow.app.companies.channels(family.id, alice);
   const asking = await shadow.app.threads.create(
     family.id,
     alice,
@@ -477,14 +487,14 @@ test("an answer waits while the thread it asked works, and notifies when that th
     "Delegate and answer"
   );
   const working = await until(
-    async () => shadow.app.workspaces.channels(family.id, alice)[0]!.threads,
+    async () => shadow.app.companies.channels(family.id, alice)[0]!.threads,
     (threads) => threads.some((thread) => thread.title === "Take your time")
   );
   const asked = working.find((thread) => thread.title === "Take your time")!;
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(asking.id, alice)
+        shadow.app.companies.thread(asking.id, alice)
       ),
     (state) => !state.running && state.messages.length === 2
   );
@@ -504,9 +514,9 @@ test("an answer waits while the thread it asked works, and notifies when that th
 });
 
 test("an answer notifies the person who asked unless a screen of theirs shows the thread, and agents and background work notify too", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Notified");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Notified");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const [general] = shadow.app.companies.channels(home.id, alice);
   const inboxOf = (member: User) =>
     shadow.app.notifications.inbox(home.id, member);
   const asked = await shadow.app.threads.create(
@@ -551,7 +561,7 @@ test("an answer notifies the person who asked unless a screen of theirs shows th
     }),
   ]);
 
-  const thread = shadow.app.workspaces
+  const thread = shadow.app.companies
     .allThreadsIn(home.id)
     .find((candidate) => candidate.id === asked.id)!;
   await shadow.app.threads.instruct(
@@ -573,16 +583,16 @@ test("an answer notifies the person who asked unless a screen of theirs shows th
   ).toMatchObject({ id: bob.id, name: "Bob" });
 });
 
-test("an agent lists the channels of its workspace and cannot reach a thread of another workspace", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Home");
-  const work = await shadow.app.workspaces.create(bob, "Work");
+test("an agent lists the channels of its company and cannot reach a thread of another company", async () => {
+  const home = await shadow.app.companies.create(alice, "Home");
+  const work = await shadow.app.companies.create(bob, "Work");
   const payroll = await shadow.app.threads.create(
     work.id,
     bob,
-    shadow.app.workspaces.channels(work.id, bob)[0]!.id,
+    shadow.app.companies.channels(work.id, bob)[0]!.id,
     "Payroll"
   );
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
 
   const listing = await shadow.app.threads.create(
     home.id,
@@ -605,11 +615,9 @@ test("an agent lists the channels of its workspace and cannot reach a thread of 
   );
   await idle(home.id, tell.id);
   expect(toolResults).toContainEqual(
-    expect.stringContaining(
-      `There is no thread ${payroll.id} in this workspace.`
-    )
+    expect.stringContaining(`There is no thread ${payroll.id} in this company.`)
   );
-  const untouched = shadow.app.workspaces.thread(payroll.id, bob);
+  const untouched = shadow.app.companies.thread(payroll.id, bob);
   expect(
     (await shadow.app.threads.messages(untouched)).messages.map(
       (message) => message.text
@@ -633,9 +641,9 @@ function postForm(
 }
 
 test("an agent runs a script that calls its tools, and only the script's output reaches it", async () => {
-  const garden = await shadow.app.workspaces.create(alice, "Garden");
-  shadow.app.workspaces.createChannel(garden.id, alice, "seeds");
-  const general = shadow.app.workspaces.channels(garden.id, alice)[0]!;
+  const garden = await shadow.app.companies.create(alice, "Garden");
+  shadow.app.companies.addChannel(garden.id, "seeds", alice.id, null);
+  const general = shadow.app.companies.channels(garden.id, alice)[0]!;
 
   const run = await shadow.app.threads.create(
     garden.id,
@@ -652,15 +660,15 @@ test("an agent runs a script that calls its tools, and only the script's output 
 test("files attach to a new thread, a message, and the channel; every thread of the channel sees them; others cannot reach them", async () => {
   const token = await shadow.signIn("Alice", "alice@example.com");
   const outsider = await shadow.signIn("Bob", "bob@example.com");
-  const home = await shadow.app.workspaces.create(alice, "Files");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Files");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
 
   const start = new FormData();
   start.set("channelId", general.id);
   start.set("text", "Read the file");
   start.append("files", new File(["Milk, eggs, bread"], "../shopping.txt"));
   const created = await postForm(
-    `/api/v1/workspaces/${home.id}/threads`,
+    `/api/v1/companies/${home.id}/threads`,
     start,
     {
       authorization: `Bearer ${token}`,
@@ -671,9 +679,9 @@ test("files attach to a new thread, a message, and the channel; every thread of 
   await idle(home.id, id);
   expect(toolResults).toContain("Milk, eggs, bread");
 
-  const filesPath = `/api/v1/workspaces/${home.id}/channels/${general.id}/files`;
+  const filesPath = `/api/v1/companies/${home.id}/channels/${general.id}/files`;
   const filePath = (fileId: string) =>
-    `/api/v1/workspaces/${home.id}/files/${fileId}`;
+    `/api/v1/companies/${home.id}/files/${fileId}`;
   const page = new FormData();
   page.append("files", new File(["<script>alert(1)</script>"], "page.html"));
   const uploaded = await postForm(filesPath, page, {
@@ -699,7 +707,7 @@ test("files attach to a new thread, a message, and the channel; every thread of 
       (file) => file.name
     )
   ).toEqual(["shopping.txt", "page.html", "beach.png"]);
-  const thread = shadow.app.workspaces.thread(id, alice);
+  const thread = shadow.app.companies.thread(id, alice);
   const { messages } = await shadow.app.threads.messages(thread);
   // The agent may answer the last message meanwhile.
   expect(
@@ -751,13 +759,13 @@ test("files attach to a new thread, a message, and the channel; every thread of 
   expect(
     await Array.fromAsync(
       new Bun.Glob(`${files[1]!.id}-*`).scan(
-        `${shadow.app.config.dataDirectory}/workspaces/${thread.workspaceId}/channels/${general.id}/deleted`
+        `${shadow.app.config.dataDirectory}/companies/${thread.companyId}/channels/${general.id}/deleted`
       )
     )
   ).toHaveLength(1);
 
   // A settled thread leaves its files to the channel, where a new thread reads them.
-  shadow.app.workspaces.setThreadSettled(home.id, id, alice, true);
+  shadow.app.companies.setThreadSettled(home.id, id, alice, true);
   await shadow.app.threads.create(home.id, alice, general.id, "Use the list");
   expect(
     (
@@ -768,9 +776,9 @@ test("files attach to a new thread, a message, and the channel; every thread of 
   ).toEqual(["shopping.txt", "beach.png"]);
 });
 
-test("the orchestrator keeps its files in the workspace, and an agent of any channel reads a file by its id", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Budget");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+test("the orchestrator keeps its files in the company, and an agent of any channel reads a file by its id", async () => {
+  const home = await shadow.app.companies.create(alice, "Budget");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   await shadow.app.threads.send(orchestrator.id, alice, "Keep this", [
     new File(["Rent 900"], "budget.txt"),
@@ -786,7 +794,7 @@ test("the orchestrator keeps its files in the workspace, and an agent of any cha
   ).toEqual([]);
   expect(
     await Bun.file(
-      `${shadow.app.config.dataDirectory}/workspaces/${home.id}/files/${budget!.id}-budget.txt`
+      `${shadow.app.config.dataDirectory}/companies/${home.id}/files/${budget!.id}-budget.txt`
     ).text()
   ).toBe("Rent 900");
 
@@ -801,7 +809,7 @@ test("the orchestrator keeps its files in the workspace, and an agent of any cha
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(orchestrator.id, alice)
+        shadow.app.companies.thread(orchestrator.id, alice)
       ),
     (state) => !state.running
   );
@@ -809,8 +817,8 @@ test("the orchestrator keeps its files in the workspace, and an agent of any cha
 
 test("a composer with no file chosen starts a thread and sends a message", async () => {
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const home = await shadow.app.workspaces.create(alice, "No files");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "No files");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const cookie = await shadow.sessionCookie(token);
   // What a browser posts for the composer: its empty file field is a part with `filename=""`.
   const post = (path: string, text: string, channelId?: string) =>
@@ -827,21 +835,21 @@ test("a composer with no file chosen starts a thread and sends a message", async
     );
 
   const created = await post(
-    `/api/v1/workspaces/${home.id}/threads`,
+    `/api/v1/companies/${home.id}/threads`,
     "Hello",
     general.id
   );
   expect(created.status).toBe(200);
   const { id } = (await created.json()) as { id: string };
   await until(
-    () => shadow.app.threads.messages(shadow.app.workspaces.thread(id, alice)),
+    () => shadow.app.threads.messages(shadow.app.companies.thread(id, alice)),
     (state) => !state.running && state.messages.length === 2
   );
   const sent = await post(`/api/v1/threads/${id}/messages`, "Thanks");
   expect(sent.status).toBe(204);
 
   const { messages } = await shadow.app.threads.messages(
-    shadow.app.workspaces.thread(id, alice)
+    shadow.app.companies.thread(id, alice)
   );
   expect(messages.slice(0, 3).map((m) => [m.text, m.files.length])).toEqual([
     ["Hello", 0],
@@ -851,9 +859,9 @@ test("a composer with no file chosen starts a thread and sends a message", async
 });
 
 test("each run counts its usage once for its person, and the owner alone sees everyone's", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Usage");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Usage");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const thread = await shadow.app.threads.create(
     home.id,
     bob,
@@ -880,7 +888,7 @@ test("each run counts its usage once for its person, and the owner alone sees ev
   const after = usageOf(bob).total;
   (
     shadow.app.threads as unknown as {
-      countUsage: (workspaceId: string, threadId: string) => Promise<void>;
+      countUsage: (companyId: string, threadId: string) => Promise<void>;
     }
   ).countUsage(home.id, thread.id);
   await Bun.sleep(50);
@@ -891,7 +899,7 @@ test("each run counts its usage once for its person, and the owner alone sees ev
   expect(usageOf(alice).threads.length).toBeGreaterThan(0);
 
   const response = await shadow.call(
-    `/api/v1/workspaces/${home.id}/usage?days=7`,
+    `/api/v1/companies/${home.id}/usage?days=7`,
     {
       token: await shadow.signIn("Bob", "bob@example.com"),
     }
@@ -907,8 +915,8 @@ test("each run counts its usage once for its person, and the owner alone sees ev
 });
 
 test("a text message steers its author's running turn", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Steer");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Steer");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const thread = await shadow.app.threads.create(
     home.id,
     alice,
@@ -916,8 +924,8 @@ test("a text message steers its author's running turn", async () => {
     "Hold for a voice"
   );
   held.release = undefined;
-  held.workspaceId = home.id;
-  held.conversationId = shadow.app.workspaces.thread(thread.id, alice)
+  held.companyId = home.id;
+  held.conversationId = shadow.app.companies.thread(thread.id, alice)
     .conversationId as ConversationId;
   await until(async () => held.release, Boolean);
   await shadow.app.threads.send(thread.id, alice, "Only the kitchen");
@@ -925,7 +933,7 @@ test("a text message steers its author's running turn", async () => {
   const answered = await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(thread.id, alice)
+        shadow.app.companies.thread(thread.id, alice)
       ),
     (state) => !state.running && state.messages.length >= 4
   );
@@ -940,17 +948,17 @@ test("a text message steers its author's running turn", async () => {
 });
 
 test("a message steers only its author's running turn; another member's waits for the answer", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Shared voice");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Shared voice");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const thread = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
     "Hold for a voice"
   );
-  held.workspaceId = home.id;
-  held.conversationId = shadow.app.workspaces.thread(thread.id, alice)
+  held.companyId = home.id;
+  held.conversationId = shadow.app.companies.thread(thread.id, alice)
     .conversationId as ConversationId;
   await until(async () => held.release, Boolean);
   await shadow.app.threads.send(thread.id, bob, "Read my mail");
@@ -958,7 +966,7 @@ test("a message steers only its author's running turn; another member's waits fo
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(thread.id, alice)
+        shadow.app.companies.thread(thread.id, alice)
       ),
     (state) => !state.running && state.messages.length === 4
   );
@@ -967,7 +975,7 @@ test("a message steers only its author's running turn; another member's waits fo
   expect(
     (
       await shadow.app.threads.messages(
-        shadow.app.workspaces.thread(thread.id, alice)
+        shadow.app.companies.thread(thread.id, alice)
       )
     ).messages.map((message) => message.text)
   ).toEqual(["Hold for a voice", "Done.", "Read my mail", "Ok."]);
@@ -1142,11 +1150,11 @@ test("a stopped turn says so, calls of one tool in a row fold into one row, and 
   expect(answer.work!.endedAt! - answer.work!.startedAt).toBe(3000);
 });
 
-test("the workspace's working stream shows a thread while its agent works, and people stop it", async () => {
+test("the company's working stream shows a thread while its agent works, and people stop it", async () => {
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const family = await shadow.app.workspaces.create(alice, "Busy");
-  const [general] = shadow.app.workspaces.channels(family.id, alice);
-  const stream = await shadow.call(`/api/v1/workspaces/${family.id}/working`, {
+  const family = await shadow.app.companies.create(alice, "Busy");
+  const [general] = shadow.app.companies.channels(family.id, alice);
+  const stream = await shadow.call(`/api/v1/companies/${family.id}/working`, {
     token,
   });
 
@@ -1176,7 +1184,7 @@ test("the workspace's working stream shows a thread while its agent works, and p
   await reader.cancel();
   expect(
     await shadow.app.threads.messages(
-      shadow.app.workspaces.thread(thread.id, alice)
+      shadow.app.companies.thread(thread.id, alice)
     )
   ).toMatchObject({
     running: false,
@@ -1189,7 +1197,7 @@ test("the workspace's working stream shows a thread while its agent works, and p
   const outsider = await shadow.signIn("Eve", "eve@example.com");
   expect(
     (
-      await shadow.call(`/api/v1/workspaces/${family.id}/working`, {
+      await shadow.call(`/api/v1/companies/${family.id}/working`, {
         token: outsider,
       })
     ).status
@@ -1205,8 +1213,8 @@ test("the workspace's working stream shows a thread while its agent works, and p
 });
 
 test("stopping a thread also stops the threads it asked, which still work on its message", async () => {
-  const family = await shadow.app.workspaces.create(alice, "Delegating");
-  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const family = await shadow.app.companies.create(alice, "Delegating");
+  const [general] = shadow.app.companies.channels(family.id, alice);
   const seen: (readonly string[])[] = [];
   const stopWatching = await shadow.app.threads.watchWorking(
     family.id,
@@ -1232,15 +1240,13 @@ test("stopping a thread also stops the threads it asked, which still work on its
   );
   await stopWatching();
   const answer = (
-    await shadow.app.threads.messages(
-      shadow.app.workspaces.thread(asked, alice)
-    )
+    await shadow.app.threads.messages(shadow.app.companies.thread(asked, alice))
   ).messages.at(-1);
   expect(answer).toMatchObject({ agent: true, work: { stopped: true } });
 });
 
 test("each member has an own orchestrator thread, which stays open, out of the channel lists, and private", async () => {
-  const family = await shadow.app.workspaces.create(alice, "Orchestrated");
+  const family = await shadow.app.companies.create(alice, "Orchestrated");
   const [first, again] = await Promise.all([
     shadow.app.threads.orchestrator(family.id, alice),
     shadow.app.threads.orchestrator(family.id, alice),
@@ -1250,11 +1256,11 @@ test("each member has an own orchestrator thread, which stays open, out of the c
     first.id
   );
   expect(
-    shadow.app.workspaces.channels(family.id, alice).flatMap((c) => c.threads)
+    shadow.app.companies.channels(family.id, alice).flatMap((c) => c.threads)
   ).toEqual([]);
 
   const token = await shadow.signIn("Alice", "alice@example.com");
-  const base = `/api/v1/workspaces/${family.id}`;
+  const base = `/api/v1/companies/${family.id}`;
   expect(
     await (await shadow.call(`${base}/orchestrator`, { token })).json()
   ).toEqual({
@@ -1274,10 +1280,10 @@ test("each member has an own orchestrator thread, which stays open, out of the c
   expect(
     (await shadow.call(`${base}/orchestrator`, { token: outsider })).status
   ).toBe(404);
-  await shadow.app.workspaces.addMember(family.id, alice, bob.email);
+  await shadow.app.companies.addMember(family.id, alice, bob.email);
   const bobs = await shadow.app.threads.orchestrator(family.id, bob);
   expect(bobs.id).not.toBe(first.id);
-  expect(() => shadow.app.workspaces.thread(first.id, bob)).toThrow();
+  expect(() => shadow.app.companies.thread(first.id, bob)).toThrow();
   await expect(
     shadow.app.threads.send(first.id, bob, "Read Alice's thread")
   ).rejects.toThrow();
@@ -1288,9 +1294,9 @@ test("each member has an own orchestrator thread, which stays open, out of the c
 });
 
 test("a person's memory has only their own conversation, and search shows nobody else's own thread", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Private");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Private");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const [general] = shadow.app.companies.channels(home.id, alice);
   const alices = await shadow.app.threads.orchestrator(home.id, alice);
   const bobs = await shadow.app.threads.orchestrator(home.id, bob);
   await shadow.app.threads.send(alices.id, alice, "My diary code is 4711");
@@ -1303,7 +1309,7 @@ test("a person's memory has only their own conversation, and search shows nobody
   );
   for (const thread of [
     alices,
-    shadow.app.workspaces.thread(shared.id, alice),
+    shadow.app.companies.thread(shared.id, alice),
   ]) {
     await until(
       () => shadow.app.threads.messages(thread),
@@ -1341,13 +1347,13 @@ test("memory keeps full worker results across rebuilds without copying worker wo
   const directory = await mkdtemp(
     join(tmpdir(), "shadow-conversation-memory-")
   );
-  const home = await shadow.app.workspaces.create(alice, "Reports");
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Reports");
+  const [general] = shadow.app.companies.channels(home.id, alice);
   const first = savingThreads(directory, async () => null);
   let reopened: Threads | undefined;
   try {
     const orchestrator = await first.orchestrator(home.id, alice);
-    const oldDirectory = join(directory, "workspaces", home.id, "memories");
+    const oldDirectory = join(directory, "companies", home.id, "memories");
     await mkdir(oldDirectory, { recursive: true });
     const oldPath = join(oldDirectory, `${orchestrator.id}.sqlite`);
     const oldMemory = new Memory(
@@ -1414,7 +1420,7 @@ test("memory keeps full worker results across rebuilds without copying worker wo
     await first.closeAll();
     const memoryPath = join(
       directory,
-      "workspaces",
+      "companies",
       home.id,
       "threads",
       orchestrator.id,
@@ -1467,16 +1473,11 @@ test("memory keeps full worker results across rebuilds without copying worker wo
 test("a thread moves with its artifacts, its own files, and a note; into a private channel only by its starter, and the others lose it at once", async () => {
   const token = await shadow.signIn("Alice", "alice@example.com");
   const bobToken = await shadow.signIn("Bob", "bob@example.com");
-  const home = await shadow.app.workspaces.create(alice, "Moves");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
-  const work = shadow.app.workspaces.createChannel(home.id, alice, "work");
-  const mine = shadow.app.workspaces.createChannel(
-    home.id,
-    alice,
-    "mine",
-    true
-  );
+  const home = await shadow.app.companies.create(alice, "Moves");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const [general] = shadow.app.companies.channels(home.id, alice);
+  const work = shadow.app.companies.addChannel(home.id, "work", alice.id, null);
+  const mine = shadow.app.companies.createChannel(home.id, alice, "mine");
   const bobs = await shadow.app.threads.orchestrator(home.id, bob);
   const shared = (
     await shadow.app.threads.upload(home.id, general!.id, alice, [
@@ -1498,18 +1499,17 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   );
   for (const id of [trip.id, other.id]) {
     await until(
-      () =>
-        shadow.app.threads.messages(shadow.app.workspaces.thread(id, alice)),
+      () => shadow.app.threads.messages(shadow.app.companies.thread(id, alice)),
       (state) => !state.running && state.messages.length === 2
     );
   }
   shadow.app.artifacts.create(
-    shadow.app.workspaces.thread(trip.id, alice),
+    shadow.app.companies.thread(trip.id, alice),
     general!.id,
     { title: "Rome", html: "<p>Rome</p>", requestKey: `rome:${trip.id}` }
   );
   const move = (threadId: string, channelId: string, as = token) =>
-    shadow.call(`/api/v1/workspaces/${home.id}/threads/${threadId}/channel`, {
+    shadow.call(`/api/v1/companies/${home.id}/threads/${threadId}/channel`, {
       token: as,
       method: "POST",
       body: { channelId },
@@ -1535,7 +1535,7 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
       .map((artifact) => artifact.title)
   ).toEqual(["Rome"]);
   const { messages } = await shadow.app.threads.messages(
-    shadow.app.workspaces.thread(trip.id, alice)
+    shadow.app.companies.thread(trip.id, alice)
   );
   expect([messages.at(-1)?.author, messages.at(-1)?.text]).toEqual([
     "Alice",
@@ -1572,7 +1572,7 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   );
   await until(
     () =>
-      shadow.app.threads.messages(shadow.app.workspaces.thread(busy.id, alice)),
+      shadow.app.threads.messages(shadow.app.companies.thread(busy.id, alice)),
     (state) => state.running
   );
   expect((await move(busy.id, work.id)).status).toBe(409);
@@ -1590,9 +1590,7 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   );
   const answered = await until(
     () =>
-      shadow.app.threads.messages(
-        shadow.app.workspaces.thread(asked.id, alice)
-      ),
+      shadow.app.threads.messages(shadow.app.companies.thread(asked.id, alice)),
     (state) => !state.running && state.messages.length === 3
   );
   // The note comes before the answer of the turn that moved the thread.
@@ -1601,14 +1599,14 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
     "_Moved this thread from #general to #work._",
     "Done.",
   ]);
-  expect(shadow.app.workspaces.thread(asked.id, alice).channelId).toBe(work.id);
+  expect(shadow.app.companies.thread(asked.id, alice).channelId).toBe(work.id);
   expect(
     answered.messages[2]?.work?.steps.map((step) => [step.tool, step.output])
   ).toEqual([["move_thread", expect.stringContaining("to #work.")]]);
 });
 
 test("the orchestrator gets its own instructions, also after they change, and a channel thread gets none of them", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Delegating");
+  const home = await shadow.app.companies.create(alice, "Delegating");
   const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   // An older version of Shadow stored other orchestrator instructions.
   const threads = shadow.app.threads as unknown as {
@@ -1632,14 +1630,14 @@ test("the orchestrator gets its own instructions, also after they change, and a 
     "This thread is an orchestrator: the own thread of one person"
   );
 
-  const [channel] = shadow.app.workspaces.channels(home.id, alice);
+  const [channel] = shadow.app.companies.channels(home.id, alice);
   const created = await shadow.app.threads.create(
     home.id,
     alice,
     channel!.id,
     "Hi"
   );
-  const channelThread = shadow.app.workspaces
+  const channelThread = shadow.app.companies
     .allThreadsIn(home.id)
     .find((candidate) => candidate.id === created.id)!;
   await until(
@@ -1652,8 +1650,8 @@ test("the orchestrator gets its own instructions, also after they change, and a 
 });
 
 test("the soul comes first in an agent's instructions, and the instructions hold only the work", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Souled");
-  const [channel] = shadow.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.companies.create(alice, "Souled");
+  const [channel] = shadow.app.companies.channels(home.id, alice);
   const before = systemPrompts.length;
   const created = await shadow.app.threads.create(
     home.id,
@@ -1661,7 +1659,7 @@ test("the soul comes first in an agent's instructions, and the instructions hold
     channel!.id,
     "Hi"
   );
-  const thread = shadow.app.workspaces
+  const thread = shadow.app.companies
     .allThreadsIn(home.id)
     .find((candidate) => candidate.id === created.id)!;
   await until(
@@ -1680,7 +1678,7 @@ test("the soul comes first in an agent's instructions, and the instructions hold
 
 test("the orchestrator compacts into a view of its memory, and its agent zooms into a message", async () => {
   shadow.faux.appendResponses(Array.from({ length: 40 }, () => agent));
-  const home = await shadow.app.workspaces.create(alice, "Remembering");
+  const home = await shadow.app.companies.create(alice, "Remembering");
   const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   const said = async (text: string, messages: number) => {
     await shadow.app.threads.send(orchestrator.id, alice, text);
@@ -1713,7 +1711,7 @@ test("the orchestrator compacts into a view of its memory, and its agent zooms i
 
 test("the orchestrator compacts after its turn without notifying about the same answer again", async () => {
   shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
-  const home = await shadow.app.workspaces.create(alice, "Compacting");
+  const home = await shadow.app.companies.create(alice, "Compacting");
   const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   const views = memoryViews.length;
   for (const [index, text] of [
@@ -1745,8 +1743,10 @@ test("the orchestrator compacts after its turn without notifying about the same 
 
 test("a quiet orchestrator teaches Shadow what stays private to its person", async () => {
   shadow.faux.appendResponses(Array.from({ length: 4 }, () => agent));
-  const home = await shadow.app.workspaces.create(alice, "Orchestrator memory");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const home = await shadow.app.companies.create(alice, "Orchestrator memory");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  // Only admins manage what Shadow learned; each sees only what their own turns may read.
+  shadow.app.companies.setRole(home.id, alice, bob.id, "admin");
   const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   await shadow.app.threads.send(
     orchestrator.id,
@@ -1784,17 +1784,19 @@ test("a quiet orchestrator teaches Shadow what stays private to its person", asy
 
 test("a quiet thread teaches Shadow about its people and its channel, and Shadow suggests an automation that waits for its person", async () => {
   shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
-  const home = await shadow.app.workspaces.create(alice, "Learning");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const food = shadow.app.workspaces.createChannel(home.id, alice, "food");
-  const general = shadow.app.workspaces
+  const home = await shadow.app.companies.create(alice, "Learning");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  // Only admins manage what Shadow learned; each sees only what their own turns may read.
+  shadow.app.companies.setRole(home.id, alice, bob.id, "admin");
+  const food = shadow.app.companies.addChannel(home.id, "food", alice.id, null);
+  const general = shadow.app.companies
     .channels(home.id, alice)
     .find((channel) => channel.name === "general")!;
   const answered = (threadId: string) =>
     until(
       () =>
         shadow.app.threads.messages(
-          shadow.app.workspaces.thread(threadId, alice)
+          shadow.app.companies.thread(threadId, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
@@ -1805,7 +1807,7 @@ test("a quiet thread teaches Shadow about its people and its channel, and Shadow
     "I am vegetarian, what is for lunch?"
   );
   await answered(lunch.id);
-  shadow.app.workspaces.setThreadSettled(home.id, lunch.id, alice, true);
+  shadow.app.companies.setThreadSettled(home.id, lunch.id, alice, true);
   const elsewhere = await shadow.app.threads.create(
     home.id,
     alice,
@@ -1848,11 +1850,11 @@ test("a quiet thread teaches Shadow about its people and its channel, and Shadow
     channelId: food.id,
     threadId: lunch.id,
   });
-  expect(shadow.app.routines.inWorkspace(home.id, alice.id)).toEqual([]);
+  expect(shadow.app.routines.inCompany(home.id, alice.id)).toEqual([]);
   await shadow.app.agenda.answer(home.id, alice, suggestion!.id, true);
   expect(
     shadow.app.routines
-      .inWorkspace(home.id, alice.id)
+      .inCompany(home.id, alice.id)
       .map((routine) => [routine.name, routine.channelId])
   ).toEqual([["Morning menu", food.id]]);
   expect(shadow.app.agenda.upcoming(home.id, alice).suggestions).toEqual([]);
@@ -1860,7 +1862,7 @@ test("a quiet thread teaches Shadow about its people and its channel, and Shadow
     'Suggested routine "Morning menu": accepted'
   );
   // Later tests tick every routine.
-  for (const routine of shadow.app.routines.inWorkspace(home.id, alice.id)) {
+  for (const routine of shadow.app.routines.inCompany(home.id, alice.id)) {
     shadow.app.routines.delete(routine.id, alice);
   }
 
@@ -1883,9 +1885,9 @@ test("a quiet thread teaches Shadow about its people and its channel, and Shadow
 
 test("a settled thread goes into its channel's brief and summary, which a new thread of the channel reads with the channel's threads", async () => {
   shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
-  const home = await shadow.app.workspaces.create(alice, "Briefs");
-  const food = shadow.app.workspaces.createChannel(home.id, alice, "food");
-  const general = shadow.app.workspaces
+  const home = await shadow.app.companies.create(alice, "Briefs");
+  const food = shadow.app.companies.addChannel(home.id, "food", alice.id, null);
+  const general = shadow.app.companies
     .channels(home.id, alice)
     .find((channel) => channel.name === "general")!;
   const pasta = await shadow.app.threads.create(
@@ -1898,14 +1900,14 @@ test("a settled thread goes into its channel's brief and summary, which a new th
     until(
       () =>
         shadow.app.threads.messages(
-          shadow.app.workspaces.thread(threadId, alice)
+          shadow.app.companies.thread(threadId, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
   await answered(pasta.id);
   expect(await shadow.app.threads.brief(home.id, food.id, alice)).toBeNull();
-  shadow.app.workspaces.setThreadSettled(home.id, pasta.id, alice, true);
-  // Work anywhere in the workspace makes it catch up, and the settled thread needs no quiet time.
+  shadow.app.companies.setThreadSettled(home.id, pasta.id, alice, true);
+  // Work anywhere in the company makes it catch up, and the settled thread needs no quiet time.
   const elsewhere = await shadow.app.threads.create(
     home.id,
     alice,
@@ -1921,7 +1923,7 @@ test("a settled thread goes into its channel's brief and summary, which a new th
     `## Now\n- Pasta tonight [We eat pasta tonight](thread:${pasta.id})`
   );
   expect(
-    shadow.app.workspaces
+    shadow.app.companies
       .channels(home.id, alice)
       .find((channel) => channel.id === food.id)!.summary
   ).toBe("What the family eats.");
@@ -1953,27 +1955,28 @@ test("a settled thread goes into its channel's brief and summary, which a new th
   ).rejects.toThrow();
 });
 
-test("an agent creates, searches, and merges channels, and a merge keeps everything in the other channel", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Channels");
-  const [general] = shadow.app.workspaces.channels(home.id, alice);
-  const asked = await shadow.app.threads.create(
-    home.id,
-    alice,
-    general!.id,
-    "Hello"
+test("an agent creates private channels, searches, and merges them, and a merge keeps everything in the other channel", async () => {
+  const home = await shadow.app.companies.create(alice, "Channels");
+  const [general] = shadow.app.companies.channels(home.id, alice);
+  const desk = shadow.app.companies.createChannel(home.id, alice, "desk");
+  const [shared, asked] = await Promise.all(
+    [general!.id, desk.id].map((channelId) =>
+      shadow.app.threads.create(home.id, alice, channelId, "Hello")
+    )
   );
   const answered = (threadId: string) =>
     until(
       () =>
         shadow.app.threads.messages(
-          shadow.app.workspaces.thread(threadId, alice)
+          shadow.app.companies.thread(threadId, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
-  await answered(asked.id);
-  const ask = async (text: string) => {
+  await answered(shared!.id);
+  await answered(asked!.id);
+  const ask = async (text: string, threadId = asked!.id) => {
     const before = toolResults.length;
-    await shadow.app.threads.send(asked.id, alice, text);
+    await shadow.app.threads.send(threadId, alice, text);
     return (
       await until(
         async () => toolResults,
@@ -1983,15 +1986,20 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
       .slice(before)
       .join("\n");
   };
+  // The channels that every member sees come only from Slack.
+  expect(await ask("Create channel Sales: Deals", shared!.id)).toContain(
+    "the channels that every member sees come from Slack"
+  );
   expect(await ask("Create channel Trips: Family trips and holidays")).toBe(
     "Created #trips."
   );
-  const trips = shadow.app.workspaces
+  const trips = shadow.app.companies
     .channels(home.id, alice)
     .find((channel) => channel.name === "trips")!;
   expect(trips.summary).toBe("Family trips and holidays");
+  expect(trips.ownerId).toBe(alice.id);
   expect(await ask("Search channels summer holidays")).toBe(
-    "#trips: Family trips and holidays"
+    "#trips (private): Family trips and holidays"
   );
   expect(await ask("Search channels dentist")).toBe(
     "No channel matches. list_channels shows them all."
@@ -2017,31 +2025,29 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
   const [uploaded] = await shadow.app.threads.upload(home.id, trips.id, alice, [
     new File(["Tent, stove"], "packing.md"),
   ]);
-  expect(await ask("Merge channel #trips into general")).toBe(
-    "Merged #trips into #general."
+  expect(await ask("Merge channel #trips into desk")).toBe(
+    "Merged #trips into #desk."
   );
   expect(
-    shadow.app.workspaces
-      .channels(home.id, alice)
-      .map((channel) => channel.name)
-  ).toEqual(["general"]);
-  // The thread, the file that no thread mentions, and the routine go to #general; nothing is lost.
-  expect(shadow.app.workspaces.thread(packing.id, alice).channelId).toBe(
-    general!.id
+    shadow.app.companies.channels(home.id, alice).map((channel) => channel.name)
+  ).toEqual(["general", "desk"]);
+  // The thread, the file that no thread mentions, and the routine go to #desk; nothing is lost.
+  expect(shadow.app.companies.thread(packing.id, alice).channelId).toBe(
+    desk.id
   );
   expect(
     (
       await shadow.app.threads.files({
-        workspaceId: home.id,
-        channelId: general!.id,
+        companyId: home.id,
+        channelId: desk.id,
       })
     ).map((file) => file.id)
   ).toContain(uploaded!.id);
   expect(
     shadow.app.routines
-      .inWorkspace(home.id, null)
+      .inCompany(home.id, alice.id)
       .map((routine) => routine.channelId)
-  ).toEqual([general!.id]);
+  ).toEqual([desk.id]);
   expect(
     shadow.app.database
       .query(
@@ -2057,9 +2063,12 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
   expect(await ask("Merge channel dentist into general")).toContain(
     "There is no channel #dentist. list_channels shows the channels."
   );
+  expect(await ask("Merge channel general into desk")).toContain(
+    "copies a Slack channel"
+  );
 
   // A private channel goes to every member only once its owner allows it.
-  shadow.app.workspaces.createChannel(home.id, alice, "notes", true);
+  shadow.app.companies.createChannel(home.id, alice, "notes");
   const merged = ask("Merge channel notes into general");
   const [pending] = await until(
     async () => shadow.app.threads.approvalsFor(home.id, alice),
@@ -2070,9 +2079,7 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
     approverId: alice.id,
   });
   expect(
-    shadow.app.workspaces
-      .channels(home.id, alice)
-      .map((channel) => channel.name)
+    shadow.app.companies.channels(home.id, alice).map((channel) => channel.name)
   ).toContain("notes");
   shadow.app.threads.answerApproval(
     pending!.threadId,
@@ -2083,47 +2090,45 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
   expect(await merged).toBe("Merged #notes into #general.");
 });
 
-test("people merge a channel into another; the orchestrator moves with it, and a shared channel stays shared", async () => {
-  const family = await shadow.app.workspaces.create(alice, "Moving");
-  const [general] = shadow.app.workspaces.channels(family.id, alice);
-  const food = shadow.app.workspaces.createChannel(family.id, alice, "food");
-  const mine = shadow.app.workspaces.createChannel(
+test("people merge only a private channel into another; a channel that every member sees stays", async () => {
+  const family = await shadow.app.companies.create(alice, "Moving");
+  const [general] = shadow.app.companies.channels(family.id, alice);
+  const food = shadow.app.companies.addChannel(
     family.id,
-    alice,
-    "mine",
-    true
+    "food",
+    alice.id,
+    null
   );
+  const mine = shadow.app.companies.createChannel(family.id, alice, "mine");
   const orchestrator = await shadow.app.threads.orchestrator(family.id, alice);
   expect(orchestrator.channelId).toBe(general!.id);
 
   const token = await shadow.signIn("Alice", "alice@example.com");
   const outsider = await shadow.signIn("Bob", "bob@example.com");
   const merge = (channelId: string, into: string, as = token) =>
-    shadow.call(`/api/v1/workspaces/${family.id}/channels/${channelId}/merge`, {
+    shadow.call(`/api/v1/companies/${family.id}/channels/${channelId}/merge`, {
       method: "POST",
       token: as,
       body: { into },
     });
   expect((await merge(general!.id, food.id, outsider)).status).toBe(404);
+  expect((await merge(general!.id, food.id)).status).toBe(403);
   expect((await merge(food.id, mine.id)).status).toBe(403);
-  expect((await merge(general!.id, food.id)).status).toBe(204);
-  const moved = shadow.app.workspaces.orchestratorOf(family.id, alice.id)!;
-  expect(moved.channelId).toBe(food.id);
-  expect(shadow.app.workspaces.thread(moved.id, alice).id).toBe(
-    orchestrator.id
-  );
   // A private channel merges into a shared one.
   expect((await merge(mine.id, food.id)).status).toBe(204);
   expect(
-    shadow.app.workspaces
+    shadow.app.companies
       .channels(family.id, alice)
       .map((channel) => channel.name)
-  ).toEqual(["food"]);
+  ).toEqual(["general", "food"]);
+  expect(shadow.app.companies.orchestratorOf(family.id, alice.id)!.id).toBe(
+    orchestrator.id
+  );
 });
 
 test("save_file keeps the browser's screenshot and a file from the web in the channel", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Saves");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Saves");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const web = Bun.serve({
     port: 0,
     fetch: (request) => {
@@ -2159,7 +2164,7 @@ test("save_file keeps the browser's screenshot and a file from the web in the ch
     await save({ url: `${web.url}`, name: "front page.html" });
 
     const files = await threads.files({
-      workspaceId: home.id,
+      companyId: home.id,
       channelId: general.id,
     });
     const saved = await Promise.all(
@@ -2185,8 +2190,8 @@ test("save_file keeps the browser's screenshot and a file from the web in the ch
 });
 
 test("save_file refuses what is not an http file under 100 MB, stops reading a body at the limit, and leaves nothing of a failed file", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Refusals");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Refusals");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   let endlessChunks = 0;
   const web = Bun.serve({
     port: 0,
@@ -2252,7 +2257,7 @@ test("save_file refuses what is not an http file under 100 MB, stops reading a b
       await readdir(
         join(
           dataDirectory,
-          "workspaces",
+          "companies",
           home.id,
           "channels",
           general.id,
@@ -2268,8 +2273,8 @@ test("save_file refuses what is not an http file under 100 MB, stops reading a b
 });
 
 test("save_file writes text and prints an artifact", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Documents");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Documents");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const printed: string[] = [];
   const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-save-"));
   const threads = savingThreads(dataDirectory, async () => null, {
@@ -2289,8 +2294,8 @@ test("save_file writes text and prints an artifact", async () => {
     );
     const invite = shadow.app.artifacts.create(
       {
-        ...shadow.app.workspaces.allThreadsIn(home.id)[0]!,
-        workspaceId: home.id,
+        ...shadow.app.companies.allThreadsIn(home.id)[0]!,
+        companyId: home.id,
       },
       general.id,
       { title: "Party invite", html: "<h1>Party</h1>", requestKey: "invite" }
@@ -2304,10 +2309,10 @@ test("save_file writes text and prints an artifact", async () => {
     );
     expect(
       await ask(`Save ${JSON.stringify({ artifact: "no-such-thing" })}`)
-    ).toContain("There is no artifact no-such-thing in this workspace.");
+    ).toContain("There is no artifact no-such-thing in this company.");
 
     const files = await threads.files({
-      workspaceId: home.id,
+      companyId: home.id,
       channelId: general.id,
     });
     const saved = await Promise.all(
@@ -2333,7 +2338,7 @@ test("save_file writes text and prints an artifact", async () => {
       await ask(`Delete ${JSON.stringify({ file: files[1]!.id })}`)
     ).toContain(`There is no file ${files[1]!.id} in this channel.`);
     const left = await threads.files({
-      workspaceId: home.id,
+      companyId: home.id,
       channelId: general.id,
     });
     expect(left.map((file) => [file.id, file.name])).toEqual([
@@ -2355,16 +2360,11 @@ test("save_file writes text and prints an artifact", async () => {
 });
 
 test("the file tools work in another channel that the thread's person sees, never in another person's private one", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Files across");
-  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
-  const work = shadow.app.workspaces.createChannel(
-    home.id,
-    alice,
-    "work",
-    true
-  );
-  shadow.app.workspaces.createChannel(home.id, bob, "bobs", true);
+  const home = await shadow.app.companies.create(alice, "Files across");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
+  const work = shadow.app.companies.createChannel(home.id, alice, "work");
+  shadow.app.companies.createChannel(home.id, bob, "bobs");
   const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-across-"));
   const threads = savingThreads(dataDirectory, async () => null);
   try {
@@ -2379,12 +2379,12 @@ test("the file tools work in another channel that the thread's person sees, neve
       )
     ).toMatch(/^Saved standup\.md as file \S+ in #work\.$/);
     const [saved] = await threads.files({
-      workspaceId: home.id,
+      companyId: home.id,
       channelId: work.id,
     });
     expect(saved).toMatchObject({ name: "standup.md" });
     expect(
-      await threads.files({ workspaceId: home.id, channelId: general.id })
+      await threads.files({ companyId: home.id, channelId: general.id })
     ).toEqual([]);
     expect(
       await ask('Run code: text(await tools.list_files({ channel: "work" }));')
@@ -2420,8 +2420,8 @@ test("the file tools work in another channel that the thread's person sees, neve
 });
 
 test("a script gets a connector tool's long answer whole, and an error for one that is too big", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Long answers");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Long answers");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-long-"));
   const threads = savingThreads(
     dataDirectory,
@@ -2462,14 +2462,9 @@ test("a script gets a connector tool's long answer whole, and an error for one t
 });
 
 test("a script saves a tool's long answer as a file and gives a file to a tool, and the model sees neither text", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Piping");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
-  const work = shadow.app.workspaces.createChannel(
-    home.id,
-    alice,
-    "work",
-    true
-  );
+  const home = await shadow.app.companies.create(alice, "Piping");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
+  const work = shadow.app.companies.createChannel(home.id, alice, "work");
   const counted: number[] = [];
   const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-piping-"));
   const threads = savingThreads(
@@ -2508,7 +2503,7 @@ test("a script saves a tool's long answer as a file and gives a file to a tool, 
     );
     await answeredIn(threads, home.id, summary.id);
     const [file] = await threads.files({
-      workspaceId: home.id,
+      companyId: home.id,
       channelId: work.id,
     });
     const { path } = await threads.file(home.id, alice, file!.id);
@@ -2524,8 +2519,8 @@ test("a script saves a tool's long answer as a file and gives a file to a tool, 
 });
 
 test("a connector tool saves a file it brings to the channel of the thread", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Bringing");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Bringing");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-bringing-"));
   const threads = savingThreads(
     dataDirectory,
@@ -2558,7 +2553,7 @@ test("a connector tool saves a file it brings to the channel of the thread", asy
     );
     await answeredIn(threads, home.id, summary.id);
     const [file] = await threads.files({
-      workspaceId: home.id,
+      companyId: home.id,
       channelId: general.id,
     });
     expect(file).toMatchObject({ name: "photo.jpg" });
@@ -2574,9 +2569,9 @@ test("a connector tool saves a file it brings to the channel of the thread", asy
 test.each(["message"] as const)(
   "a connector tool asks its person before every call (%s)",
   async () => {
-    const home = await shadow.app.workspaces.create(alice, "Sending");
-    await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-    const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+    const home = await shadow.app.companies.create(alice, "Sending");
+    await shadow.app.companies.addMember(home.id, alice, bob.email);
+    const general = shadow.app.companies.channels(home.id, alice)[0]!;
     const sent: string[] = [];
     const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-sending-"));
     const threads = savingThreads(
@@ -2611,7 +2606,7 @@ test.each(["message"] as const)(
         general.id,
         requestText
       );
-      const thread = shadow.app.workspaces
+      const thread = shadow.app.companies
         .allThreadsIn(home.id)
         .find((candidate) => candidate.id === summary.id)!;
       const waiting = (text: string) =>
@@ -2645,8 +2640,8 @@ test.each(["message"] as const)(
 );
 
 test("an approval's route answers 400 for a malformed answer and 404 for an approval or thread the person cannot see", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Approval route");
-  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.companies.create(alice, "Approval route");
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const thread = await shadow.app.threads.create(
     home.id,
     alice,
@@ -2684,8 +2679,8 @@ test("every codemode script gets a deadline of at most 15 minutes", () => {
 });
 
 test("a script runs with its deadline and stops at it", async () => {
-  const garden = await shadow.app.workspaces.create(alice, "Deadlines");
-  const general = shadow.app.workspaces.channels(garden.id, alice)[0]!;
+  const garden = await shadow.app.companies.create(alice, "Deadlines");
+  const general = shadow.app.companies.channels(garden.id, alice)[0]!;
   const run = await shadow.app.threads.create(
     garden.id,
     alice,
@@ -2696,7 +2691,7 @@ test("a script runs with its deadline and stops at it", async () => {
   expect(toolResults.at(-1)).toContain("timed out");
 });
 
-/** Threads over the test app's workspaces and model, with a browser that the test gives. */
+/** Threads over the test app's companies and model, with a browser that the test gives. */
 function savingThreads(
   dataDirectory: string,
   screenshot: () => Promise<Uint8Array | null>,
@@ -2715,7 +2710,7 @@ function savingThreads(
   return new Threads(
     dataDirectory,
     shadow.app.llm,
-    shadow.app.workspaces,
+    shadow.app.companies,
     integrations,
     shadow.app.artifacts,
     {
@@ -2729,14 +2724,8 @@ function savingThreads(
     shadow.app.notifications,
     {
       sourceRead,
-      audit: (workspaceId, ownerId, trace, stage, data) =>
-        shadow.app.intake.audit.record(
-          trace,
-          stage,
-          workspaceId,
-          ownerId,
-          data
-        ),
+      audit: (companyId, ownerId, trace, stage, data) =>
+        shadow.app.intake.audit.record(trace, stage, companyId, ownerId, data),
       changed: () => undefined,
       moved: () => undefined,
       merged: () => undefined,
@@ -2750,9 +2739,9 @@ function savingThreads(
   );
 }
 
-function answeredIn(threads: Threads, workspaceId: string, threadId: string) {
-  const thread = shadow.app.workspaces
-    .allThreadsIn(workspaceId)
+function answeredIn(threads: Threads, companyId: string, threadId: string) {
+  const thread = shadow.app.companies
+    .allThreadsIn(companyId)
     .find((candidate) => candidate.id === threadId)!;
   return until(
     () => threads.messages(thread),
@@ -2761,16 +2750,16 @@ function answeredIn(threads: Threads, workspaceId: string, threadId: string) {
 }
 
 test("the model calls the core tools itself, and every other tool from codemode scripts by namespace", async () => {
-  const workspace = await shadow.app.workspaces.create(alice, "Namespaces");
-  const [channel] = shadow.app.workspaces.channels(workspace.id, alice);
+  const company = await shadow.app.companies.create(alice, "Namespaces");
+  const [channel] = shadow.app.companies.channels(company.id, alice);
   const before = systemPrompts.length;
   const summary = await shadow.app.threads.create(
-    workspace.id,
+    company.id,
     alice,
     channel!.id,
     "Hi"
   );
-  const thread = shadow.app.workspaces.thread(summary.id, alice);
+  const thread = shadow.app.companies.thread(summary.id, alice);
   await until(
     () => shadow.app.threads.messages(thread),
     (state) => !state.running && state.messages.length === 2
@@ -2811,13 +2800,8 @@ test("a channel's emoji is the first emoji of the model's answer", () => {
 });
 
 test("a source destination request reuses the same thread after a retry", async () => {
-  const home = await shadow.app.workspaces.create(alice, "Destination retry");
-  const channel = shadow.app.workspaces.createChannel(
-    home.id,
-    alice,
-    "repairs",
-    true
-  );
+  const home = await shadow.app.companies.create(alice, "Destination retry");
+  const channel = shadow.app.companies.createChannel(home.id, alice, "repairs");
   const request = { id: "intake:subject:repair-review", personId: alice.id };
   const first = await shadow.app.threads.startAgentThread(
     home.id,
@@ -2833,5 +2817,5 @@ test("a source destination request reuses the same thread after a retry", async 
   );
   expect(retry.id).toBe(first.id);
   expect(retry.conversationId).toBe(first.conversationId);
-  expect(shadow.app.workspaces.threadsIn(home.id, alice.id)).toHaveLength(1);
+  expect(shadow.app.companies.threadsIn(home.id, alice.id)).toHaveLength(1);
 });

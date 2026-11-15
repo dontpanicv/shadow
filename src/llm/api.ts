@@ -36,23 +36,23 @@ export const llmApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/workspaces/:workspace/usage",
+    "/api/v1/companies/:company/usage",
     api(async ({ app, user, params, request }) => {
-      const workspace = app.workspaces.requireMember(params.workspace!, user);
+      const company = app.companies.requireMember(params.company!, user);
       const days = Number(new URL(request.url).searchParams.get("days"));
-      const report = app.llm.usage(workspace.id, user, days);
+      const report = app.llm.usage(company.id, user, days);
       // Titles only of the threads the person sees; the owner's totals still count the others.
       const titles = new Map(
-        app.workspaces
-          .threadsIn(workspace.id, user.id)
+        app.companies
+          .threadsIn(company.id, user.id)
           .filter(
             (thread) => thread.ownerId === null || thread.ownerId === user.id
           )
           .map((thread) => [thread.id, thread.title])
       );
       const names = new Map(
-        app.workspaces
-          .members(workspace.id, user)
+        app.companies
+          .members(company.id, user)
           .map((member) => [member.userId, member.name])
       );
       return json({

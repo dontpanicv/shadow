@@ -46,20 +46,20 @@ function urlTransform(url: string, key: string): string {
  * fenced `card` block shows its cards.
  *
  * @example
- * <Markdown text="See ![the screen](file:0199)" workspaceId={workspaceId} />
+ * <Markdown text="See ![the screen](file:0199)" companyId={companyId} />
  */
 export default function Markdown({
   text,
-  workspaceId,
+  companyId,
 }: {
   text: string;
-  workspaceId: string;
+  companyId: string;
 }) {
   return (
     <ReactMarkdown
       components={{
         a: ({ href, children }) => (
-          <MarkdownLink href={href} workspaceId={workspaceId}>
+          <MarkdownLink companyId={companyId} href={href}>
             {children}
           </MarkdownLink>
         ),
@@ -80,8 +80,8 @@ export default function Markdown({
         img: ({ src, alt }) => (
           <MarkdownPicture
             alt={alt}
+            companyId={companyId}
             src={typeof src === "string" ? src : undefined}
-            workspaceId={workspaceId}
           />
         ),
       }}
@@ -96,24 +96,24 @@ export default function Markdown({
 
 function MarkdownLink({
   href,
-  workspaceId,
+  companyId,
   children,
 }: {
   href: string | undefined;
-  workspaceId: string;
+  companyId: string;
   children: ReactNode;
 }) {
   const [, scheme, id] = href?.match(SCHEME) ?? [];
   if (scheme === "thread") {
     return (
-      <ThreadLink threadId={id!} workspaceId={workspaceId}>
+      <ThreadLink companyId={companyId} threadId={id!}>
         {children}
       </ThreadLink>
     );
   }
   if (scheme === "file") {
     return (
-      <a {...previewLink([{ href: fileHref(workspaceId, id!) }], 0)}>
+      <a {...previewLink([{ href: fileHref(companyId, id!) }], 0)}>
         {children}
       </a>
     );
@@ -138,11 +138,11 @@ function MarkdownLink({
 function MarkdownPicture({
   src,
   alt,
-  workspaceId,
+  companyId,
 }: {
   src: string | undefined;
   alt: string | undefined;
-  workspaceId: string;
+  companyId: string;
 }) {
   const [, scheme, id] = src?.match(SCHEME) ?? [];
   if (scheme === "artifact") {
@@ -164,7 +164,7 @@ function MarkdownPicture({
       </a>
     );
   }
-  const url = scheme === "file" ? fileHref(workspaceId, id!) : src;
+  const url = scheme === "file" ? fileHref(companyId, id!) : src;
   return url ? (
     // biome-ignore lint/correctness/useImageSize: an agent's picture has no known size
     <img alt={alt} loading="lazy" src={url} />

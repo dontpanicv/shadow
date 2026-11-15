@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { authDatabase } from "../../test/database.ts";
+import type { Companies } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import { migrate } from "../platform/database.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 import { Places } from "./places.ts";
 
 const alice: User = { id: "alice", name: "Alice", email: "alice@example.com" };
@@ -59,19 +59,19 @@ function nominatim(rows: readonly object[]) {
 function setup(request?: typeof fetch) {
   const database = authDatabase();
   migrate(database);
-  const workspaces = {
-    requireMember(workspaceId: string, user: User) {
-      if (workspaceId !== "home" || ![alice.id, bob.id].includes(user.id)) {
+  const companies = {
+    requireMember(companyId: string, user: User) {
+      if (companyId !== "home" || ![alice.id, bob.id].includes(user.id)) {
         throw new Error("Not found");
       }
-      return { id: "home", name: "Home", role: "owner" };
+      return { id: "home", name: "Home", role: "admin" };
     },
     members: () => [
       { userId: alice.id, name: alice.name },
       { userId: bob.id, name: bob.name },
     ],
-  } as unknown as Pick<Workspaces, "members" | "requireMember">;
-  return { database, places: new Places(database, workspaces, request) };
+  } as unknown as Pick<Companies, "members" | "requireMember">;
+  return { database, places: new Places(database, companies, request) };
 }
 
 test("a place is private to its owner until they share it, and only they change it", () => {

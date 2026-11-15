@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
+import type { Companies, ThreadRef } from "../companies/companies.ts";
 import type {
   Integrations,
   SourceRead,
@@ -16,7 +17,6 @@ import { notFound } from "../platform/errors.ts";
 import type { Reminders } from "../reminders/reminders.ts";
 import type { Indexer } from "../search/search.ts";
 import type { FileRef, Threads } from "../threads/threads.ts";
-import type { ThreadRef, Workspaces } from "../workspaces/workspaces.ts";
 import { IntakeArchives } from "./archive.ts";
 import {
   type Assessment,
@@ -83,8 +83,8 @@ export type IntakeThreads = Pick<
   | "orchestrator"
   | "learnedFor"
 >;
-export type IntakeWorkspaces = Pick<
-  Workspaces,
+export type IntakeCompanies = Pick<
+  Companies,
   | "ids"
   | "requireMember"
   | "agentMember"
@@ -100,7 +100,7 @@ export type IntakeLlm = Pick<Llm, "complete">;
 
 export interface Delivery {
   id: string;
-  workspace_id: string;
+  company_id: string;
   owner_id: string;
   thread_id: string | null;
   body: string;
@@ -124,7 +124,7 @@ export class Intake {
   private readonly stopping = new AbortController();
   /** The latest failure of each piece of work and how many came in a row, so retries wait longer and longer. */
   private readonly failures = new Map<string, { at: number; count: number }>();
-  /** The waiting updates that a person's running turn took, by workspace, person, and thread, until it answers. */
+  /** The waiting updates that a person's running turn took, by company, person, and thread, until it answers. */
   private readonly claims = new Map<string, string[]>();
   /** Failed morning reviews by day and person; after two, the review posts each update without a plan. */
   private readonly morningFailures = new Map<string, number>();
@@ -136,7 +136,7 @@ export class Intake {
 
   constructor(
     private readonly database: Database,
-    private readonly workspaces: IntakeWorkspaces,
+    private readonly companies: IntakeCompanies,
     private readonly integrations: IntakeIntegrations,
     private readonly threads: IntakeThreads,
     search: IntakeSearch,
@@ -147,23 +147,23 @@ export class Intake {
   ) {
     this.recall = new IntakeRecall(
       database,
-      workspaces,
+      companies,
       integrations,
       threads,
       search,
       audit
     );
-    this.destinations = new IntakeDestinations(database, workspaces, threads);
+    this.destinations = new IntakeDestinations(database, companies, threads);
     this.following = new Following(
       database,
-      workspaces,
+      companies,
       this.recall,
       audit,
       llm
     );
     this.archives = new IntakeArchives(
       database,
-      workspaces,
+      companies,
       integrations,
       threads,
       audit,
@@ -171,7 +171,7 @@ export class Intake {
     );
     this.sourceReads = new SourceReads(
       database,
-      workspaces,
+      companies,
       integrations,
       audit,
       (credential, item) => this.keepRead(credential, item)
@@ -209,30 +209,30 @@ export class Intake {
       }
       const people = new Map(
         credentials.map((credential) => [
-          `${credential.workspaceId}:${credential.ownerId}`,
+          `${credential.companyId}:${credential.ownerId}`,
           credential,
         ])
       );
       for (const person of people.values()) {
-        const owner = this.owner(person.workspaceId, person.ownerId);
+        const owner = this.owner(person.companyId, person.ownerId);
         if (!owner) {
           continue;
         }
         try {
-          await this.archives.maintain(person.workspaceId, owner);
+          await this.archives.maintain(person.companyId, owner);
         } catch (error) {
           this.record(
             "archives",
             "archive.error",
-            person.workspaceId,
+            person.companyId,
             owner.id,
             { error: String(error) },
             now
           );
         }
-        await this.process(person.workspaceId, owner, now);
-        await this.reconcileSourceReads(person.workspaceId, owner, now);
-        await this.checkDue(person.workspaceId, owner, credentials, now);
+        await this.process(person.companyId, owner, now);
+        await this.reconcileSourceReads(person.companyId, owner, now);
+        await this.checkDue(person.companyId, owner, credentials, now);
       }
       await this.deliver(now, new Set(people.keys()));
     } finally {
@@ -247,7 +247,7 @@ export class Intake {
     now: number,
     force = false
   ): Promise<void> {
-    if (!this.owner(credential.workspaceId, credential.ownerId)) {
+    if (!this.owner(credential.companyId, credential.ownerId)) {
       return;
     }
     const source = this.database
@@ -261,16 +261,16 @@ export class Intake {
     this.record(
       trace,
       "collect.request",
-      credential.workspaceId,
+      credential.companyId,
       credential.ownerId,
       { integration: credential.integration, account: credential.label, since },
       now
     );
     this.database
       .query(
-        "INSERT INTO intake_source(credential_id,workspace_id,owner_id,attempted_at) VALUES(?,?,?,?) ON CONFLICT(credential_id) DO UPDATE SET attempted_at=excluded.attempted_at"
+        "INSERT INTO intake_source(credential_id,company_id,owner_id,attempted_at) VALUES(?,?,?,?) ON CONFLICT(credential_id) DO UPDATE SET attempted_at=excluded.attempted_at"
       )
-      .run(credential.id, credential.workspaceId, credential.ownerId, now);
+      .run(credential.id, credential.companyId, credential.ownerId, now);
     try {
       let complete = true;
       let through = now;
@@ -301,7 +301,7 @@ export class Intake {
           this.record(
             trace,
             `collect.${stage}`,
-            credential.workspaceId,
+            credential.companyId,
             credential.ownerId,
             data,
             now
@@ -317,7 +317,7 @@ export class Intake {
       this.record(
         trace,
         "collect.result",
-        credential.workspaceId,
+        credential.companyId,
         credential.ownerId,
         items,
         now
@@ -342,7 +342,7 @@ export class Intake {
       this.record(
         trace,
         "collect.error",
-        credential.workspaceId,
+        credential.companyId,
         credential.ownerId,
         { message },
         now
@@ -411,12 +411,12 @@ export class Intake {
       .run(Date.now(), credential.id, item.id, version);
     this.database
       .query(
-        "INSERT INTO intake_item(id,credential_id,workspace_id,owner_id,source_id,version,payload,at,assessed_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(credential_id,source_id,version) DO UPDATE SET superseded_at=NULL,assessed_at=excluded.assessed_at,read_at=NULL,reading=NULL WHERE intake_item.superseded_at IS NOT NULL"
+        "INSERT INTO intake_item(id,credential_id,company_id,owner_id,source_id,version,payload,at,assessed_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(credential_id,source_id,version) DO UPDATE SET superseded_at=NULL,assessed_at=excluded.assessed_at,read_at=NULL,reading=NULL WHERE intake_item.superseded_at IS NOT NULL"
       )
       .run(
         id,
         credential.id,
-        credential.workspaceId,
+        credential.companyId,
         credential.ownerId,
         item.id,
         version,
@@ -459,12 +459,12 @@ export class Intake {
    * observations out of the files that hold them.
    */
   async deleteUpdate(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     id: string
   ): Promise<void> {
-    const deleted = this.following.deleteUpdate(workspaceId, owner, id);
-    await this.archives.forget(workspaceId, owner, deleted);
+    const deleted = this.following.deleteUpdate(companyId, owner, id);
+    await this.archives.forget(companyId, owner, deleted);
   }
 
   /** Moves the source archives of channel `from` to channel `to`, whose files moved with it. */
@@ -476,20 +476,20 @@ export class Intake {
 
   /** Only connector code can supply this evidence; agent text is not a source observation. */
   recordSourceRead(thread: ThreadRef, ownerId: string, read: SourceRead): void {
-    const owner = this.owner(thread.workspaceId, ownerId);
+    const owner = this.owner(thread.companyId, ownerId);
     if (owner) {
       this.sourceReads.capture(thread, owner, read, Date.now());
     }
   }
 
   private async reconcileSourceReads(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     now: number,
     threadId?: string
   ): Promise<void> {
     for (const group of this.sourceReads.pending(
-      workspaceId,
+      companyId,
       owner,
       this.recall,
       threadId
@@ -505,12 +505,12 @@ export class Intake {
         continue;
       }
       try {
-        await this.reconcileReadGroup(workspaceId, owner, group, now);
+        await this.reconcileReadGroup(companyId, owner, group, now);
       } catch (error) {
         this.record(
           trace,
           "source.read.error",
-          workspaceId,
+          companyId,
           owner.id,
           { error: String(error) },
           now
@@ -524,7 +524,7 @@ export class Intake {
   }
 
   private async reconcileReadGroup(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     group: ReturnType<SourceReads["pending"]>[number],
     now: number
@@ -533,10 +533,10 @@ export class Intake {
       const fresh = this.recall.evidence(rows);
       const relevant = new Set(
         this.recall
-          .relevantChecks(workspaceId, owner, fresh, [group.threadId])
+          .relevantChecks(companyId, owner, fresh, [group.threadId])
           .map((check) => check.id)
       );
-      const related = this.openChecks(workspaceId, owner).filter(
+      const related = this.openChecks(companyId, owner).filter(
         (check) => check.threadId === group.threadId || relevant.has(check.id)
       );
       for (let offset = 0; offset < related.length; offset += 12) {
@@ -547,26 +547,26 @@ export class Intake {
           trigger: "source_read",
           newEvidenceIds: [],
           evidence: await this.recall.relatedEvidence(
-            workspaceId,
+            companyId,
             owner,
             fresh,
             checks
           ),
-          channels: this.recall.channels(workspaceId, owner),
+          channels: this.recall.channels(companyId, owner),
           threads: await this.recall.context(
-            workspaceId,
+            companyId,
             owner,
             fresh,
             checks,
             group.threadId
           ),
           checks,
-          coverage: this.recall.coverage(workspaceId, owner),
+          coverage: this.recall.coverage(companyId, owner),
         };
         const trace = `source-read:${hash(JSON.stringify([group.threadId, input.evidence, checks]))}`;
         const decisions = await this.assessment(
           trace,
-          workspaceId,
+          companyId,
           owner,
           input,
           now
@@ -574,7 +574,7 @@ export class Intake {
         for (const decision of decisions) {
           await this.apply(
             trace,
-            workspaceId,
+            companyId,
             owner,
             input,
             decision,
@@ -588,18 +588,18 @@ export class Intake {
   }
 
   private async process(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     now: number
   ): Promise<void> {
     const pending = this.recall.visible(
-      workspaceId,
+      companyId,
       owner,
       this.database
         .query(
-          "SELECT * FROM intake_item WHERE workspace_id=? AND owner_id=? AND assessed_at IS NULL AND superseded_at IS NULL AND deleted_at IS NULL ORDER BY at,id LIMIT ?"
+          "SELECT * FROM intake_item WHERE company_id=? AND owner_id=? AND assessed_at IS NULL AND superseded_at IS NULL AND deleted_at IS NULL ORDER BY at,id LIMIT ?"
         )
-        .all(workspaceId, owner.id, BATCH) as ItemRow[]
+        .all(companyId, owner.id, BATCH) as ItemRow[]
     );
     for (const rows of this.batches(pending)) {
       const trace = rows.map((row) => row.id).join(":");
@@ -607,12 +607,12 @@ export class Intake {
         continue;
       }
       try {
-        await this.assessBatch(workspaceId, owner, rows, now);
+        await this.assessBatch(companyId, owner, rows, now);
       } catch (error) {
         this.record(
           trace,
           "assessment.error",
-          workspaceId,
+          companyId,
           owner.id,
           { error: String(error), evidence: rows.map((row) => row.id) },
           now
@@ -659,16 +659,16 @@ export class Intake {
   }
 
   private async assessBatch(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     rows: ItemRow[],
     now: number
   ): Promise<void> {
     const trace = rows.map((row) => row.id).join(":");
     const fresh = this.recall.evidence(rows);
-    const context = await this.recall.context(workspaceId, owner, fresh, []);
+    const context = await this.recall.context(companyId, owner, fresh, []);
     const checks = this.recall.relevantChecks(
-      workspaceId,
+      companyId,
       owner,
       fresh,
       context.map((thread) => thread.id)
@@ -679,19 +679,19 @@ export class Intake {
       trigger: "evidence",
       newEvidenceIds: fresh.map((item) => item.id),
       evidence: await this.recall.relatedEvidence(
-        workspaceId,
+        companyId,
         owner,
         fresh,
         checks
       ),
-      channels: this.recall.channels(workspaceId, owner),
+      channels: this.recall.channels(companyId, owner),
       threads: context,
       checks,
-      coverage: this.recall.coverage(workspaceId, owner),
+      coverage: this.recall.coverage(companyId, owner),
     };
     const decisions = await this.assessment(
       trace,
-      workspaceId,
+      companyId,
       owner,
       input,
       now
@@ -699,7 +699,7 @@ export class Intake {
     for (const decision of decisions) {
       const threadId = await this.apply(
         trace,
-        workspaceId,
+        companyId,
         owner,
         input,
         decision,
@@ -713,7 +713,7 @@ export class Intake {
         )
       ) {
         await this.archive(
-          workspaceId,
+          companyId,
           owner,
           rows.filter((row) => decision.evidence.includes(row.id)),
           { ...decision, threadId }
@@ -725,28 +725,28 @@ export class Intake {
 
   private async assessment(
     trace: string,
-    workspaceId: string,
+    companyId: string,
     owner: User,
     input: AssessmentInput,
     now: number
   ): Promise<Assessment[]> {
-    const corrections = this.following.corrections(workspaceId, owner);
+    const corrections = this.following.corrections(companyId, owner);
     const assessmentTrace = `${trace}:feedback:${new Bun.CryptoHasher("sha256").update(JSON.stringify(corrections)).digest("hex")}`;
     const cached = this.audit.last(
       assessmentTrace,
       "assessment.validated",
-      workspaceId,
+      companyId,
       owner.id
     ) as Assessment[] | undefined;
     if (cached) {
       return cached;
     }
     input.corrections = corrections;
-    input.knowledge = this.knowledge(workspaceId, owner);
+    input.knowledge = this.knowledge(companyId, owner);
     this.record(
       assessmentTrace,
       "assessment.input",
-      workspaceId,
+      companyId,
       owner.id,
       input,
       now
@@ -755,7 +755,7 @@ export class Intake {
       this.record(
         assessmentTrace,
         "model.request",
-        workspaceId,
+        companyId,
         owner.id,
         { system, text },
         now
@@ -765,12 +765,12 @@ export class Intake {
         text,
         this.stopping.signal,
         undefined,
-        { workspaceId, userId: owner.id, source: "intake", threadId: null }
+        { companyId, userId: owner.id, source: "intake", threadId: null }
       );
       this.record(
         assessmentTrace,
         "model.response",
-        workspaceId,
+        companyId,
         owner.id,
         { result },
         now
@@ -779,7 +779,7 @@ export class Intake {
     }, input);
     if (
       JSON.stringify(corrections) !==
-      JSON.stringify(this.following.corrections(workspaceId, owner))
+      JSON.stringify(this.following.corrections(companyId, owner))
     ) {
       throw new Error(
         "The owner corrected a check during this assessment; assess again"
@@ -788,7 +788,7 @@ export class Intake {
     this.record(
       assessmentTrace,
       "assessment.validated",
-      workspaceId,
+      companyId,
       owner.id,
       decision,
       now
@@ -798,7 +798,7 @@ export class Intake {
 
   private async apply(
     trace: string,
-    workspaceId: string,
+    companyId: string,
     owner: User,
     input: AssessmentInput,
     decision: Assessment,
@@ -841,7 +841,7 @@ export class Intake {
             "INSERT INTO intake_context VALUES(?,?,?,?,?,?) ON CONFLICT DO UPDATE SET summary=excluded.summary,source_ids=excluded.source_ids,updated_at=excluded.updated_at"
           )
           .run(
-            workspaceId,
+            companyId,
             owner.id,
             threadId,
             decision.summary,
@@ -856,11 +856,11 @@ export class Intake {
           : afterCalendarDays(source.at, check.afterDays ?? 3);
         const id =
           check.id ??
-          hash(`${workspaceId}:${owner.id}:${check.evidence}:${check.quote}`);
+          hash(`${companyId}:${owner.id}:${check.evidence}:${check.quote}`);
         changedChecks.push(id);
         saveCheck(this.database, check, {
           id,
-          workspaceId,
+          companyId,
           ownerId: owner.id,
           threadId,
           checkAt,
@@ -870,26 +870,26 @@ export class Intake {
       for (const closed of decision.resolved) {
         this.database
           .query(
-            "UPDATE intake_check SET state='resolved',revised_at=? WHERE id=? AND workspace_id=? AND owner_id=?"
+            "UPDATE intake_check SET state='resolved',revised_at=? WHERE id=? AND company_id=? AND owner_id=?"
           )
-          .run(now, closed.id, workspaceId, owner.id);
+          .run(now, closed.id, companyId, owner.id);
         this.database
           .query(
-            "UPDATE intake_delivery SET cancelled_at=? WHERE workspace_id=? AND owner_id=? AND delivered_at IS NULL AND EXISTS(SELECT 1 FROM json_each(check_ids) WHERE value=?)"
+            "UPDATE intake_delivery SET cancelled_at=? WHERE company_id=? AND owner_id=? AND delivered_at IS NULL AND EXISTS(SELECT 1 FROM json_each(check_ids) WHERE value=?)"
           )
-          .run(now, workspaceId, owner.id, closed.id);
+          .run(now, companyId, owner.id, closed.id);
       }
       if (shouldDeliver) {
         const body = `${decision.message}\n\n${decision.evidence.map((id) => sourceLink(evidence.get(id)!)).join("\n")}`;
         this.database
           .query(
-            "INSERT OR IGNORE INTO intake_delivery(id,workspace_id,owner_id,thread_id,body,attention,check_ids,evidence_ids,created_at,notification,subject) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+            "INSERT OR IGNORE INTO intake_delivery(id,company_id,owner_id,thread_id,body,attention,check_ids,evidence_ids,created_at,notification,subject) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
           )
           .run(
             hash(
-              `${workspaceId}:${owner.id}:${destination}:${trace}:${decision.evidence.join(":")}`
+              `${companyId}:${owner.id}:${destination}:${trace}:${decision.evidence.join(":")}`
             ),
-            workspaceId,
+            companyId,
             owner.id,
             threadId,
             body,
@@ -911,7 +911,7 @@ export class Intake {
     this.record(
       trace,
       "state.applied",
-      workspaceId,
+      companyId,
       owner.id,
       { checks: changedChecks, resolved: decision.resolved, threadId },
       now
@@ -920,19 +920,19 @@ export class Intake {
   }
 
   private async checkDue(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     credentials: WatchedCredential[],
     now: number
   ): Promise<void> {
-    const due = this.openChecks(workspaceId, owner).filter(
+    const due = this.openChecks(companyId, owner).filter(
       (check) => check.reviewAt <= now
     );
     if (!due.length) {
       return;
     }
     for (const credential of credentials.filter(
-      (each) => each.workspaceId === workspaceId && each.ownerId === owner.id
+      (each) => each.companyId === companyId && each.ownerId === owner.id
     )) {
       await this.collect(credential, now);
     }
@@ -945,12 +945,12 @@ export class Intake {
         continue;
       }
       try {
-        await this.reviewDueChecks(workspaceId, owner, checks, now);
+        await this.reviewDueChecks(companyId, owner, checks, now);
       } catch (error) {
         this.record(
           trace,
           "assessment.error",
-          workspaceId,
+          companyId,
           owner.id,
           { error: String(error) },
           now
@@ -961,12 +961,12 @@ export class Intake {
   }
 
   private async reviewDueChecks(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     checks: FutureCheck[],
     now: number
   ): Promise<void> {
-    const coverage = this.recall.coverage(workspaceId, owner);
+    const coverage = this.recall.coverage(companyId, owner);
     if (
       checks.some((check) =>
         coverage.some(
@@ -981,7 +981,7 @@ export class Intake {
     }
     // Read the latest raw records before the pending evidence has all been assessed.
     const evidence = await this.recall.relatedEvidence(
-      workspaceId,
+      companyId,
       owner,
       [],
       checks
@@ -995,27 +995,27 @@ export class Intake {
       trigger: "time",
       newEvidenceIds: [],
       evidence,
-      channels: this.recall.channels(workspaceId, owner),
+      channels: this.recall.channels(companyId, owner),
       threads: await this.recall.context(
-        workspaceId,
+        companyId,
         owner,
         evidence,
         checks,
         checks[0]?.threadId ?? undefined
       ),
       checks,
-      coverage: this.recall.coverage(workspaceId, owner),
+      coverage: this.recall.coverage(companyId, owner),
     };
     const trace = `time:${checks.map((check) => `${check.id}:${check.reviewAt}`).join(":")}`;
     const decisions = await this.assessment(
       trace,
-      workspaceId,
+      companyId,
       owner,
       input,
       now
     );
     for (const decision of decisions) {
-      await this.apply(trace, workspaceId, owner, input, decision, now);
+      await this.apply(trace, companyId, owner, input, decision, now);
     }
     // A valid quiet assessment can return no decisions. It still completes this scheduled review.
     for (const check of checks) {
@@ -1045,26 +1045,26 @@ export class Intake {
     const allowed = pending.filter(
       (delivery) =>
         !claimed.has(delivery.id) &&
-        enabled.has(`${delivery.workspace_id}:${delivery.owner_id}`) &&
+        enabled.has(`${delivery.company_id}:${delivery.owner_id}`) &&
         this.deliveryAllowed(delivery) &&
-        !this.backingOff(delivery.workspace_id, delivery.owner_id, now)
+        !this.backingOff(delivery.company_id, delivery.owner_id, now)
     );
     // The brief updates wait for the person's one morning review in the 08:00 hour; the others go now.
     if (hour === 8) {
       const brief = Map.groupBy(
         allowed.filter((delivery) => delivery.attention === "brief"),
-        (delivery) => `${delivery.workspace_id}:${delivery.owner_id}`
+        (delivery) => `${delivery.company_id}:${delivery.owner_id}`
       );
       // Also for a person with nothing waiting, whose summary an earlier try may not have sent.
       for (const person of enabled) {
-        const [workspaceId, ownerId] = person.split(":") as [string, string];
-        await this.morning(workspaceId, ownerId, brief.get(person) ?? [], now);
+        const [companyId, ownerId] = person.split(":") as [string, string];
+        await this.morning(companyId, ownerId, brief.get(person) ?? [], now);
       }
     }
     const eligible = allowed.filter(
       (delivery) =>
         delivery.attention !== "brief" &&
-        !this.backingOff(delivery.workspace_id, delivery.owner_id, now)
+        !this.backingOff(delivery.company_id, delivery.owner_id, now)
     );
     const prepared = await this.prepareDestinations(eligible, now, false);
     const groups = Map.groupBy(
@@ -1072,14 +1072,14 @@ export class Intake {
         (delivery) =>
           delivery.thread_id !== null &&
           delivery.cancelled_at === null &&
-          !this.backingOff(delivery.workspace_id, delivery.owner_id, now)
+          !this.backingOff(delivery.company_id, delivery.owner_id, now)
       ),
       (delivery) =>
-        `${delivery.workspace_id}:${delivery.owner_id}:${delivery.thread_id ?? "personal"}:${delivery.attention}`
+        `${delivery.company_id}:${delivery.owner_id}:${delivery.thread_id ?? "personal"}:${delivery.attention}`
     );
     for (const deliveries of groups.values()) {
       const first = deliveries[0]!;
-      const owner = this.owner(first.workspace_id, first.owner_id);
+      const owner = this.owner(first.company_id, first.owner_id);
       if (!owner) {
         continue;
       }
@@ -1094,12 +1094,12 @@ export class Intake {
         this.record(
           first.id,
           "attention.error",
-          first.workspace_id,
+          first.company_id,
           owner.id,
           { error: String(error) },
           now
         );
-        this.fail(`${first.workspace_id}:${owner.id}`, now);
+        this.fail(`${first.company_id}:${owner.id}`, now);
       }
     }
   }
@@ -1111,17 +1111,17 @@ export class Intake {
    * person writes there. Then the person's own thread gets the morning summary with a notification.
    */
   private async morning(
-    workspaceId: string,
+    companyId: string,
     ownerId: string,
     deliveries: Delivery[],
     now: number
   ): Promise<void> {
-    const owner = this.owner(workspaceId, ownerId);
+    const owner = this.owner(companyId, ownerId);
     const day = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Prague",
     }).format(now);
-    const doneKey = `intake.morning:${workspaceId}:${ownerId}`;
-    const trace = `morning:${workspaceId}:${ownerId}:${day}`;
+    const doneKey = `intake.morning:${companyId}:${ownerId}`;
+    const trace = `morning:${companyId}:${ownerId}:${day}`;
     // Its own back-off: a failing plan never holds back the person's urgent updates.
     if (
       !owner ||
@@ -1131,10 +1131,10 @@ export class Intake {
       return;
     }
     try {
-      const nudges = this.dueNudges(workspaceId, owner, now);
+      const nudges = this.dueNudges(companyId, owner, now);
       if (deliveries.length > 0 || nudges.length > 0) {
         await this.collectSources(
-          workspaceId,
+          companyId,
           owner,
           [
             ...deliveries.flatMap(
@@ -1149,7 +1149,7 @@ export class Intake {
         );
         if (waiting.length > 0 || nudges.length > 0) {
           const input = await this.morningInput(
-            workspaceId,
+            companyId,
             waiting,
             nudges,
             owner,
@@ -1157,14 +1157,14 @@ export class Intake {
           );
           const plan = await this.morningPlan(
             trace,
-            workspaceId,
+            companyId,
             owner,
             input,
             now
           );
           await this.followPlan(
             trace,
-            workspaceId,
+            companyId,
             waiting,
             owner,
             input,
@@ -1173,8 +1173,8 @@ export class Intake {
           );
         }
       }
-      const nudged = this.nudge(trace, workspaceId, owner, now);
-      await this.sendSummary(trace, workspaceId, owner);
+      const nudged = this.nudge(trace, companyId, owner, now);
+      await this.sendSummary(trace, companyId, owner);
       // With nothing waiting and no nudge sent, a later update still goes this morning.
       if (deliveries.length > 0 || nudged > 0) {
         setSetting(this.database, doneKey, day);
@@ -1183,7 +1183,7 @@ export class Intake {
       this.record(
         trace,
         "morning.error",
-        workspaceId,
+        companyId,
         owner.id,
         { error: String(error) },
         now
@@ -1197,7 +1197,7 @@ export class Intake {
   }
 
   private async morningInput(
-    workspaceId: string,
+    companyId: string,
     deliveries: Delivery[],
     nudges: FutureCheck[],
     owner: User,
@@ -1215,13 +1215,13 @@ export class Intake {
     const checks = [
       ...new Map(
         [
-          ...this.recall.relevantChecks(workspaceId, owner, originals, targets),
+          ...this.recall.relevantChecks(companyId, owner, originals, targets),
           ...nudges,
         ].map((check) => [check.id, check])
       ).values(),
     ];
     const threads = await this.recall.context(
-      workspaceId,
+      companyId,
       owner,
       originals,
       checks,
@@ -1233,7 +1233,7 @@ export class Intake {
       (target) => !threads.some((thread) => thread.id === target)
     )) {
       threads.push(
-        ...(await this.recall.context(workspaceId, owner, [], [], id))
+        ...(await this.recall.context(companyId, owner, [], [], id))
       );
     }
     return {
@@ -1254,13 +1254,13 @@ export class Intake {
         };
       }),
       evidence: await this.recall.relatedEvidence(
-        workspaceId,
+        companyId,
         owner,
         originals,
         checks
       ),
       threads,
-      channels: this.recall.channels(workspaceId, owner),
+      channels: this.recall.channels(companyId, owner),
       checks,
       nudges: nudges.map(({ id, threadId, text, sourceIds }) => ({
         id,
@@ -1269,7 +1269,7 @@ export class Intake {
         sourceIds,
       })),
       reminders: this.reminders
-        .list(workspaceId, owner, owner.id)
+        .list(companyId, owner, owner.id)
         .filter(
           (reminder) =>
             reminder.recipientId === owner.id &&
@@ -1280,22 +1280,22 @@ export class Intake {
           text: reminder.text,
           due: reminder.place ? null : pragueTime(reminder.dueAt),
         })),
-      corrections: this.following.corrections(workspaceId, owner),
-      knowledge: this.knowledge(workspaceId, owner),
-      coverage: this.recall.coverage(workspaceId, owner),
+      corrections: this.following.corrections(companyId, owner),
+      knowledge: this.knowledge(companyId, owner),
+      coverage: this.recall.coverage(companyId, owner),
     };
   }
 
   /** The family's own facts and what Shadow learned that the owner sees, for the judge that acts for them. */
-  private knowledge(workspaceId: string, owner: User): Knowledge {
+  private knowledge(companyId: string, owner: User): Knowledge {
     const names = new Map(
-      this.workspaces
-        .members(workspaceId, owner)
+      this.companies
+        .members(companyId, owner)
         .map((member) => [member.userId, member.name])
     );
-    const learned = this.threads.learnedFor(workspaceId, owner);
+    const learned = this.threads.learnedFor(companyId, owner);
     return {
-      facts: this.workspaces.factsOf(workspaceId),
+      facts: this.companies.factsOf(companyId),
       about: learned.flatMap((item) => {
         const person = names.get(item.personId ?? "");
         return item.kind === "about" && person
@@ -1311,7 +1311,7 @@ export class Intake {
   /** The plan of this morning, from the audit when an earlier attempt made it, so a retry follows the same plan. */
   private async morningPlan(
     trace: string,
-    workspaceId: string,
+    companyId: string,
     owner: User,
     input: MorningInput,
     now: number
@@ -1320,7 +1320,7 @@ export class Intake {
     const cached = this.audit.last(
       planTrace,
       "morning.plan",
-      workspaceId,
+      companyId,
       owner.id
     ) as MorningPlan | undefined;
     if (cached) {
@@ -1328,36 +1328,36 @@ export class Intake {
     }
     if ((this.morningFailures.get(trace) ?? 0) >= 2) {
       const plan = validateMorningPlan(fallbackPlan(input), input);
-      this.record(planTrace, "morning.plan", workspaceId, owner.id, plan, now);
+      this.record(planTrace, "morning.plan", companyId, owner.id, plan, now);
       return plan;
     }
-    this.record(planTrace, "morning.input", workspaceId, owner.id, input, now);
+    this.record(planTrace, "morning.input", companyId, owner.id, input, now);
     const plan = await planMorning(async (system, text) => {
       const result = await this.llm.complete(
         system,
         text,
         this.stopping.signal,
         undefined,
-        { workspaceId, userId: owner.id, source: "intake", threadId: null }
+        { companyId, userId: owner.id, source: "intake", threadId: null }
       );
       this.record(
         planTrace,
         "model.response",
-        workspaceId,
+        companyId,
         owner.id,
         { result },
         now
       );
       return result;
     }, input);
-    this.record(planTrace, "morning.plan", workspaceId, owner.id, plan, now);
+    this.record(planTrace, "morning.plan", companyId, owner.id, plan, now);
     return plan;
   }
 
   /** Cancels the dropped updates, closes what no longer needs a nudge, and posts each matter to its thread. */
   private async followPlan(
     trace: string,
-    workspaceId: string,
+    companyId: string,
     deliveries: Delivery[],
     owner: User,
     input: MorningInput,
@@ -1367,13 +1367,13 @@ export class Intake {
     for (const closed of plan.closed) {
       this.database
         .query(
-          "UPDATE intake_check SET state=?,revised_at=? WHERE id=? AND workspace_id=? AND owner_id=? AND state='open'"
+          "UPDATE intake_check SET state=?,revised_at=? WHERE id=? AND company_id=? AND owner_id=? AND state='open'"
         )
-        .run(closed.state, now, closed.id, workspaceId, owner.id);
+        .run(closed.state, now, closed.id, companyId, owner.id);
       this.record(
         closed.id,
         "morning.closed",
-        workspaceId,
+        companyId,
         owner.id,
         closed,
         now
@@ -1388,7 +1388,7 @@ export class Intake {
       this.record(
         dropped.id,
         "morning.dropped",
-        workspaceId,
+        companyId,
         owner.id,
         dropped,
         now
@@ -1396,7 +1396,7 @@ export class Intake {
     }
     // The lines of earlier tries this morning stay, so the one summary lists every matter.
     const lines = [
-      ...(this.morningLines(trace, workspaceId, owner)?.lines ?? []),
+      ...(this.morningLines(trace, companyId, owner)?.lines ?? []),
     ];
     for (const matter of plan.matters) {
       const line = await this.postMatter(matter, deliveries, owner, input, now);
@@ -1405,7 +1405,7 @@ export class Intake {
         this.record(
           trace,
           "morning.lines",
-          workspaceId,
+          companyId,
           owner.id,
           { summary: plan.summary, lines },
           now
@@ -1417,31 +1417,31 @@ export class Intake {
   /** Sends the morning summary once, also when an earlier try posted the matters and then failed. */
   private async sendSummary(
     trace: string,
-    workspaceId: string,
+    companyId: string,
     owner: User
   ): Promise<void> {
-    const posted = this.morningLines(trace, workspaceId, owner);
+    const posted = this.morningLines(trace, companyId, owner);
     if (
       !posted?.lines.length ||
-      this.audit.last(trace, "morning.summary", workspaceId, owner.id)
+      this.audit.last(trace, "morning.summary", companyId, owner.id)
     ) {
       return;
     }
     // The person asked for this summary to notify them.
     await this.threads.observe(
-      await this.threads.orchestrator(workspaceId, owner),
+      await this.threads.orchestrator(companyId, owner),
       [posted.summary, posted.lines.join("\n")].filter(Boolean).join("\n\n"),
       `${trace}:summary`,
       owner,
       true
     );
-    this.record(trace, "morning.summary", workspaceId, owner.id, {
+    this.record(trace, "morning.summary", companyId, owner.id, {
       lines: posted.lines.length,
     });
   }
 
-  private morningLines(trace: string, workspaceId: string, owner: User) {
-    return this.audit.last(trace, "morning.lines", workspaceId, owner.id) as
+  private morningLines(trace: string, companyId: string, owner: User) {
+    return this.audit.last(trace, "morning.lines", companyId, owner.id) as
       | { summary: string; lines: string[] }
       | undefined;
   }
@@ -1454,7 +1454,7 @@ export class Intake {
     input: MorningInput,
     now: number
   ): Promise<string | null> {
-    const workspaceId = deliveries[0]!.workspace_id;
+    const companyId = deliveries[0]!.company_id;
     // An update that reached its thread meanwhile, such as with the person's own message, is not posted again.
     const group = matter.updates
       .map((id) => deliveries.find((delivery) => delivery.id === id)!)
@@ -1484,8 +1484,8 @@ export class Intake {
         now
       );
     }
-    const thread = this.workspaces
-      .threadsIn(workspaceId, owner.id)
+    const thread = this.companies
+      .threadsIn(companyId, owner.id)
       .find((candidate) => candidate.id === group[0]!.thread_id);
     if (!thread) {
       throw notFound();
@@ -1504,19 +1504,12 @@ export class Intake {
     await this.threads.observe(thread, text, requestId, owner, false, files);
     this.finishDelivery(group, owner, [], now);
     if (matter.ask) {
-      this.followAsk(
-        workspaceId,
-        owner,
-        thread.id,
-        matter,
-        [...sourceIds],
-        now
-      );
+      this.followAsk(companyId, owner, thread.id, matter, [...sourceIds], now);
     }
     this.record(
       requestId,
       "morning.posted",
-      workspaceId,
+      companyId,
       owner.id,
       {
         threadId: thread.id,
@@ -1536,7 +1529,7 @@ export class Intake {
    * intake sees it handled, or the person says it is done, rejected, or someone else's.
    */
   private followAsk(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     threadId: string,
     matter: MorningMatter,
@@ -1544,7 +1537,7 @@ export class Intake {
     now: number
   ): void {
     const id = hash(
-      `ask:${workspaceId}:${owner.id}:${matter.updates.toSorted((a, b) => a.localeCompare(b)).join(":")}`
+      `ask:${companyId}:${owner.id}:${matter.updates.toSorted((a, b) => a.localeCompare(b)).join(":")}`
     );
     saveCheck(
       this.database,
@@ -1558,7 +1551,7 @@ export class Intake {
       },
       {
         id,
-        workspaceId,
+        companyId,
         ownerId: owner.id,
         threadId,
         checkAt: matter.due ? Date.parse(matter.due) : now + 30 * DAY,
@@ -1572,17 +1565,17 @@ export class Intake {
 
   /** The open checks of what the person must do whose nudge is due. */
   private dueNudges(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     now: number
   ): FutureCheck[] {
     const due = this.database
       .query(
-        "SELECT id FROM intake_check WHERE workspace_id=? AND owner_id=? AND state='open' AND deleted_at IS NULL AND nudge_at IS NOT NULL AND nudge_at<=?"
+        "SELECT id FROM intake_check WHERE company_id=? AND owner_id=? AND state='open' AND deleted_at IS NULL AND nudge_at IS NOT NULL AND nudge_at<=?"
       )
-      .all(workspaceId, owner.id, now) as { id: string }[];
+      .all(companyId, owner.id, now) as { id: string }[];
     const open = new Map(
-      this.openChecks(workspaceId, owner).map((check) => [check.id, check])
+      this.openChecks(companyId, owner).map((check) => [check.id, check])
     );
     return due.flatMap(({ id }) => open.get(id) ?? []);
   }
@@ -1593,16 +1586,16 @@ export class Intake {
    */
   private nudge(
     trace: string,
-    workspaceId: string,
+    companyId: string,
     owner: User,
     now: number
   ): number {
     const titles = new Map(
-      this.workspaces
-        .threadsIn(workspaceId, owner.id)
+      this.companies
+        .threadsIn(companyId, owner.id)
         .map((thread) => [thread.id, thread.title])
     );
-    const nudged = this.dueNudges(workspaceId, owner, now).map((check) => {
+    const nudged = this.dueNudges(companyId, owner, now).map((check) => {
       const title = check.threadId ? titles.get(check.threadId) : undefined;
       return {
         id: check.id,
@@ -1614,11 +1607,11 @@ export class Intake {
     if (nudged.length === 0) {
       return 0;
     }
-    const posted = this.morningLines(trace, workspaceId, owner);
+    const posted = this.morningLines(trace, companyId, owner);
     this.record(
       trace,
       "morning.lines",
-      workspaceId,
+      companyId,
       owner.id,
       {
         summary: posted?.summary ?? "",
@@ -1647,11 +1640,11 @@ export class Intake {
           delivery.thread_id === null &&
           !this.waiting(`destination:${delivery.id}`, now)
       ),
-      (delivery) => `${delivery.workspace_id}:${delivery.owner_id}`
+      (delivery) => `${delivery.company_id}:${delivery.owner_id}`
     );
     for (const pending of people.values()) {
       const first = pending[0]!;
-      const owner = this.owner(first.workspace_id, first.owner_id);
+      const owner = this.owner(first.company_id, first.owner_id);
       if (!owner) {
         continue;
       }
@@ -1674,12 +1667,12 @@ export class Intake {
         this.record(
           first.id,
           "destination.error",
-          first.workspace_id,
+          first.company_id,
           owner.id,
           { error: String(error) },
           now
         );
-        this.fail(`${first.workspace_id}:${owner.id}`, now);
+        this.fail(`${first.company_id}:${owner.id}`, now);
       }
     }
     return prepared;
@@ -1718,7 +1711,7 @@ export class Intake {
           this.audit.last(
             delivery.id,
             "update.changed",
-            delivery.workspace_id,
+            delivery.company_id,
             owner.id
           ) as { action?: string } | undefined
         )?.action === "now";
@@ -1740,7 +1733,7 @@ export class Intake {
       this.record(
         delivery.id,
         "destination.bound",
-        delivery.workspace_id,
+        delivery.company_id,
         owner.id,
         { threadId: delivery.thread_id, decision: result.decision },
         now
@@ -1750,7 +1743,7 @@ export class Intake {
       this.record(
         trace,
         "destination.error",
-        delivery.workspace_id,
+        delivery.company_id,
         owner.id,
         { error: String(error) },
         now
@@ -1769,14 +1762,14 @@ export class Intake {
     if (!pending) {
       return false;
     }
-    const owner = this.owner(delivery.workspace_id, delivery.owner_id);
+    const owner = this.owner(delivery.company_id, delivery.owner_id);
     if (!owner) {
       return false;
     }
     if (
       delivery.thread_id &&
-      !this.workspaces
-        .threadsIn(delivery.workspace_id, owner.id)
+      !this.companies
+        .threadsIn(delivery.company_id, owner.id)
         .some((thread) => thread.id === delivery.thread_id)
     ) {
       return false;
@@ -1785,12 +1778,12 @@ export class Intake {
     return ids.every((id) => {
       const row = this.database
         .query(
-          "SELECT * FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+          "SELECT * FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
         )
-        .get(id, delivery.workspace_id, owner.id) as ItemRow | null;
+        .get(id, delivery.company_id, owner.id) as ItemRow | null;
       return (
         row !== null &&
-        this.recall.visible(delivery.workspace_id, owner, [row]).length > 0
+        this.recall.visible(delivery.company_id, owner, [row]).length > 0
       );
     });
   }
@@ -1803,7 +1796,7 @@ export class Intake {
   ): Promise<void> {
     const started = Date.now();
     const first = deliveries[0]!;
-    const workspaceId = first.workspace_id;
+    const companyId = first.company_id;
     const id = hash(
       deliveries
         .map((delivery) => delivery.id)
@@ -1833,8 +1826,8 @@ export class Intake {
         return;
       }
     }
-    const thread = this.workspaces
-      .threadsIn(workspaceId, owner.id)
+    const thread = this.companies
+      .threadsIn(companyId, owner.id)
       .find((candidate) => candidate.id === first.thread_id);
     if (!thread) {
       throw notFound();
@@ -1862,7 +1855,7 @@ export class Intake {
         if (confirmed.length) {
           this.notifications.notify({
             id: randomUUIDv5(`intake:${id}:${owner.id}`, "url"),
-            workspaceId,
+            companyId,
             userId: owner.id,
             channelId: thread.channelId,
             threadId: thread.id,
@@ -1877,7 +1870,7 @@ export class Intake {
     this.record(
       id,
       "attention.delivered",
-      workspaceId,
+      companyId,
       owner.id,
       { threadId: thread.id, body, notified, files },
       now
@@ -1898,19 +1891,19 @@ export class Intake {
     proposed: IntakeNotification[];
     decision: Assessment | null;
   }> {
-    const workspaceId = deliveries[0]!.workspace_id;
+    const companyId = deliveries[0]!.company_id;
     const { id, now } = review;
     let { body, proposed } = review;
     const originals = this.deliveryEvidence(deliveries, owner);
     const subjectId = deliveries[0]!.thread_id;
     const checks = this.recall.relevantChecks(
-      workspaceId,
+      companyId,
       owner,
       originals,
       subjectId ? [subjectId] : []
     );
     const evidence = await this.recall.relatedEvidence(
-      workspaceId,
+      companyId,
       owner,
       originals,
       checks
@@ -1924,9 +1917,9 @@ export class Intake {
         : {}),
       newEvidenceIds: [],
       evidence,
-      channels: this.recall.channels(workspaceId, owner),
+      channels: this.recall.channels(companyId, owner),
       threads: await this.recall.context(
-        workspaceId,
+        companyId,
         owner,
         originals,
         checks,
@@ -1934,13 +1927,13 @@ export class Intake {
         !subjectId
       ),
       checks,
-      coverage: this.recall.coverage(workspaceId, owner),
+      coverage: this.recall.coverage(companyId, owner),
       pendingNotice: body,
       pendingNotifications: proposed,
     };
     const decisions = await this.assessment(
       `review:${id}:${hash(JSON.stringify(input))}`,
-      workspaceId,
+      companyId,
       owner,
       input,
       now
@@ -1948,7 +1941,7 @@ export class Intake {
     for (const decision of decisions) {
       await this.apply(
         `review:${id}:${hash(JSON.stringify(input))}`,
-        workspaceId,
+        companyId,
         owner,
         input,
         decision,
@@ -1978,7 +1971,7 @@ export class Intake {
       this.record(
         id,
         "attention.suppressed",
-        workspaceId,
+        companyId,
         owner.id,
         { reason: "No longer useful at the delivery review" },
         now
@@ -2000,13 +1993,13 @@ export class Intake {
   ): Promise<IntakeNotification[]> {
     const { id, answer, proposed, now } = review;
     const first = deliveries[0]!;
-    const workspaceId = first.workspace_id;
+    const companyId = first.company_id;
     const coverage = await this.refreshDeliverySources(deliveries, owner, now);
     if (!coverage) {
       this.record(
         id,
         "notification.suppressed",
-        workspaceId,
+        companyId,
         owner.id,
         { reason: "Source access changed before notification" },
         now
@@ -2015,13 +2008,13 @@ export class Intake {
     }
     const originals = this.deliveryEvidence(deliveries, owner);
     const checks = this.recall.relevantChecks(
-      workspaceId,
+      companyId,
       owner,
       originals,
       first.thread_id ? [first.thread_id] : []
     );
     const evidence = await this.recall.relatedEvidence(
-      workspaceId,
+      companyId,
       owner,
       originals,
       checks
@@ -2032,10 +2025,10 @@ export class Intake {
       trigger: "notification",
       newEvidenceIds: [],
       evidence,
-      channels: this.recall.channels(workspaceId, owner),
+      channels: this.recall.channels(companyId, owner),
       threads: (
         await this.recall.context(
-          workspaceId,
+          companyId,
           owner,
           originals,
           checks,
@@ -2049,7 +2042,7 @@ export class Intake {
     };
     const decisions = await this.assessment(
       `notification:${id}:${hash(JSON.stringify(input))}`,
-      workspaceId,
+      companyId,
       owner,
       input,
       now
@@ -2065,7 +2058,7 @@ export class Intake {
     this.record(
       id,
       confirmed.length ? "notification.confirmed" : "notification.suppressed",
-      workspaceId,
+      companyId,
       owner.id,
       { proposed, decisions },
       now
@@ -2079,9 +2072,9 @@ export class Intake {
     now: number,
     requireComplete = true
   ): Promise<AssessmentInput["coverage"] | null> {
-    const workspaceId = deliveries[0]!.workspace_id;
+    const companyId = deliveries[0]!.company_id;
     const credentials = await this.collectSources(
-      workspaceId,
+      companyId,
       owner,
       deliveries.flatMap(
         (delivery) => JSON.parse(delivery.evidence_ids) as string[]
@@ -2091,7 +2084,7 @@ export class Intake {
     if (!deliveries.every((delivery) => this.deliveryAllowed(delivery))) {
       return null;
     }
-    const coverage = this.recall.coverage(workspaceId, owner);
+    const coverage = this.recall.coverage(companyId, owner);
     if (
       requireComplete &&
       credentials.some((credential) => {
@@ -2108,7 +2101,7 @@ export class Intake {
 
   /** Reads the accounts of the given sources again, and returns those accounts. */
   private async collectSources(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidenceIds: string[],
     now: number
@@ -2117,9 +2110,9 @@ export class Intake {
       (
         this.database
           .query(
-            "SELECT DISTINCT credential_id FROM intake_item WHERE workspace_id=? AND owner_id=? AND id IN (SELECT value FROM json_each(?))"
+            "SELECT DISTINCT credential_id FROM intake_item WHERE company_id=? AND owner_id=? AND id IN (SELECT value FROM json_each(?))"
           )
-          .all(workspaceId, owner.id, JSON.stringify(evidenceIds)) as {
+          .all(companyId, owner.id, JSON.stringify(evidenceIds)) as {
           credential_id: string;
         }[]
       ).map((row) => row.credential_id)
@@ -2128,7 +2121,7 @@ export class Intake {
       .watched()
       .filter(
         (credential) =>
-          credential.workspaceId === workspaceId &&
+          credential.companyId === companyId &&
           credential.ownerId === owner.id &&
           sources.has(credential.id)
       );
@@ -2179,13 +2172,9 @@ export class Intake {
       .flatMap((sourceId) => {
         const row = this.database
           .query(
-            "SELECT * FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+            "SELECT * FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
           )
-          .get(
-            sourceId,
-            deliveries[0]!.workspace_id,
-            owner.id
-          ) as ItemRow | null;
+          .get(sourceId, deliveries[0]!.company_id, owner.id) as ItemRow | null;
         return row && row.deleted_at === null
           ? this.recall.evidence([row])
           : [];
@@ -2206,20 +2195,20 @@ export class Intake {
     const rows = [...ids].flatMap((id) => {
       const row = this.database
         .query(
-          "SELECT * FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+          "SELECT * FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
         )
-        .get(id, first.workspace_id, owner.id) as ItemRow | null;
+        .get(id, first.company_id, owner.id) as ItemRow | null;
       return row &&
         row.deleted_at === null &&
         !row.credential_id.startsWith("thread:")
         ? [row]
         : [];
     });
-    return this.archives.save(first.workspace_id, channelId, owner, rows);
+    return this.archives.save(first.company_id, channelId, owner, rows);
   }
 
   private async archive(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     rows: ItemRow[],
     decision: Assessment
@@ -2228,19 +2217,19 @@ export class Intake {
       return;
     }
     // Silent filing stays private: a matching thread in a channel that others see gets the files only with a visible update.
-    const candidates = this.workspaces
-      .channelsIn(workspaceId, owner.id)
+    const candidates = this.companies
+      .channelsIn(companyId, owner.id)
       .filter((candidate) => candidate.ownerId === owner.id);
     const matching = decision.threadId
-      ? this.workspaces
-          .threadsIn(workspaceId, owner.id)
+      ? this.companies
+          .threadsIn(companyId, owner.id)
           .find((thread) => thread.id === decision.threadId)?.channelId
       : undefined;
     const channel =
       candidates.find((each) => each.id === matching) ??
-      this.privateChannel(workspaceId, owner);
+      this.privateChannel(companyId, owner);
     await this.archives.save(
-      workspaceId,
+      companyId,
       channel.id,
       owner,
       rows.filter(
@@ -2250,17 +2239,17 @@ export class Intake {
     );
   }
 
-  private privateChannel(workspaceId: string, owner: User) {
-    this.workspaces.requireMember(workspaceId, owner);
+  private privateChannel(companyId: string, owner: User) {
+    this.companies.requireMember(companyId, owner);
     return (
-      this.workspaces
-        .channelsIn(workspaceId, owner.id)
+      this.companies
+        .channelsIn(companyId, owner.id)
         .find(
           (channel) =>
             channel.ownerId === owner.id && channel.name.startsWith("sources-")
         ) ??
-      this.workspaces.addChannel(
-        workspaceId,
+      this.companies.addChannel(
+        companyId,
         `sources-${owner.name.split(" ")[0]}`,
         owner.id,
         owner.id
@@ -2276,12 +2265,8 @@ export class Intake {
     }
   }
 
-  private backingOff(
-    workspaceId: string,
-    ownerId: string,
-    now: number
-  ): boolean {
-    return this.waiting(`${workspaceId}:${ownerId}`, now);
+  private backingOff(companyId: string, ownerId: string, now: number): boolean {
+    return this.waiting(`${companyId}:${ownerId}`, now);
   }
 
   /** Records a failure of `key`; failures in a row wait twice as long each time, up to a day. */
@@ -2298,35 +2283,35 @@ export class Intake {
     return last !== undefined && now - last.at < retryAfter(last.count);
   }
 
-  private owner(workspaceId: string, ownerId: string): User | null {
-    const member = this.workspaces
-      .members(workspaceId, this.workspaces.agentMember(workspaceId))
+  private owner(companyId: string, ownerId: string): User | null {
+    const member = this.companies
+      .members(companyId, this.companies.agentMember(companyId))
       .find((each) => each.userId === ownerId);
     if (!member) {
       return null;
     }
     const owner = { id: member.userId, name: member.name, email: member.email };
-    this.workspaces.requireMember(workspaceId, owner);
+    this.companies.requireMember(companyId, owner);
     return owner;
   }
 
   private record(
     trace: string,
     stage: string,
-    workspaceId: string,
+    companyId: string,
     ownerId: string,
     data: unknown,
     now = Date.now()
   ): void {
-    this.audit.record(trace, stage, workspaceId, ownerId, data, now);
+    this.audit.record(trace, stage, companyId, ownerId, data, now);
   }
 
-  status(workspaceId: string, owner: User, query = "") {
-    return this.recall.status(workspaceId, owner, query);
+  status(companyId: string, owner: User, query = "") {
+    return this.recall.status(companyId, owner, query);
   }
 
-  openChecks(workspaceId: string, owner: User): FutureCheck[] {
-    return this.recall.checks(workspaceId, owner);
+  openChecks(companyId: string, owner: User): FutureCheck[] {
+    return this.recall.checks(companyId, owner);
   }
 
   /**
@@ -2334,35 +2319,35 @@ export class Intake {
    * answers their own message: their updates that wait for this thread join it, and the morning review skips them.
    */
   contextFor(
-    workspaceId: string,
+    companyId: string,
     threadId: string,
     ownerId: string,
     claim = false,
     now = Date.now()
   ): string {
-    const owner = this.owner(workspaceId, ownerId);
+    const owner = this.owner(companyId, ownerId);
     if (
       !(
         owner &&
-        this.workspaces
-          .threadsIn(workspaceId, ownerId)
+        this.companies
+          .threadsIn(companyId, ownerId)
           .some((thread) => thread.id === threadId)
       )
     ) {
       return "";
     }
     const arrived = claim
-      ? this.claimUpdates(owner, workspaceId, threadId, now)
+      ? this.claimUpdates(owner, companyId, threadId, now)
       : [];
     const context = this.database
       .query(
-        "SELECT summary,source_ids FROM intake_context WHERE workspace_id=? AND owner_id=? AND thread_id=?"
+        "SELECT summary,source_ids FROM intake_context WHERE company_id=? AND owner_id=? AND thread_id=?"
       )
-      .get(workspaceId, ownerId, threadId) as {
+      .get(companyId, ownerId, threadId) as {
       summary: string;
       source_ids: string;
     } | null;
-    const checks = this.openChecks(workspaceId, owner).filter(
+    const checks = this.openChecks(companyId, owner).filter(
       (check) => check.threadId === threadId
     );
     return context || checks.length || arrived.length
@@ -2377,16 +2362,16 @@ export class Intake {
   /** Marks the person's waiting updates for a thread as delivered, and gives their messages and untrusted sources. */
   private claimUpdates(
     owner: User,
-    workspaceId: string,
+    companyId: string,
     threadId: string,
     now: number
   ) {
     const waiting = (
       this.database
         .query(
-          "SELECT * FROM intake_delivery WHERE workspace_id=? AND owner_id=? AND thread_id=? AND delivered_at IS NULL AND cancelled_at IS NULL ORDER BY created_at"
+          "SELECT * FROM intake_delivery WHERE company_id=? AND owner_id=? AND thread_id=? AND delivered_at IS NULL AND cancelled_at IS NULL ORDER BY created_at"
         )
-        .all(workspaceId, owner.id, threadId) as Delivery[]
+        .all(companyId, owner.id, threadId) as Delivery[]
     ).filter((delivery) => this.deliveryAllowed(delivery));
     if (waiting.length === 0) {
       return [];
@@ -2396,7 +2381,7 @@ export class Intake {
       sources: this.recall
         .evidence(
           this.recall.visible(
-            workspaceId,
+            companyId,
             owner,
             (JSON.parse(delivery.evidence_ids) as string[]).flatMap((id) => {
               const row = this.database
@@ -2412,14 +2397,14 @@ export class Intake {
         })),
     }));
     // Delivered only when the turn has answered (`finishClaims`): a turn that fails or starts again takes them again.
-    const key = `${workspaceId}:${owner.id}:${threadId}`;
+    const key = `${companyId}:${owner.id}:${threadId}`;
     const ids = waiting.map((delivery) => delivery.id);
     if (JSON.stringify(this.claims.get(key)) !== JSON.stringify(ids)) {
       this.claims.set(key, ids);
       this.record(
         `claim:${threadId}:${now}`,
         "attention.claimed",
-        workspaceId,
+        companyId,
         owner.id,
         { threadId, deliveries: ids },
         now
@@ -2429,8 +2414,8 @@ export class Intake {
   }
 
   /** Marks the updates that the person's answered turn in a thread took as delivered. */
-  finishClaims(workspaceId: string, threadId: string, ownerId: string): void {
-    const key = `${workspaceId}:${ownerId}:${threadId}`;
+  finishClaims(companyId: string, threadId: string, ownerId: string): void {
+    const key = `${companyId}:${ownerId}:${threadId}`;
     const ids = this.claims.get(key);
     if (!ids) {
       return;
@@ -2445,7 +2430,7 @@ export class Intake {
     this.record(
       `claim:${threadId}:${now}`,
       "attention.delivered",
-      workspaceId,
+      companyId,
       ownerId,
       { threadId, claimed: ids },
       now
@@ -2453,18 +2438,18 @@ export class Intake {
   }
 
   /** Private source search and ordinary-language corrections are available to the existing agents. */
-  tools(workspaceId: string) {
+  tools(companyId: string) {
     const actor = async (
       conversationId: Parameters<Threads["requester"]>[1]
     ) => {
-      const user = await this.threads.requester(workspaceId, conversationId);
+      const user = await this.threads.requester(companyId, conversationId);
       if (
         !user ||
-        (await this.threads.realm(workspaceId, conversationId)) !== user.id
+        (await this.threads.realm(companyId, conversationId)) !== user.id
       ) {
         throw notFound();
       }
-      this.workspaces.requireMember(workspaceId, user);
+      this.companies.requireMember(companyId, user);
       return user;
     };
     return [
@@ -2481,9 +2466,9 @@ export class Intake {
               {
                 type: "text",
                 text: JSON.stringify({
-                  ...this.status(workspaceId, user, query),
-                  waiting: this.following.waiting(workspaceId, user),
-                  following: this.following.list(workspaceId, user),
+                  ...this.status(companyId, user, query),
+                  waiting: this.following.waiting(companyId, user),
+                  following: this.following.list(companyId, user),
                 }),
               },
             ],
@@ -2509,8 +2494,8 @@ export class Intake {
         replay: "safe",
         execute: async ({ id, action, revision, quote }, api) => {
           const user = await actor(api.conversationId);
-          const thread = this.workspaces
-            .threadsIn(workspaceId, user.id)
+          const thread = this.companies
+            .threadsIn(companyId, user.id)
             .find((each) => each.conversationId === api.conversationId)!;
           const state = await this.threads.messages(thread);
           if (
@@ -2523,7 +2508,7 @@ export class Intake {
           ) {
             throw new Error("Cite the person's correction");
           }
-          const detail = await this.following.change(workspaceId, user, id, {
+          const detail = await this.following.change(companyId, user, id, {
             action,
             revision,
             quote,

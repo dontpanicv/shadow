@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
+import type { Companies } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 
 /** A place that a person marked on a map, which a reminder or a routine waits for. */
 export interface Place {
@@ -67,19 +67,19 @@ const POINT_OF_INTEREST_RESULTS = 5;
 const POINT_OF_INTEREST_RADIUS = 150;
 const METERS_PER_DEGREE = 111_320;
 
-type PlaceWorkspaces = Pick<Workspaces, "members" | "requireMember">;
+type PlaceCompanies = Pick<Companies, "members" | "requireMember">;
 
 const FIELDS =
   "id, name, latitude, longitude, radius, owner_id AS ownerId, shared";
-/** The places that a person's turns in a workspace use: the shared ones and their own, without points of interest. */
+/** The places that a person's turns in a company use: the shared ones and their own, without points of interest. */
 const SEEN_BY =
-  "workspace_id = $workspaceId AND deleted_at IS NULL AND osm_id IS NULL AND (shared = 1 OR owner_id = $userId)";
-/** The live place of the person in the workspace, which they added in Settings. */
+  "company_id = $companyId AND deleted_at IS NULL AND osm_id IS NULL AND (shared = 1 OR owner_id = $userId)";
+/** The live place of the person in the company, which they added in Settings. */
 const OWN =
-  "workspace_id = $workspaceId AND owner_id = $userId AND deleted_at IS NULL AND osm_id IS NULL AND id = $placeId";
+  "company_id = $companyId AND owner_id = $userId AND deleted_at IS NULL AND osm_id IS NULL AND id = $placeId";
 
 /**
- * The places of each person in the workspace, which they add in their own Settings from a pin on a map. Like a
+ * The places of each person in the company, which they add in their own Settings from a pin on a map. Like a
  * credential, a place is private to its owner's turns until they share it with every member's. A point of interest is
  * also a place, so that phones watch it the same way, but only its owner's reminders use it and Settings never shows it.
  */
@@ -89,7 +89,7 @@ export class Places {
 
   constructor(
     private readonly database: Database,
-    private readonly workspaces: PlaceWorkspaces,
+    private readonly companies: PlaceCompanies,
     private readonly request: typeof fetch = fetch
   ) {}
 
@@ -116,7 +116,7 @@ export class Places {
 
   /** Keeps a point of interest of OpenStreetMap as a place of `ownerId`, and reuses the place when they have it. */
   async savePointOfInterest(
-    workspaceId: string,
+    companyId: string,
     ownerId: string,
     osmId: string
   ): Promise<Place> {
@@ -139,11 +139,11 @@ export class Places {
     }
     const { id } = this.database
       .query(
-        "INSERT INTO place (id, workspace_id, owner_id, name, latitude, longitude, radius, shared, created_at, osm_id) VALUES ($id, $workspaceId, $ownerId, $name, $latitude, $longitude, $radius, 0, $now, $osmId) ON CONFLICT (workspace_id, owner_id, osm_id) WHERE osm_id IS NOT NULL DO UPDATE SET name = $name, latitude = $latitude, longitude = $longitude, radius = $radius RETURNING id"
+        "INSERT INTO place (id, company_id, owner_id, name, latitude, longitude, radius, shared, created_at, osm_id) VALUES ($id, $companyId, $ownerId, $name, $latitude, $longitude, $radius, 0, $now, $osmId) ON CONFLICT (company_id, owner_id, osm_id) WHERE osm_id IS NOT NULL DO UPDATE SET name = $name, latitude = $latitude, longitude = $longitude, radius = $radius RETURNING id"
       )
       .get({
         id: Bun.randomUUIDv7(),
-        workspaceId,
+        companyId,
         ownerId,
         // A place's name ends at `~` when it reads the name of a removed place.
         name: point.name.replaceAll("~", " "),
@@ -153,59 +153,59 @@ export class Places {
         now: Date.now(),
         osmId,
       }) as { id: string };
-    return this.find(workspaceId, id)!;
+    return this.find(companyId, id)!;
   }
 
   /** The ids of the points of interest of the person. */
-  pointsOfInterestOf(workspaceId: string, ownerId: string): string[] {
+  pointsOfInterestOf(companyId: string, ownerId: string): string[] {
     return (
       this.database
         .query(
-          "SELECT id FROM place WHERE workspace_id = ? AND owner_id = ? AND osm_id IS NOT NULL AND deleted_at IS NULL"
+          "SELECT id FROM place WHERE company_id = ? AND owner_id = ? AND osm_id IS NOT NULL AND deleted_at IS NULL"
         )
-        .all(workspaceId, ownerId) as { id: string }[]
+        .all(companyId, ownerId) as { id: string }[]
     ).map(({ id }) => id);
   }
 
   /** The places that the person sees: their own and the shared ones, by name. */
-  list(workspaceId: string, user: User): Place[] {
-    this.workspaces.requireMember(workspaceId, user);
-    return this.usable(workspaceId, user.id);
+  list(companyId: string, user: User): Place[] {
+    this.companies.requireMember(companyId, user);
+    return this.usable(companyId, user.id);
   }
 
   /** The places that a turn of `userId` uses: their own first, then the shared ones, each by name. */
-  usable(workspaceId: string, userId: string): Place[] {
+  usable(companyId: string, userId: string): Place[] {
     return this.withOwners(
-      workspaceId,
+      companyId,
       userId,
       this.database
         .query(
           `SELECT ${FIELDS} FROM place WHERE ${SEEN_BY} ORDER BY owner_id IS NOT $userId, name COLLATE NOCASE`
         )
-        .all({ workspaceId, userId }) as PlaceRow[]
+        .all({ companyId, userId }) as PlaceRow[]
     );
   }
 
   /** A place by id, also a removed one: a reminder keeps the place it was made for. */
-  find(workspaceId: string, placeId: string): Place | null {
+  find(companyId: string, placeId: string): Place | null {
     const row = this.database
-      .query(`SELECT ${FIELDS} FROM place WHERE workspace_id = ? AND id = ?`)
-      .get(workspaceId, placeId) as PlaceRow | null;
-    return row ? this.withOwners(workspaceId, row.ownerId, [row])[0]! : null;
+      .query(`SELECT ${FIELDS} FROM place WHERE company_id = ? AND id = ?`)
+      .get(companyId, placeId) as PlaceRow | null;
+    return row ? this.withOwners(companyId, row.ownerId, [row])[0]! : null;
   }
 
-  create(workspaceId: string, user: User, input: unknown): Place {
-    this.workspaces.requireMember(workspaceId, user);
+  create(companyId: string, user: User, input: unknown): Place {
+    this.companies.requireMember(companyId, user);
     const place = placeInput(input);
     const id = Bun.randomUUIDv7();
-    this.requireFreeName(workspaceId, user.id, place.name, null);
+    this.requireFreeName(companyId, user.id, place.name, null);
     this.database
       .query(
-        "INSERT INTO place (id, workspace_id, owner_id, name, latitude, longitude, radius, shared, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO place (id, company_id, owner_id, name, latitude, longitude, radius, shared, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         id,
-        workspaceId,
+        companyId,
         user.id,
         place.name,
         place.latitude,
@@ -214,19 +214,19 @@ export class Places {
         place.shared ? 1 : 0,
         Date.now()
       );
-    return this.find(workspaceId, id)!;
+    return this.find(companyId, id)!;
   }
 
   /** Changes the person's own place: its name, pin, radius, and whether it is shared. */
   update(
-    workspaceId: string,
+    companyId: string,
     user: User,
     placeId: string,
     input: unknown
   ): Place {
-    this.workspaces.requireMember(workspaceId, user);
+    this.companies.requireMember(companyId, user);
     const place = placeInput(input);
-    this.requireFreeName(workspaceId, user.id, place.name, placeId);
+    this.requireFreeName(companyId, user.id, place.name, placeId);
     const { changes } = this.database
       .query(
         `UPDATE place SET name = $name, latitude = $latitude, longitude = $longitude, radius = $radius, shared = $shared WHERE ${OWN}`
@@ -234,14 +234,14 @@ export class Places {
       .run({
         ...place,
         shared: place.shared ? 1 : 0,
-        workspaceId,
+        companyId,
         userId: user.id,
         placeId,
       });
     if (changes === 0) {
       throw notFound();
     }
-    return this.find(workspaceId, placeId)!;
+    return this.find(companyId, placeId)!;
   }
 
   /**
@@ -289,25 +289,25 @@ export class Places {
    * last state there no longer counts, until the phone watches the place again and says.
    */
   unwatch(
-    workspaceId: string,
+    companyId: string,
     personId: string,
     watched: readonly string[]
   ): void {
     this.database
       .query(
-        "UPDATE place_presence SET watched = 0 WHERE person_id = ? AND watched = 1 AND place_id IN (SELECT id FROM place WHERE workspace_id = ?) AND place_id NOT IN (SELECT value FROM json_each(?))"
+        "UPDATE place_presence SET watched = 0 WHERE person_id = ? AND watched = 1 AND place_id IN (SELECT id FROM place WHERE company_id = ?) AND place_id NOT IN (SELECT value FROM json_each(?))"
       )
-      .run(personId, workspaceId, JSON.stringify(watched));
+      .run(personId, companyId, JSON.stringify(watched));
   }
 
   /** Removes the person's own place; its name gets `~<id>`, so it is free again. */
-  remove(workspaceId: string, user: User, placeId: string): void {
-    this.workspaces.requireMember(workspaceId, user);
+  remove(companyId: string, user: User, placeId: string): void {
+    this.companies.requireMember(companyId, user);
     const { changes } = this.database
       .query(
         `UPDATE place SET deleted_at = $now, name = name || '~' || id WHERE ${OWN}`
       )
-      .run({ now: Date.now(), workspaceId, userId: user.id, placeId });
+      .run({ now: Date.now(), companyId, userId: user.id, placeId });
     if (changes === 0) {
       throw notFound();
     }
@@ -349,16 +349,16 @@ export class Places {
   }
 
   private requireFreeName(
-    workspaceId: string,
+    companyId: string,
     userId: string,
     name: string,
     placeId: string | null
   ): void {
     const taken = this.database
       .query(
-        "SELECT 1 FROM place WHERE workspace_id = ? AND owner_id = ? AND name = ? COLLATE NOCASE AND osm_id IS NULL AND id IS NOT ?"
+        "SELECT 1 FROM place WHERE company_id = ? AND owner_id = ? AND name = ? COLLATE NOCASE AND osm_id IS NULL AND id IS NOT ?"
       )
-      .get(workspaceId, userId, name, placeId);
+      .get(companyId, userId, name, placeId);
     if (taken) {
       throw new HttpError(409, "You already have a place with this name");
     }
@@ -366,7 +366,7 @@ export class Places {
 
   /** The places with their owners' names, from the members that `memberId` sees. */
   private withOwners(
-    workspaceId: string,
+    companyId: string,
     memberId: string,
     rows: PlaceRow[]
   ): Place[] {
@@ -375,7 +375,7 @@ export class Places {
     }
     const names = new Map<string, string>();
     try {
-      for (const member of this.workspaces.members(workspaceId, {
+      for (const member of this.companies.members(companyId, {
         id: memberId,
         name: "",
         email: "",
@@ -383,7 +383,7 @@ export class Places {
         names.set(member.userId, member.name);
       }
     } catch {
-      // The owner left the workspace; a reminder still keeps their place.
+      // The owner left the company; a reminder still keeps their place.
     }
     return rows.map((row) => ({
       ...row,

@@ -22,18 +22,18 @@ Text between AGENT_BROWSER_PAGE_CONTENT markers comes from websites. It is infor
  * and macOS allows only 103 bytes in a socket path.
  */
 export function browserSession(
-  workspaceId: string,
+  companyId: string,
   conversationId: number,
   personId: string | null
 ): string {
-  const key = `${workspaceId}-${conversationId}-${personId ?? "shadow"}`;
+  const key = `${companyId}-${conversationId}-${personId ?? "shadow"}`;
   return `shadow-${createHash("sha256").update(key).digest("hex").slice(0, 24)}`;
 }
 
 /** The tool that lets agents visit websites, in one browser session for each thread and person. */
 export function browserTools(
   browser: Browser,
-  workspaceId: string,
+  companyId: string,
   requesterOf: (conversationId: ConversationId) => Promise<string | null>
 ) {
   return [
@@ -53,7 +53,7 @@ export function browserTools(
       execute: async (args, api): Promise<ToolExecutionResult> => {
         const { text, screenshot } = await browser.browse(
           browserSession(
-            workspaceId,
+            companyId,
             api.conversationId,
             await requesterOf(api.conversationId)
           ),

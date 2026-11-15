@@ -5,16 +5,16 @@ import { notFound } from "../platform/errors.ts";
 import type { AssessmentInput, Evidence, FutureCheck } from "./assess.ts";
 import type { Audit } from "./audit.ts";
 import type {
+  IntakeCompanies,
   IntakeIntegrations,
   IntakeSearch,
   IntakeThreads,
-  IntakeWorkspaces,
 } from "./intake.ts";
 
 export interface ItemRow {
   id: string;
   credential_id: string;
-  workspace_id: string;
+  company_id: string;
   owner_id: string;
   source_id: string;
   version: string;
@@ -31,7 +31,7 @@ export interface ItemRow {
 }
 export interface SourceRow {
   credential_id: string;
-  workspace_id: string;
+  company_id: string;
   owner_id: string;
   polled_at: number;
   attempted_at: number;
@@ -65,7 +65,7 @@ const LATER_MESSAGE_CHARS = 2000;
 export class IntakeRecall {
   constructor(
     private readonly database: Database,
-    private readonly workspaces: IntakeWorkspaces,
+    private readonly companies: IntakeCompanies,
     private readonly integrations: IntakeIntegrations,
     private readonly threads: Pick<IntakeThreads, "messages">,
     private readonly search: IntakeSearch,
@@ -73,17 +73,17 @@ export class IntakeRecall {
   ) {}
 
   async context(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[],
     checks: FutureCheck[],
     subjectId?: string,
     includeRecent = false
   ): Promise<AssessmentInput["threads"]> {
-    this.workspaces.requireMember(workspaceId, owner);
+    this.companies.requireMember(companyId, owner);
     const available = new Map(
-      this.workspaces
-        .threadsIn(workspaceId, owner.id)
+      this.companies
+        .threadsIn(companyId, owner.id)
         .map((thread) => [thread.id, thread])
     );
     const ids = new Set<string>();
@@ -102,7 +102,7 @@ export class IntakeRecall {
       ids.add(subjectId);
     } else {
       for (const id of await this.candidateIds(
-        workspaceId,
+        companyId,
         owner,
         evidence,
         checks
@@ -122,9 +122,9 @@ export class IntakeRecall {
       const state = await this.threads.messages(thread);
       const known = this.database
         .query(
-          "SELECT summary FROM intake_context WHERE workspace_id=? AND owner_id=? AND thread_id=?"
+          "SELECT summary FROM intake_context WHERE company_id=? AND owner_id=? AND thread_id=?"
         )
-        .get(workspaceId, owner.id, thread.id) as { summary: string } | null;
+        .get(companyId, owner.id, thread.id) as { summary: string } | null;
       const context = [
         "Latest messages first:",
         ...state.messages
@@ -146,7 +146,7 @@ export class IntakeRecall {
   }
 
   private async candidateIds(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[],
     checks: FutureCheck[]
@@ -156,16 +156,16 @@ export class IntakeRecall {
         item.url?.startsWith("thread:") ? [item.url.slice(7)] : []
       ),
       ...[
-        ...this.conversationRows(workspaceId, owner, evidence),
-        ...this.matches(workspaceId, owner, evidence),
+        ...this.conversationRows(companyId, owner, evidence),
+        ...this.matches(companyId, owner, evidence),
       ].flatMap((row) => (row.thread_id ? [row.thread_id] : [])),
-      ...(await this.searchIds(workspaceId, owner, evidence)),
+      ...(await this.searchIds(companyId, owner, evidence)),
       ...checks.flatMap((check) => (check.threadId ? [check.threadId] : [])),
     ]);
   }
 
   private async searchIds(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[]
   ): Promise<string[]> {
@@ -183,7 +183,7 @@ export class IntakeRecall {
         continue;
       }
       const found = await this.search.search(
-        workspaceId,
+        companyId,
         query,
         4,
         owner.id,
@@ -192,7 +192,7 @@ export class IntakeRecall {
       this.audit.record(
         `search:${new Bun.CryptoHasher("sha256").update(query).digest("hex")}`,
         "search.results",
-        workspaceId,
+        companyId,
         owner.id,
         { query, results: found.results }
       );
@@ -204,36 +204,36 @@ export class IntakeRecall {
   }
 
   relevantChecks(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[],
     threadIds: string[]
   ): FutureCheck[] {
     const sourceIds = new Set([
       ...evidence.map((item) => item.id),
-      ...this.matches(workspaceId, owner, evidence).map((row) => row.id),
+      ...this.matches(companyId, owner, evidence).map((row) => row.id),
     ]);
     const conversations = new Set(evidence.map((item) => item.conversation));
-    return this.checks(workspaceId, owner)
+    return this.checks(companyId, owner)
       .filter(
         (check) =>
           (check.threadId !== null && threadIds.includes(check.threadId)) ||
           check.sourceIds.some(
             (id) =>
               sourceIds.has(id) ||
-              conversations.has(this.conversationOf(workspaceId, owner, id))
+              conversations.has(this.conversationOf(companyId, owner, id))
           )
       )
       .slice(0, 12);
   }
 
   /** The conversation of a source, also of an older version of it, as a check keeps the version it was made from. */
-  private conversationOf(workspaceId: string, owner: User, id: string): string {
+  private conversationOf(companyId: string, owner: User, id: string): string {
     const row = this.database
       .query(
-        "SELECT credential_id,json_extract(payload,'$.chat') AS chat FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+        "SELECT credential_id,json_extract(payload,'$.chat') AS chat FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
       )
-      .get(id, workspaceId, owner.id) as {
+      .get(id, companyId, owner.id) as {
       credential_id: string;
       chat: string;
     } | null;
@@ -244,10 +244,10 @@ export class IntakeRecall {
    * The channels where a new matter of the person's sources may start: only their private ones, so their mail and
    * threads reach a channel that others see only as a visible update to an existing matching thread there.
    */
-  channels(workspaceId: string, owner: User): AssessmentInput["channels"] {
-    this.workspaces.requireMember(workspaceId, owner);
-    return this.workspaces
-      .channelsIn(workspaceId, owner.id)
+  channels(companyId: string, owner: User): AssessmentInput["channels"] {
+    this.companies.requireMember(companyId, owner);
+    return this.companies
+      .channelsIn(companyId, owner.id)
       .filter((channel) => channel.ownerId === owner.id)
       .map((channel) => ({
         id: channel.id,
@@ -258,7 +258,7 @@ export class IntakeRecall {
   }
 
   async relatedEvidence(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     fresh: Evidence[],
     checks: FutureCheck[]
@@ -268,17 +268,17 @@ export class IntakeRecall {
     for (const id of new Set(checks.flatMap((check) => check.sourceIds))) {
       const row = this.database
         .query(
-          "SELECT * FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+          "SELECT * FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
         )
-        .get(id, workspaceId, owner.id) as ItemRow | null;
-      if (row && this.visible(workspaceId, owner, [row]).length) {
+        .get(id, companyId, owner.id) as ItemRow | null;
+      if (row && this.visible(companyId, owner, [row]).length) {
         const item = this.evidence([row])[0]!;
         result.set(id, item);
         originals.push(item);
       }
     }
     for (const item of this.evidence(
-      this.laterMessages(workspaceId, owner, [...fresh, ...originals])
+      this.laterMessages(companyId, owner, [...fresh, ...originals])
     )) {
       if (!result.has(item.id)) {
         result.set(item.id, {
@@ -288,8 +288,8 @@ export class IntakeRecall {
       }
     }
     const candidates = [
-      ...this.conversationRows(workspaceId, owner, [...fresh, ...originals]),
-      ...this.matches(workspaceId, owner, [...fresh, ...originals]),
+      ...this.conversationRows(companyId, owner, [...fresh, ...originals]),
+      ...this.matches(companyId, owner, [...fresh, ...originals]),
     ];
     let size = 0,
       count = 0;
@@ -314,7 +314,7 @@ export class IntakeRecall {
    * answer in another.
    */
   private laterMessages(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[]
   ): ItemRow[] {
@@ -325,43 +325,43 @@ export class IntakeRecall {
         ) AS position
         FROM intake_item i JOIN (
           SELECT credential_id,json_extract(payload,'$.chat') AS chat,min(at) AS since FROM intake_item
-          WHERE id IN (SELECT value FROM json_each(?)) AND workspace_id=? AND owner_id=? GROUP BY credential_id,chat
+          WHERE id IN (SELECT value FROM json_each(?)) AND company_id=? AND owner_id=? GROUP BY credential_id,chat
         ) source ON i.credential_id=source.credential_id AND json_extract(i.payload,'$.chat')=source.chat AND i.at>source.since
-        WHERE i.workspace_id=? AND i.owner_id=? AND i.superseded_at IS NULL AND i.deleted_at IS NULL
+        WHERE i.company_id=? AND i.owner_id=? AND i.superseded_at IS NULL AND i.deleted_at IS NULL
       ) WHERE position<=? ORDER BY at`)
       .all(
         JSON.stringify(evidence.map((item) => item.id)),
-        workspaceId,
+        companyId,
         owner.id,
-        workspaceId,
+        companyId,
         owner.id,
         LATER_MESSAGES
       ) as ItemRow[];
-    return this.visible(workspaceId, owner, rows);
+    return this.visible(companyId, owner, rows);
   }
 
   private conversationRows(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[]
   ): ItemRow[] {
     const rows = this.database
       .query(`SELECT DISTINCT i.* FROM intake_item i JOIN intake_item original
       ON i.credential_id=original.credential_id AND json_extract(i.payload,'$.chat')=json_extract(original.payload,'$.chat')
-      WHERE original.id IN (SELECT value FROM json_each(?)) AND original.workspace_id=? AND original.owner_id=?
-      AND i.workspace_id=? AND i.owner_id=? AND i.superseded_at IS NULL AND i.deleted_at IS NULL ORDER BY i.at DESC LIMIT 24`)
+      WHERE original.id IN (SELECT value FROM json_each(?)) AND original.company_id=? AND original.owner_id=?
+      AND i.company_id=? AND i.owner_id=? AND i.superseded_at IS NULL AND i.deleted_at IS NULL ORDER BY i.at DESC LIMIT 24`)
       .all(
         JSON.stringify(evidence.map((item) => item.id)),
-        workspaceId,
+        companyId,
         owner.id,
-        workspaceId,
+        companyId,
         owner.id
       ) as ItemRow[];
-    return this.visible(workspaceId, owner, rows);
+    return this.visible(companyId, owner, rows);
   }
 
   private matches(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     evidence: Evidence[]
   ): ItemRow[] {
@@ -381,15 +381,15 @@ export class IntakeRecall {
       .join(" OR ");
     const rows = this.database
       .query(
-        "SELECT i.* FROM intake_fts f JOIN intake_item i ON i.rowid=f.rowid WHERE intake_fts MATCH ? AND i.superseded_at IS NULL AND i.deleted_at IS NULL AND i.workspace_id=? AND i.owner_id=? AND i.id NOT IN (SELECT value FROM json_each(?)) ORDER BY bm25(intake_fts),i.at DESC LIMIT 6"
+        "SELECT i.* FROM intake_fts f JOIN intake_item i ON i.rowid=f.rowid WHERE intake_fts MATCH ? AND i.superseded_at IS NULL AND i.deleted_at IS NULL AND i.company_id=? AND i.owner_id=? AND i.id NOT IN (SELECT value FROM json_each(?)) ORDER BY bm25(intake_fts),i.at DESC LIMIT 6"
       )
       .all(
         match,
-        workspaceId,
+        companyId,
         owner.id,
         JSON.stringify(evidence.map((item) => item.id))
       ) as ItemRow[];
-    return this.visible(workspaceId, owner, rows);
+    return this.visible(companyId, owner, rows);
   }
 
   evidence(rows: ItemRow[]): Evidence[] {
@@ -416,16 +416,16 @@ export class IntakeRecall {
     });
   }
 
-  checks(workspaceId: string, owner: User): FutureCheck[] {
-    this.workspaces.requireMember(workspaceId, owner);
+  checks(companyId: string, owner: User): FutureCheck[] {
+    this.companies.requireMember(companyId, owner);
     return (
       this.database
         .query(
-          "SELECT * FROM intake_check WHERE workspace_id=? AND owner_id=? AND state='open' AND deleted_at IS NULL ORDER BY check_at"
+          "SELECT * FROM intake_check WHERE company_id=? AND owner_id=? AND state='open' AND deleted_at IS NULL ORDER BY check_at"
         )
-        .all(workspaceId, owner.id) as CheckRow[]
+        .all(companyId, owner.id) as CheckRow[]
     )
-      .filter((row) => this.visibleCheck(workspaceId, owner, row))
+      .filter((row) => this.visibleCheck(companyId, owner, row))
       .map((row) => ({
         id: row.id,
         threadId: row.thread_id,
@@ -438,16 +438,14 @@ export class IntakeRecall {
       }));
   }
 
-  coverage(workspaceId: string, owner: User): AssessmentInput["coverage"] {
+  coverage(companyId: string, owner: User): AssessmentInput["coverage"] {
     return (
       this.database
-        .query(
-          "SELECT * FROM intake_source WHERE workspace_id=? AND owner_id=?"
-        )
-        .all(workspaceId, owner.id) as SourceRow[]
+        .query("SELECT * FROM intake_source WHERE company_id=? AND owner_id=?")
+        .all(companyId, owner.id) as SourceRow[]
     )
       .filter((source) =>
-        this.sources(workspaceId, owner).has(source.credential_id)
+        this.sources(companyId, owner).has(source.credential_id)
       )
       .map((source) => ({
         source: source.credential_id,
@@ -456,40 +454,40 @@ export class IntakeRecall {
       }));
   }
 
-  status(workspaceId: string, owner: User, query = "") {
+  status(companyId: string, owner: User, query = "") {
     return {
-      evidence: this.evidence(this.items(workspaceId, owner, query, 30)),
-      checks: this.checks(workspaceId, owner),
-      coverage: this.coverage(workspaceId, owner),
+      evidence: this.evidence(this.items(companyId, owner, query, 30)),
+      checks: this.checks(companyId, owner),
+      coverage: this.coverage(companyId, owner),
     };
   }
 
   /** The person's visible observations that match `query`, best first, or else the newest. */
-  items(workspaceId: string, owner: User, query: string, limit: number) {
-    this.workspaces.requireMember(workspaceId, owner);
+  items(companyId: string, owner: User, query: string, limit: number) {
+    this.companies.requireMember(companyId, owner);
     const terms = (query.match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 32);
     const match = terms.map((term) => `"${term}"`).join(" OR ");
     const rows = match
       ? (this.database
           .query(
-            "SELECT i.* FROM intake_fts f JOIN intake_item i ON i.rowid=f.rowid WHERE (intake_fts MATCH ?) AND i.deleted_at IS NULL AND i.workspace_id=? AND i.owner_id=? ORDER BY bm25(intake_fts),i.at DESC LIMIT ?"
+            "SELECT i.* FROM intake_fts f JOIN intake_item i ON i.rowid=f.rowid WHERE (intake_fts MATCH ?) AND i.deleted_at IS NULL AND i.company_id=? AND i.owner_id=? ORDER BY bm25(intake_fts),i.at DESC LIMIT ?"
           )
-          .all(match, workspaceId, owner.id, limit) as ItemRow[])
+          .all(match, companyId, owner.id, limit) as ItemRow[])
       : (this.database
           .query(
-            "SELECT * FROM intake_item WHERE superseded_at IS NULL AND deleted_at IS NULL AND workspace_id=? AND owner_id=? ORDER BY at DESC LIMIT ?"
+            "SELECT * FROM intake_item WHERE superseded_at IS NULL AND deleted_at IS NULL AND company_id=? AND owner_id=? ORDER BY at DESC LIMIT ?"
           )
-          .all(workspaceId, owner.id, limit) as ItemRow[]);
-    return this.visible(workspaceId, owner, rows);
+          .all(companyId, owner.id, limit) as ItemRow[]);
+    return this.visible(companyId, owner, rows);
   }
 
   /** Each account that the person lets Shadow read: how far Shadow read it, its error, and how much it keeps. */
-  sourceStatus(workspaceId: string, owner: User): IntakeSourceStatus[] {
-    this.workspaces.requireMember(workspaceId, owner);
+  sourceStatus(companyId: string, owner: User): IntakeSourceStatus[] {
+    this.companies.requireMember(companyId, owner);
     return this.integrations
       .watched()
       .filter(
-        (each) => each.workspaceId === workspaceId && each.ownerId === owner.id
+        (each) => each.companyId === companyId && each.ownerId === owner.id
       )
       .map((credential) => {
         const row = this.database
@@ -510,38 +508,37 @@ export class IntakeRecall {
         };
       });
   }
-  visible(workspaceId: string, owner: User, rows: ItemRow[]): ItemRow[] {
-    const sources = this.sources(workspaceId, owner);
+  visible(companyId: string, owner: User, rows: ItemRow[]): ItemRow[] {
+    const sources = this.sources(companyId, owner);
     return rows.filter(
       (row) => row.deleted_at === null && sources.has(row.credential_id)
     );
   }
 
-  private sources(workspaceId: string, owner: User): Set<string> {
-    this.workspaces.requireMember(workspaceId, owner);
+  private sources(companyId: string, owner: User): Set<string> {
+    this.companies.requireMember(companyId, owner);
     return new Set([
       ...this.integrations
         .watched()
         .filter(
-          (each) =>
-            each.workspaceId === workspaceId && each.ownerId === owner.id
+          (each) => each.companyId === companyId && each.ownerId === owner.id
         )
         .map((each) => each.id),
-      ...this.workspaces
-        .threadsIn(workspaceId, owner.id)
+      ...this.companies
+        .threadsIn(companyId, owner.id)
         .map((each) => `thread:${each.id}`),
     ]);
   }
 
   private visibleCheck(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     check: CheckRow
   ): boolean {
     if (
       check.thread_id &&
-      !this.workspaces
-        .threadsIn(workspaceId, owner.id)
+      !this.companies
+        .threadsIn(companyId, owner.id)
         .some((thread) => thread.id === check.thread_id)
     ) {
       return false;
@@ -550,10 +547,10 @@ export class IntakeRecall {
     return ids.every((id) => {
       const row = this.database
         .query(
-          "SELECT * FROM intake_item WHERE id=? AND workspace_id=? AND owner_id=?"
+          "SELECT * FROM intake_item WHERE id=? AND company_id=? AND owner_id=?"
         )
-        .get(id, workspaceId, owner.id) as ItemRow | null;
-      return row !== null && this.visible(workspaceId, owner, [row]).length > 0;
+        .get(id, companyId, owner.id) as ItemRow | null;
+      return row !== null && this.visible(companyId, owner, [row]).length > 0;
     });
   }
 }

@@ -1,20 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import type { Notification } from "../app/types.ts";
+import { inboxQuery } from "../companies/data.ts";
+import { PanelHeader } from "../companies/shell.tsx";
 import { Button, Empty } from "../ui/components.tsx";
 import { day } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
 import { showError } from "../ui/toast.tsx";
-import { inboxQuery } from "../workspaces/data.ts";
-import { PanelHeader } from "../workspaces/shell.tsx";
 import { readNotifications } from "./data.ts";
 
-const route = getRouteApi("/signed-in/w/$workspaceId/inbox");
+const route = getRouteApi("/signed-in/c/$companyId/inbox");
 
-/** The workspace's notifications, newest first, as Linear's Inbox: a click reads one and opens its thread or channel. */
+/** The company's notifications, newest first, as Linear's Inbox: a click reads one and opens its thread or channel. */
 export function InboxPage() {
-  const { workspaceId } = route.useParams();
-  const { data: inbox } = useQuery(inboxQuery(workspaceId));
+  const { companyId } = route.useParams();
+  const { data: inbox } = useQuery(inboxQuery(companyId));
   return (
     <section className="conversation">
       <PanelHeader title="Inbox">
@@ -22,7 +22,7 @@ export function InboxPage() {
           disabled={!inbox?.unread}
           icon="check"
           label="Mark all read"
-          onClick={() => readNotifications(workspaceId).catch(showError)}
+          onClick={() => readNotifications(companyId).catch(showError)}
           size="icon"
           variant="ghost"
         />
@@ -35,9 +35,9 @@ export function InboxPage() {
             <div className="search-results">
               {inbox?.notifications.map((notification) => (
                 <InboxRow
+                  companyId={companyId}
                   key={notification.id}
                   notification={notification}
-                  workspaceId={workspaceId}
                 />
               ))}
             </div>
@@ -49,16 +49,16 @@ export function InboxPage() {
 }
 
 function InboxRow({
-  workspaceId,
+  companyId,
   notification,
 }: {
-  workspaceId: string;
+  companyId: string;
   notification: Notification;
 }) {
   const unread = notification.readAt === null;
   const onClick = () => {
     if (unread) {
-      readNotifications(workspaceId, notification.id).catch(showError);
+      readNotifications(companyId, notification.id).catch(showError);
     }
   };
   const body = (
@@ -80,8 +80,8 @@ function InboxRow({
     <Link
       className="search-row inbox-row list-row"
       onClick={onClick}
-      params={{ workspaceId, threadId: notification.threadId }}
-      to="/w/$workspaceId/thread/$threadId"
+      params={{ companyId, threadId: notification.threadId }}
+      to="/c/$companyId/thread/$threadId"
     >
       {body}
     </Link>
@@ -89,8 +89,8 @@ function InboxRow({
     <Link
       className="search-row inbox-row list-row"
       onClick={onClick}
-      params={{ workspaceId, channelId: notification.channelId }}
-      to="/w/$workspaceId/channel/$channelId"
+      params={{ companyId, channelId: notification.channelId }}
+      to="/c/$companyId/channel/$channelId"
     >
       {body}
     </Link>

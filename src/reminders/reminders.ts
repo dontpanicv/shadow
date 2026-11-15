@@ -1,14 +1,14 @@
 import type { Database } from "bun:sqlite";
+import type { Companies, Realm } from "../companies/companies.ts";
 import type { Place, PlaceEvent, Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
 import type { Threads } from "../threads/threads.ts";
-import type { Realm, Workspaces } from "../workspaces/workspaces.ts";
 import { reminderTools } from "./tools.ts";
 
 export interface Reminder {
   readonly id: string;
-  readonly workspaceId: string;
+  readonly companyId: string;
   readonly threadId: string;
   readonly recipientId: string;
   /** The person who asked for the reminder or last changed it; its turn runs as them. */
@@ -56,8 +56,8 @@ export interface ReminderInput {
   readonly createdBy: string | null;
 }
 
-type ReminderWorkspaces = Pick<
-  Workspaces,
+type ReminderCompanies = Pick<
+  Companies,
   | "agentMember"
   | "allThreadsIn"
   | "requireMember"
@@ -86,7 +86,7 @@ const TICK = 30_000;
 const MAX_POINTS_OF_INTEREST = 12;
 
 /**
- * One-time reminders of a workspace, at a time or at a place. The agent writes the reminder, and the due runner wakes
+ * One-time reminders of a company, at a time or at a place. The agent writes the reminder, and the due runner wakes
  * its thread; a reminder at a place is due when its person's iPhone reports that they arrived or left.
  */
 export class Reminders {
@@ -95,7 +95,7 @@ export class Reminders {
 
   constructor(
     private readonly database: Database,
-    private readonly workspaces: ReminderWorkspaces,
+    private readonly companies: ReminderCompanies,
     private readonly threads: ReminderThreads,
     private readonly places: ReminderPlaces
   ) {}
@@ -111,41 +111,41 @@ export class Reminders {
     clearInterval(this.timer);
   }
 
-  tools(workspaceId: string) {
+  tools(companyId: string) {
     return reminderTools(
       this,
-      this.workspaces,
+      this.companies,
       this.threads,
       this.places,
-      workspaceId
+      companyId
     );
   }
 
   create(
-    workspaceId: string,
+    companyId: string,
     actor: User,
     threadId: string,
     recipientId: string,
     input: ReminderInput & { readonly id: string }
   ): Reminder {
-    this.workspaces.requireMember(workspaceId, actor);
-    const thread = this.workspaces
-      .allThreadsIn(workspaceId)
+    this.companies.requireMember(companyId, actor);
+    const thread = this.companies
+      .allThreadsIn(companyId)
       .find((candidate) => candidate.id === threadId);
     // The reminder is in its thread, so its recipient must see the thread.
     if (!thread || (thread.realm !== null && thread.realm !== recipientId)) {
       throw notFound();
     }
-    this.requireRecipient(workspaceId, actor, recipientId);
+    this.requireRecipient(companyId, actor, recipientId);
     const now = Date.now();
-    const when = this.when(workspaceId, recipientId, input, now);
+    const when = this.when(companyId, recipientId, input, now);
     this.database
       .query(
-        "INSERT OR IGNORE INTO reminder (id, workspace_id, thread_id, recipient_id, created_by, text, due_at, time_zone, next_attempt_at, place_id, place_event, triggered_at, not_before, not_after, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO reminder (id, company_id, thread_id, recipient_id, created_by, text, due_at, time_zone, next_attempt_at, place_id, place_event, triggered_at, not_before, not_after, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         input.id,
-        workspaceId,
+        companyId,
         threadId,
         recipientId,
         input.createdBy,
@@ -161,39 +161,39 @@ export class Reminders {
         now,
         now
       );
-    return this.get(workspaceId, actor, thread.realm, input.id);
+    return this.get(companyId, actor, thread.realm, input.id);
   }
 
   /** The reminders in the threads that `realm` sees. */
-  list(workspaceId: string, actor: User, realm: Realm): Reminder[] {
-    this.workspaces.requireMember(workspaceId, actor);
+  list(companyId: string, actor: User, realm: Realm): Reminder[] {
+    this.companies.requireMember(companyId, actor);
     const threads = new Set(
-      this.workspaces.threadsIn(workspaceId, realm).map((thread) => thread.id)
+      this.companies.threadsIn(companyId, realm).map((thread) => thread.id)
     );
     return (
       this.database
         .query(
-          `SELECT ${COLUMNS} FROM reminder WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY due_at`
+          `SELECT ${COLUMNS} FROM reminder WHERE company_id = ? AND deleted_at IS NULL ORDER BY due_at`
         )
-        .all(workspaceId) as ReminderRow[]
+        .all(companyId) as ReminderRow[]
     )
       .filter((reminder) => threads.has(reminder.threadId))
       .map((row) => this.reminderOf(row));
   }
 
-  get(workspaceId: string, actor: User, realm: Realm, id: string): Reminder {
-    this.workspaces.requireMember(workspaceId, actor);
+  get(companyId: string, actor: User, realm: Realm, id: string): Reminder {
+    this.companies.requireMember(companyId, actor);
     const reminder = this.database
       .query(
-        `SELECT ${COLUMNS} FROM reminder WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`
+        `SELECT ${COLUMNS} FROM reminder WHERE id = ? AND company_id = ? AND deleted_at IS NULL`
       )
-      .get(id, workspaceId) as ReminderRow | null;
+      .get(id, companyId) as ReminderRow | null;
     if (!reminder) {
       throw notFound();
     }
     if (
-      !this.workspaces
-        .threadsIn(workspaceId, realm)
+      !this.companies
+        .threadsIn(companyId, realm)
         .some((thread) => thread.id === reminder.threadId)
     ) {
       throw notFound();
@@ -202,13 +202,13 @@ export class Reminders {
   }
 
   update(
-    workspaceId: string,
+    companyId: string,
     actor: User,
     realm: Realm,
     id: string,
     input: ReminderInput
   ): Reminder {
-    const reminder = this.get(workspaceId, actor, realm, id);
+    const reminder = this.get(companyId, actor, realm, id);
     if (this.running.has(id)) {
       throw new Error("This reminder is running now.");
     }
@@ -219,10 +219,10 @@ export class Reminders {
       throw new Error("This reminder is due now.");
     }
     const now = Date.now();
-    const when = this.when(workspaceId, reminder.recipientId, input, now);
+    const when = this.when(companyId, reminder.recipientId, input, now);
     this.database
       .query(
-        "UPDATE reminder SET text = ?, created_by = ?, due_at = ?, time_zone = ?, next_attempt_at = ?, place_id = ?, place_event = ?, triggered_at = ?, not_before = ?, not_after = ?, attempts = 0, last_error = NULL, updated_at = ? WHERE id = ? AND workspace_id = ?"
+        "UPDATE reminder SET text = ?, created_by = ?, due_at = ?, time_zone = ?, next_attempt_at = ?, place_id = ?, place_event = ?, triggered_at = ?, not_before = ?, not_after = ?, attempts = 0, last_error = NULL, updated_at = ? WHERE id = ? AND company_id = ?"
       )
       .run(
         required(input.text, "Reminder"),
@@ -237,13 +237,13 @@ export class Reminders {
         when.notAfter,
         now,
         id,
-        workspaceId
+        companyId
       );
-    return this.get(workspaceId, actor, realm, id);
+    return this.get(companyId, actor, realm, id);
   }
 
-  cancel(workspaceId: string, actor: User, realm: Realm, id: string): Reminder {
-    const reminder = this.get(workspaceId, actor, realm, id);
+  cancel(companyId: string, actor: User, realm: Realm, id: string): Reminder {
+    const reminder = this.get(companyId, actor, realm, id);
     if (this.running.has(id)) {
       throw new Error("This reminder is running now.");
     }
@@ -252,10 +252,10 @@ export class Reminders {
     }
     this.database
       .query(
-        "UPDATE reminder SET cancelled_at = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND cancelled_at IS NULL"
+        "UPDATE reminder SET cancelled_at = ?, updated_at = ? WHERE id = ? AND company_id = ? AND cancelled_at IS NULL"
       )
-      .run(Date.now(), Date.now(), id, workspaceId);
-    return this.get(workspaceId, actor, realm, id);
+      .run(Date.now(), Date.now(), id, companyId);
+    return this.get(companyId, actor, realm, id);
   }
 
   /**
@@ -263,7 +263,7 @@ export class Reminders {
    * arrived or left at `at`; a reminder made after that time, or whose window has not opened, waits for the next one.
    */
   atPlace(
-    workspaceId: string,
+    companyId: string,
     personId: string,
     placeId: string,
     event: PlaceEvent,
@@ -271,9 +271,9 @@ export class Reminders {
   ): Promise<void>[] {
     const { changes } = this.database
       .query(
-        "UPDATE reminder SET triggered_at = $at, due_at = $at, next_attempt_at = $at, updated_at = $now WHERE workspace_id = $workspaceId AND recipient_id = $personId AND place_id = $placeId AND place_event = $event AND created_at <= $at AND (not_before IS NULL OR not_before <= $at) AND (not_after IS NULL OR $at <= not_after) AND triggered_at IS NULL AND delivered_at IS NULL AND cancelled_at IS NULL AND deleted_at IS NULL"
+        "UPDATE reminder SET triggered_at = $at, due_at = $at, next_attempt_at = $at, updated_at = $now WHERE company_id = $companyId AND recipient_id = $personId AND place_id = $placeId AND place_event = $event AND created_at <= $at AND (not_before IS NULL OR not_before <= $at) AND (not_after IS NULL OR $at <= not_after) AND triggered_at IS NULL AND delivered_at IS NULL AND cancelled_at IS NULL AND deleted_at IS NULL"
       )
-      .run({ at, now: Date.now(), workspaceId, personId, placeId, event });
+      .run({ at, now: Date.now(), companyId, personId, placeId, event });
     return changes > 0 ? this.tick() : [];
   }
 
@@ -293,7 +293,7 @@ export class Reminders {
           return false;
         }
         try {
-          this.workspaces.requireMember(reminder.workspaceId, {
+          this.companies.requireMember(reminder.companyId, {
             id: reminder.recipientId,
             name: "",
             email: "",
@@ -301,8 +301,8 @@ export class Reminders {
         } catch {
           return false;
         }
-        return this.workspaces
-          .allThreadsIn(reminder.workspaceId)
+        return this.companies
+          .allThreadsIn(reminder.companyId)
           .some((thread) => thread.id === reminder.threadId);
       })
       .map((reminder) => this.run(reminder, now));
@@ -337,11 +337,11 @@ export class Reminders {
   private async run(reminder: Reminder, now: number): Promise<void> {
     this.running.add(reminder.id);
     try {
-      const thread = this.workspaces
-        .allThreadsIn(reminder.workspaceId)
+      const thread = this.companies
+        .allThreadsIn(reminder.companyId)
         .find((candidate) => candidate.id === reminder.threadId)!;
-      const member = this.workspaces
-        .members(reminder.workspaceId, {
+      const member = this.companies
+        .members(reminder.companyId, {
           id: reminder.recipientId,
           name: "",
           email: "",
@@ -385,7 +385,7 @@ export class Reminders {
 
   /** The due time of a reminder at a time, or the place of a reminder at a place, which its people must use. */
   private when(
-    workspaceId: string,
+    companyId: string,
     recipientId: string,
     input: ReminderInput,
     now: number
@@ -417,7 +417,7 @@ export class Reminders {
       throw new HttpError(400, "A reminder's time must end after it starts.");
     }
     const people = [recipientId, input.createdBy ?? recipientId];
-    const points = this.places.pointsOfInterestOf(workspaceId, recipientId);
+    const points = this.places.pointsOfInterestOf(companyId, recipientId);
     // Only the person themselves: else one member could learn when another arrives at any address.
     const ownPoint = input.createdBy === recipientId && points.includes(id);
     if (
@@ -426,7 +426,7 @@ export class Reminders {
         (ownPoint ||
           people.every((personId) =>
             this.places
-              .usable(workspaceId, personId)
+              .usable(companyId, personId)
               .some((place) => place.id === id)
           ))
       )
@@ -437,7 +437,7 @@ export class Reminders {
       );
     }
     if (ownPoint) {
-      this.requirePointOfInterestSlot(workspaceId, recipientId, points, id);
+      this.requirePointOfInterestSlot(companyId, recipientId, points, id);
     }
     // A new reminder starts as outside: one for an arrival where the person is now is due at once, or when its time starts.
     const inside =
@@ -456,7 +456,7 @@ export class Reminders {
 
   /** Refuses a new point of interest when the person's phone already waits at the most that it can. */
   private requirePointOfInterestSlot(
-    workspaceId: string,
+    companyId: string,
     recipientId: string,
     points: readonly string[],
     placeId: string
@@ -465,9 +465,9 @@ export class Reminders {
       (
         this.database
           .query(
-            "SELECT DISTINCT place_id AS placeId FROM reminder WHERE workspace_id = ? AND recipient_id = ? AND place_id IS NOT NULL AND triggered_at IS NULL AND delivered_at IS NULL AND cancelled_at IS NULL AND deleted_at IS NULL"
+            "SELECT DISTINCT place_id AS placeId FROM reminder WHERE company_id = ? AND recipient_id = ? AND place_id IS NOT NULL AND triggered_at IS NULL AND delivered_at IS NULL AND cancelled_at IS NULL AND deleted_at IS NULL"
           )
-          .all(workspaceId, recipientId) as { placeId: string }[]
+          .all(companyId, recipientId) as { placeId: string }[]
       )
         .map((row) => row.placeId)
         .filter((id) => points.includes(id))
@@ -481,7 +481,7 @@ export class Reminders {
   }
 
   private reminderOf({ placeId, placeEvent, ...row }: ReminderRow): Reminder {
-    const place = placeId ? this.places.find(row.workspaceId, placeId) : null;
+    const place = placeId ? this.places.find(row.companyId, placeId) : null;
     return {
       ...row,
       place: place
@@ -498,13 +498,13 @@ export class Reminders {
   }
 
   private requireRecipient(
-    workspaceId: string,
+    companyId: string,
     actor: User,
     recipientId: string
   ): void {
     if (
-      !this.workspaces
-        .members(workspaceId, actor)
+      !this.companies
+        .members(companyId, actor)
         .some((member) => member.userId === recipientId)
     ) {
       throw notFound();
@@ -530,7 +530,7 @@ function occasion(reminder: Reminder, name: string): string {
 }
 
 const COLUMNS =
-  "id, workspace_id AS workspaceId, thread_id AS threadId, recipient_id AS recipientId, created_by AS createdBy, text, due_at AS dueAt, time_zone AS timeZone, place_id AS placeId, place_event AS placeEvent, triggered_at AS triggeredAt, not_before AS notBefore, not_after AS notAfter, attempts, next_attempt_at AS nextAttemptAt, last_error AS lastError, delivered_at AS deliveredAt, cancelled_at AS cancelledAt";
+  "id, company_id AS companyId, thread_id AS threadId, recipient_id AS recipientId, created_by AS createdBy, text, due_at AS dueAt, time_zone AS timeZone, place_id AS placeId, place_event AS placeEvent, triggered_at AS triggeredAt, not_before AS notBefore, not_after AS notAfter, attempts, next_attempt_at AS nextAttemptAt, last_error AS lastError, delivered_at AS deliveredAt, cancelled_at AS cancelledAt";
 
 /** The UTC time of `at`, a local time with its offset in `timeZone`; throws when it is wrong or not in the future. */
 export function dueTime(at: string, timeZone: string, now: number): number {

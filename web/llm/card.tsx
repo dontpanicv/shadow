@@ -28,7 +28,7 @@ export const llmQuery = {
 };
 
 /**
- * The LLM provider that every workspace shares; only the server's owner changes it. While a device login waits, it
+ * The LLM provider that every company shares; only an admin changes it. While a device login waits, it
  * loads again every 2 seconds.
  */
 export function LlmCard() {
@@ -65,7 +65,7 @@ export function LlmCard() {
     connection = (
       <>
         <Badge label="Connected" tone="success" />
-        {llm.owner ? (
+        {llm.admin ? (
           <Button
             disabled={change.isPending}
             label="Disconnect"
@@ -74,7 +74,7 @@ export function LlmCard() {
         ) : null}
       </>
     );
-  } else if (!llm.owner) {
+  } else if (!llm.admin) {
     connection = <Badge label="Not connected" />;
   } else if (llm.login) {
     connection = <Badge label="Waiting" tone="warning" />;
@@ -85,7 +85,7 @@ export function LlmCard() {
         {connection}
       </SettingsRow>
       {llm.login && !llm.connected ? <DeviceLogin login={llm.login} /> : null}
-      {llm.connected && !llm.owner ? (
+      {llm.connected && !llm.admin ? (
         <>
           <SettingsRow label="Model">
             {llm.models.find((model) => model.id === llm.model)?.name ??
@@ -94,7 +94,7 @@ export function LlmCard() {
           <SettingsRow label="Effort">{EFFORT_LABELS[llm.effort]}</SettingsRow>
         </>
       ) : null}
-      {llm.connected && llm.owner ? (
+      {llm.connected && llm.admin ? (
         <>
           <SettingsRow label="Model">
             <Select

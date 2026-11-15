@@ -4,6 +4,14 @@ import { useRef } from "react";
 import { signOut } from "../accounts/login.tsx";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
+import { lastOpened, meQuery, useMe } from "../companies/data.ts";
+import {
+  CompanySection,
+  FactsSection,
+  MembersSection,
+  SlackBotSection,
+} from "../companies/settings.tsx";
+import { FloatingSidebarButton, Shell } from "../companies/shell.tsx";
 import { IntegrationsSection } from "../integrations/section.tsx";
 import { LlmCard, llmQuery } from "../llm/card.tsx";
 import { UsageSection } from "../llm/usage.tsx";
@@ -12,81 +20,80 @@ import { LearnedSection } from "../threads/learned.tsx";
 import {
   Avatar,
   Button,
+  Empty,
   PageContent,
   PageSection,
   SettingsCard,
   SettingsRow,
 } from "../ui/components.tsx";
 import { showError, showToast } from "../ui/toast.tsx";
-import { lastOpened, meQuery, useMe } from "../workspaces/data.ts";
-import {
-  FactsSection,
-  MembersSection,
-  WorkspaceSection,
-} from "../workspaces/settings.tsx";
-import { FloatingSidebarButton, Shell } from "../workspaces/shell.tsx";
 
-const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId/settings");
+const companyRoute = getRouteApi("/signed-in/c/$companyId/settings");
 
-/** A workspace's facts, members, and name, most used first; each person's integrations and places are in Settings. */
-export function WorkspaceSettingsPage() {
-  const { workspaceId } = workspaceRoute.useParams();
-  const workspace = useMe().workspaces.find(
-    (candidate) => candidate.id === workspaceId
+/** The company's Slack bot, members, facts, what Shadow learned, and name; only its admins open it. */
+export function CompanySettingsPage() {
+  const { companyId } = companyRoute.useParams();
+  const company = useMe().companies.find(
+    (candidate) => candidate.id === companyId
   )!;
   return (
     <section className="conversation">
       <FloatingSidebarButton />
-      <PageContent title={workspace.name}>
-        <PageSection title="Facts">
-          <FactsSection workspaceId={workspaceId} />
-        </PageSection>
-        <PageSection title="Members">
-          <MembersSection workspace={workspace} />
-        </PageSection>
-        {workspace.role === "owner" ? (
-          <PageSection title="Workspace">
-            <WorkspaceSection workspace={workspace} />
+      {company.role === "admin" ? (
+        <PageContent title={company.name}>
+          <PageSection title="Slack">
+            <SlackBotSection companyId={companyId} />
           </PageSection>
-        ) : null}
-      </PageContent>
+          <PageSection title="Members">
+            <MembersSection company={company} />
+          </PageSection>
+          <PageSection title="Facts">
+            <FactsSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="What Shadow learned">
+            <LearnedSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Company">
+            <CompanySection company={company} />
+          </PageSection>
+        </PageContent>
+      ) : (
+        <Empty title="Only an admin opens company settings" />
+      )}
     </section>
   );
 }
 
-/** The person's integrations, places, what Shadow learned, usage, the LLM provider, and the account, most used first. The sidebar keeps the last workspace, so settings feel like part of the app. */
+/** The person's integrations, places, usage, the LLM provider, and the account, most used first. The sidebar keeps the last company, so settings feel like part of the app. */
 export function SettingsPage() {
-  const { user, workspaces } = useMe();
+  const { user, companies } = useMe();
   const { data: llm } = useQuery(llmQuery);
   const last = lastOpened();
-  const workspace =
-    workspaces.find((candidate) => candidate.id === last?.workspaceId) ??
-    workspaces[0];
+  const company =
+    companies.find((candidate) => candidate.id === last?.companyId) ??
+    companies[0];
   return (
-    <Shell workspaceId={workspace?.id}>
+    <Shell companyId={company?.id}>
       <section className="conversation">
         <FloatingSidebarButton />
         <PageContent title="Settings">
-          {workspace ? (
+          {company ? (
             <>
               <PageSection title="Integrations">
-                <IntegrationsSection workspaceId={workspace.id} />
+                <IntegrationsSection companyId={company.id} />
               </PageSection>
               <PageSection title="Places">
-                <PlacesSection workspaceId={workspace.id} />
-              </PageSection>
-              <PageSection title="What Shadow learned">
-                <LearnedSection workspaceId={workspace.id} />
+                <PlacesSection companyId={company.id} />
               </PageSection>
               <PageSection title="Usage">
-                <UsageSection workspaceId={workspace.id} />
+                <UsageSection companyId={company.id} />
               </PageSection>
             </>
           ) : null}
           <PageSection title="LLM provider">
             <LlmCard />
           </PageSection>
-          {llm?.owner ? (
+          {llm?.admin ? (
             <PageSection title="Server">
               <SettingsCard>
                 <SettingsRow label="Configuration">

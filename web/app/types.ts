@@ -7,12 +7,14 @@ export interface User {
   readonly picture: string | null;
 }
 
-export interface Workspace {
+export interface Company {
   readonly id: string;
   readonly name: string;
-  /** The person's role: `owner` can rename and delete the workspace, and add members. */
-  readonly role: string;
+  /** The person's role: an `admin` runs Company settings, the people, and the Slack bot; a `member` uses Shadow. */
+  readonly role: Role;
 }
+
+export type Role = "admin" | "member";
 
 /** Times are Unix milliseconds. */
 export interface ThreadSummary {
@@ -34,8 +36,18 @@ export interface Channel {
   readonly ownerId: string | null;
   readonly summary: string | null;
   readonly icon: string | null;
+  /** The Slack channel it copies; null for a channel that no Slack channel made. */
+  readonly slackId: string | null;
   /** Newest first. */
   readonly threads: readonly ThreadSummary[];
+}
+
+/** The Slack bot of a company, which copies the public channels of Slack every 5 minutes; for its admins. */
+export interface SlackBotStatus {
+  readonly connected: boolean;
+  readonly team: string | null;
+  readonly syncedAt: number | null;
+  readonly error: string | null;
 }
 
 export interface Facts {
@@ -47,7 +59,7 @@ export interface Member {
   readonly name: string;
   readonly email: string;
   readonly picture: string | null;
-  readonly role: string;
+  readonly role: Role;
 }
 
 export interface Brief {
@@ -125,7 +137,7 @@ export type SearchKind = "thread" | "artifact" | "note" | "file" | "capture";
 export type Modality = "text" | "image" | "audio" | "none";
 
 export interface SearchResult {
-  /** `thread:<id>`, `artifact:<id>`, or a path under the workspace folder. */
+  /** `thread:<id>`, `artifact:<id>`, or a path under the company folder. */
   readonly uri: string;
   readonly kind: SearchKind;
   readonly modality: Modality;
@@ -177,7 +189,7 @@ export interface Integration {
   /** The steps that set it up, in Markdown; empty when Connect is all. */
   readonly guide: readonly string[];
   readonly watchable: boolean;
-  /** Shadow's own OAuth client, which the server's owner sets: its ID, and whether this person may set it. */
+  /** Shadow's own OAuth client, which an admin sets: its ID, and whether this person may set it. */
   readonly client: {
     readonly clientId: string | null;
     readonly changeable: boolean;
@@ -263,22 +275,22 @@ export type Effort =
   | "xhigh"
   | "max";
 
-/** What an agent reported about Shadow itself; only the server's owner reads it. */
+/** What an agent reported about Shadow itself; only an admin reads it. */
 export interface Feedback {
   readonly id: string;
   readonly kind: "error" | "missing" | "better";
   readonly tool: string | null;
   readonly summary: string;
   readonly detail: string;
-  /** The thread of the turn; null when the owner does not see it. */
+  /** The thread of the turn; null when the admin does not see it. */
   readonly threadId: string | null;
   readonly createdAt: number;
 }
 
 export interface LlmStatus {
   readonly connected: boolean;
-  /** Whether the person is the server's owner, who alone changes the login, the model, and the effort. */
-  readonly owner: boolean;
+  /** Whether the person is an admin, who alone changes the login, the model, and the effort. */
+  readonly admin: boolean;
   readonly provider: string;
   readonly model: string;
   readonly effort: Effort;
@@ -298,7 +310,7 @@ export interface LlmStatus {
 /** Something that needs the person: it opens its thread, or its channel without one. */
 export interface Notification {
   readonly id: string;
-  readonly workspaceId: string;
+  readonly companyId: string;
   readonly channelId: string;
   readonly threadId: string | null;
   readonly title: string;
@@ -340,7 +352,7 @@ export interface Usage {
     readonly threadId: string;
     readonly title: string;
   })[];
-  /** Only for the server's owner; userId "" is work for nobody. */
+  /** Only for an admin; userId "" is work for nobody. */
   readonly people:
     | readonly (UsageTotals & {
         readonly userId: string;

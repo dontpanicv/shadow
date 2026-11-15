@@ -1,14 +1,14 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import type { Feedback } from "../app/types.ts";
+import { PanelHeader } from "../companies/shell.tsx";
 import { Button, Empty } from "../ui/components.tsx";
 import { day } from "../ui/format.ts";
 import { Icon, type IconName } from "../ui/icon.tsx";
 import { showError } from "../ui/toast.tsx";
-import { PanelHeader } from "../workspaces/shell.tsx";
 import { feedbackOf } from "./data.ts";
 
-const route = getRouteApi("/signed-in/w/$workspaceId/feedback");
+const route = getRouteApi("/signed-in/c/$companyId/feedback");
 
 const KINDS: Record<Feedback["kind"], { label: string; icon: IconName }> = {
   error: { label: "Error", icon: "info" },
@@ -16,13 +16,13 @@ const KINDS: Record<Feedback["kind"], { label: string; icon: IconName }> = {
   better: { label: "Better way", icon: "forward" },
 };
 
-/** What the agents reported about Shadow, newest first; a report opens its thread when the owner sees it. */
+/** What the agents reported about Shadow, newest first; a report opens its thread when the admin sees it. */
 export function FeedbackPage() {
-  const { workspaceId } = route.useParams();
+  const { companyId } = route.useParams();
   const { data: reports = [], isReady } = useLiveQuery({
     query: (q) =>
       q
-        .from({ feedback: feedbackOf(workspaceId) })
+        .from({ feedback: feedbackOf(companyId) })
         .orderBy(({ feedback }) => feedback.createdAt, "desc"),
   });
   return (
@@ -36,9 +36,9 @@ export function FeedbackPage() {
             <div className="search-results">
               {reports.map((feedback) => (
                 <FeedbackRow
+                  companyId={companyId}
                   feedback={feedback}
                   key={feedback.id}
-                  workspaceId={workspaceId}
                 />
               ))}
             </div>
@@ -50,10 +50,10 @@ export function FeedbackPage() {
 }
 
 function FeedbackRow({
-  workspaceId,
+  companyId,
   feedback,
 }: {
-  workspaceId: string;
+  companyId: string;
   feedback: Feedback;
 }) {
   const kind = KINDS[feedback.kind];
@@ -75,8 +75,8 @@ function FeedbackRow({
       {feedback.threadId ? (
         <Link
           className="search-row list-row"
-          params={{ workspaceId, threadId: feedback.threadId }}
-          to="/w/$workspaceId/thread/$threadId"
+          params={{ companyId, threadId: feedback.threadId }}
+          to="/c/$companyId/thread/$threadId"
         >
           {body}
         </Link>
@@ -87,7 +87,7 @@ function FeedbackRow({
         icon="check"
         label="Dismiss"
         onClick={() =>
-          feedbackOf(workspaceId)
+          feedbackOf(companyId)
             .delete(feedback.id)
             .isPersisted.promise.catch(showError)
         }

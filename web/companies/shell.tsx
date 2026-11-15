@@ -19,7 +19,6 @@ import type { Channel, ThreadSummary } from "../app/types.ts";
 import {
   Button,
   Dialog,
-  Switch,
   TextField,
   WorkingContext,
   WorkingSpinner,
@@ -32,27 +31,25 @@ import {
   meQuery,
   openChannels,
   orchestratorQuery,
+  refreshCompany,
   refreshInbox,
-  refreshWorkspace,
   rememberOpenChannels,
   setSettled,
   threadsOf,
   useMe,
 } from "./data.ts";
 
-/** The signed-in pages show once the person and their workspaces are known; a signed-out person goes to sign in. */
+/** The signed-in pages show once the person and their companies are known; a signed-out person goes to sign in. */
 export function SignedIn() {
   return useQuery(meQuery).data ? <Outlet /> : null;
 }
 
-const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId");
+const companyRoute = getRouteApi("/signed-in/c/$companyId");
 
-/** A workspace's pages, in the shell. Someone who is not a member sees not found. */
-export function WorkspaceLayout() {
-  const { workspaceId } = workspaceRoute.useParams();
-  const member = useMe().workspaces.some(
-    (workspace) => workspace.id === workspaceId
-  );
+/** A company's pages, in the shell. Someone who is not a member sees not found. */
+export function CompanyLayout() {
+  const { companyId } = companyRoute.useParams();
+  const member = useMe().companies.some((company) => company.id === companyId);
   if (!member) {
     return (
       <div className="empty">
@@ -61,7 +58,7 @@ export function WorkspaceLayout() {
     );
   }
   return (
-    <Shell workspaceId={workspaceId}>
+    <Shell companyId={companyId}>
       <Outlet />
     </Shell>
   );
@@ -69,16 +66,16 @@ export function WorkspaceLayout() {
 
 const SidebarContext = createContext<() => void>(() => undefined);
 
-/** The app: the workspace and its channels with their threads on the left, the page in the inset panel. */
+/** The app: the company and its channels with their threads on the left, the page in the inset panel. */
 export function Shell({
-  workspaceId,
+  companyId,
   children,
 }: {
-  workspaceId: string | undefined;
+  companyId: string | undefined;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const working = useWorking(workspaceId);
+  const working = useWorking(companyId);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   // On narrow screens the sidebar closes when a page opens.
@@ -93,23 +90,23 @@ export function Shell({
         event.metaKey ||
         event.ctrlKey ||
         event.altKey ||
-        !workspaceId ||
+        !companyId ||
         target?.closest("input, textarea, select, [contenteditable]")
       ) {
         return;
       }
       event.preventDefault();
-      navigate({ to: "/w/$workspaceId/search", params: { workspaceId } });
+      navigate({ to: "/c/$companyId/search", params: { companyId } });
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [workspaceId, navigate]);
+  }, [companyId, navigate]);
   return (
     <WorkingContext value={working}>
       <SidebarContext value={() => setOpen((value) => !value)}>
         <div className="app">
           <aside className={open ? "sidebar is-open" : "sidebar"}>
-            <Sidebar workspaceId={workspaceId} />
+            <Sidebar companyId={companyId} />
           </aside>
           <main className="panel">{children}</main>
         </div>
@@ -159,107 +156,105 @@ function SidebarButton() {
 }
 
 /**
- * The threads whose agent works, from the workspace's working stream. Agents start threads and channels as they work,
+ * The threads whose agent works, from the company's working stream. Agents start threads and channels as they work,
  * so the channels and threads load again whenever work starts or ends.
  */
-function useWorking(workspaceId: string | undefined): ReadonlySet<string> {
+function useWorking(companyId: string | undefined): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
-    if (!workspaceId) {
+    if (!companyId) {
       return;
     }
-    const source = new EventSource(`/api/v1/workspaces/${workspaceId}/working`);
+    const source = new EventSource(`/api/v1/companies/${companyId}/working`);
     source.addEventListener("working", (event) => {
       const { threadIds } = JSON.parse(event.data) as { threadIds: string[] };
       setWorking(new Set(threadIds));
-      refreshWorkspace(workspaceId);
+      refreshCompany(companyId);
       // A run that ends notifies a moment later.
-      setTimeout(() => refreshInbox(workspaceId), 1000);
+      setTimeout(() => refreshInbox(companyId), 1000);
     });
     return () => {
       source.close();
       setWorking(new Set());
     };
-  }, [workspaceId]);
+  }, [companyId]);
   return working;
 }
 
-function Sidebar({ workspaceId }: { workspaceId: string | undefined }) {
+function Sidebar({ companyId }: { companyId: string | undefined }) {
   const me = useMe();
-  const workspace = me.workspaces.find(
-    (candidate) => candidate.id === workspaceId
-  );
+  const company = me.companies.find((candidate) => candidate.id === companyId);
   const [dialog, setDialog] = useState<"channel" | null>(null);
   return (
     <div className="sidebar-content">
-      {workspace ? (
-        <WorkspaceNav
+      {company ? (
+        <CompanyNav
+          companyId={company.id}
           onNewChannel={() => setDialog("channel")}
-          workspaceId={workspace.id}
         />
       ) : (
         <div className="sidebar-channels" />
       )}
       <nav className="nav sidebar-footer">
-        {workspace ? (
+        {company?.role === "admin" ? (
           <Link
             activeOptions={{ exact: true }}
             className="nav-item"
-            params={{ workspaceId: workspace.id }}
-            to="/w/$workspaceId/settings"
+            params={{ companyId: company.id }}
+            to="/c/$companyId/settings"
           >
-            <NavContent icon="members" label="Workspace settings" />
+            <NavContent icon="members" label="Company settings" />
           </Link>
         ) : null}
         <Link className="nav-item" to="/settings">
           <NavContent icon="settings" label="Settings" />
         </Link>
       </nav>
-      {workspace ? (
+      {company ? (
         <NewChannelDialog
+          companyId={company.id}
           onClose={() => setDialog(null)}
           open={dialog === "channel"}
-          workspaceId={workspace.id}
         />
       ) : null}
     </div>
   );
 }
 
-/** The workspace's orchestrator, inbox, upcoming, and search, its channels with their active threads, which fold, and the settled threads. */
-function WorkspaceNav({
-  workspaceId,
+/** The company's orchestrator, inbox, upcoming, and search, its channels with their active threads, which fold, and the settled threads. */
+function CompanyNav({
+  companyId,
   onNewChannel,
 }: {
-  workspaceId: string;
+  companyId: string;
   onNewChannel: () => void;
 }) {
-  const { owner } = useMe();
-  const orchestrator = useQuery(orchestratorQuery(workspaceId)).data;
-  const unread = useQuery(inboxQuery(workspaceId)).data?.unread;
+  const { admin } = useMe();
+  const orchestrator = useQuery(orchestratorQuery(companyId)).data;
+  const unread = useQuery(inboxQuery(companyId)).data?.unread;
   const { pathname } = useLocation();
   // An open thread reads its notifications.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the page changes
   useEffect(() => {
-    refreshInbox(workspaceId);
-  }, [workspaceId, pathname]);
+    refreshInbox(companyId);
+  }, [companyId, pathname]);
   const { data: channels = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ channel: channelsOf(workspaceId) })
+        .from({ channel: channelsOf(companyId) })
         .orderBy(({ channel }) => channel.order),
   });
   const { data: active = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ thread: threadsOf(workspaceId) })
+        .from({ thread: threadsOf(companyId) })
         .where(({ thread }) => isNull(thread.settledAt))
         .orderBy(({ thread }) => thread.updatedAt, "desc"),
   });
   const { data: settled = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ thread: threadsOf(workspaceId) })
+        .from({ thread: threadsOf(companyId) })
         .where(({ thread }) => not(isNull(thread.settledAt)))
         .orderBy(({ thread }) => thread.settledAt, "desc"),
   });
@@ -285,8 +280,8 @@ function WorkspaceNav({
           <Link
             activeOptions={{ exact: true, includeSearch: false }}
             className="nav-item"
-            params={{ workspaceId, channelId: channel.id }}
-            to="/w/$workspaceId/channel/$channelId"
+            params={{ companyId, channelId: channel.id }}
+            to="/c/$companyId/channel/$channelId"
           >
             <NavContent
               emoji={channel.icon}
@@ -312,9 +307,9 @@ function WorkspaceNav({
           <div className="nav-threads">
             {threads.map((thread) => (
               <ThreadNav
+                companyId={companyId}
                 key={thread.id}
                 thread={thread}
-                workspaceId={workspaceId}
               />
             ))}
           </div>
@@ -329,8 +324,8 @@ function WorkspaceNav({
           {orchestrator ? (
             <Link
               className="nav-item"
-              params={{ workspaceId, threadId: orchestrator.id }}
-              to="/w/$workspaceId/thread/$threadId"
+              params={{ companyId, threadId: orchestrator.id }}
+              to="/c/$companyId/thread/$threadId"
             >
               <NavContent
                 icon="shadow"
@@ -341,65 +336,63 @@ function WorkspaceNav({
           ) : null}
           <Link
             className="nav-item"
-            params={{ workspaceId }}
-            to="/w/$workspaceId/inbox"
+            params={{ companyId }}
+            to="/c/$companyId/inbox"
           >
             <NavContent count={unread} icon="bell" label="Inbox" />
           </Link>
           <Link
             className="nav-item"
-            params={{ workspaceId }}
-            to="/w/$workspaceId/upcoming"
+            params={{ companyId }}
+            to="/c/$companyId/upcoming"
           >
             <NavContent icon="clock" label="Upcoming" />
           </Link>
           <Link
             className="nav-item"
-            params={{ workspaceId }}
-            to="/w/$workspaceId/following"
+            params={{ companyId }}
+            to="/c/$companyId/following"
           >
             <NavContent icon="eye" label="Following" />
           </Link>
           <Link
             className="nav-item"
-            params={{ workspaceId }}
-            to="/w/$workspaceId/search"
+            params={{ companyId }}
+            to="/c/$companyId/search"
           >
             <NavContent icon="search" label="Search" />
           </Link>
         </nav>
         <nav aria-label="Channels" className="nav">
+          <div className="nav-section">Channels</div>
+          {channels
+            .filter((channel) => channel.ownerId === null)
+            .map(channelItem)}
+        </nav>
+        <nav aria-label="Private channels" className="nav">
           <div className="nav-section">
-            Channels
+            Private
             <Button
               icon="plus"
-              label="New channel"
+              label="New private channel"
               onClick={onNewChannel}
               size="tiny"
               variant="ghost"
             />
           </div>
           {channels
-            .filter((channel) => channel.ownerId === null)
+            .filter((channel) => channel.ownerId !== null)
             .map(channelItem)}
+          {admin ? (
+            <Link
+              className="nav-item"
+              params={{ companyId }}
+              to="/c/$companyId/feedback"
+            >
+              <NavContent icon="info" label="Feedback" />
+            </Link>
+          ) : null}
         </nav>
-        {owner || channels.some((channel) => channel.ownerId !== null) ? (
-          <nav aria-label="Private channels" className="nav">
-            <div className="nav-section">Private</div>
-            {channels
-              .filter((channel) => channel.ownerId !== null)
-              .map(channelItem)}
-            {owner ? (
-              <Link
-                className="nav-item"
-                params={{ workspaceId }}
-                to="/w/$workspaceId/feedback"
-              >
-                <NavContent icon="info" label="Feedback" />
-              </Link>
-            ) : null}
-          </nav>
-        ) : null}
       </div>
       {settled.length > 0 ? (
         <details className="sidebar-settled">
@@ -412,9 +405,9 @@ function WorkspaceNav({
           <nav aria-label="Settled threads" className="settled-list">
             {settled.map((thread) => (
               <ThreadNav
+                companyId={companyId}
                 key={thread.id}
                 thread={thread}
-                workspaceId={workspaceId}
               />
             ))}
           </nav>
@@ -425,10 +418,10 @@ function WorkspaceNav({
 }
 
 function ThreadNav({
-  workspaceId,
+  companyId,
   thread,
 }: {
-  workspaceId: string;
+  companyId: string;
   thread: ThreadSummary;
 }) {
   const settled = thread.settledAt !== null;
@@ -436,8 +429,8 @@ function ThreadNav({
     <div className="sidebar-thread">
       <Link
         className="nav-item"
-        params={{ workspaceId, threadId: thread.id }}
-        to="/w/$workspaceId/thread/$threadId"
+        params={{ companyId, threadId: thread.id }}
+        to="/c/$companyId/thread/$threadId"
       >
         <NavContent icon="compose" label={thread.title} threadId={thread.id} />
       </Link>
@@ -445,7 +438,7 @@ function ThreadNav({
         <Button
           icon={settled ? "inbox" : "check"}
           label={settled ? "Un-settle thread" : "Settle thread"}
-          onClick={() => setSettled(workspaceId, thread.id, !settled)}
+          onClick={() => setSettled(companyId, thread.id, !settled)}
           size="tiny"
           variant="ghost"
         />
@@ -495,17 +488,16 @@ export function NavContent({
 }
 
 function NewChannelDialog({
-  workspaceId,
+  companyId,
   open,
   onClose,
 }: {
-  workspaceId: string;
+  companyId: string;
   open: boolean;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
-  const [isPrivate, setPrivate] = useState(false);
   return (
     <Dialog
       busy={busy}
@@ -514,17 +506,17 @@ function NewChannelDialog({
         setBusy(true);
         try {
           const channel = await request<{ id: string }>(
-            `/workspaces/${workspaceId}/channels`,
+            `/companies/${companyId}/channels`,
             {
               method: "POST",
-              body: { name: String(form.get("name")), private: isPrivate },
+              body: { name: String(form.get("name")) },
             }
           );
-          await refreshWorkspace(workspaceId);
+          await refreshCompany(companyId);
           onClose();
           navigate({
-            to: "/w/$workspaceId/channel/$channelId",
-            params: { workspaceId, channelId: channel.id },
+            to: "/c/$companyId/channel/$channelId",
+            params: { companyId, channelId: channel.id },
           });
         } catch (error) {
           showError(error);
@@ -534,19 +526,15 @@ function NewChannelDialog({
       }}
       open={open}
       submit="Create channel"
-      title="New channel"
+      title="New private channel"
     >
       <TextField
         autoFocus
         label="Name"
         name="name"
-        placeholder="trips"
+        placeholder="research"
         required
       />
-      <div className="field-switch">
-        Private
-        <Switch checked={isPrivate} label="Private" onChange={setPrivate} />
-      </div>
     </Dialog>
   );
 }

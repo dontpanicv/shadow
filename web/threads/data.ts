@@ -14,8 +14,8 @@ import type {
   ThreadState,
   ThreadSummary,
 } from "../app/types.ts";
+import { meQuery, refreshInbox, threadsOf } from "../companies/data.ts";
 import { showError } from "../ui/toast.tsx";
-import { meQuery, refreshInbox, threadsOf } from "../workspaces/data.ts";
 
 /** The last state each open thread's event stream sent, and who waits for the next one. */
 const streamed = new Map<string, ThreadState>();
@@ -104,19 +104,19 @@ export function delivery(threadId: string): Promise<boolean> {
 
 /** Starts a thread in a channel; its first message is its title. */
 export async function startThread(
-  workspaceId: string,
+  companyId: string,
   channelId: string,
   text: string,
   files: readonly File[]
 ): Promise<ThreadSummary> {
   const thread = await request<ThreadSummary>(
-    `/workspaces/${workspaceId}/threads`,
+    `/companies/${companyId}/threads`,
     {
       method: "POST",
       body: messageForm({ channelId, text, files }),
     }
   );
-  threadsOf(workspaceId).utils.writeUpsert(thread);
+  threadsOf(companyId).utils.writeUpsert(thread);
   return thread;
 }
 
@@ -141,7 +141,7 @@ export function answerApproval(
  * files and artifacts come with messages. Gives whether the agent works, and what it waits for a person to allow.
  */
 export function useThreadStream(
-  workspaceId: string,
+  companyId: string,
   threadId: string,
   onChange: () => void
 ): { running: boolean; approvals: readonly Approval[] } {
@@ -169,7 +169,7 @@ export function useThreadStream(
         // The stream reads the thread's notifications before its first event.
         if (!opened) {
           opened = true;
-          refreshInbox(workspaceId);
+          refreshInbox(companyId);
         }
         streamed.set(threadId, state);
         write(threadId, state);
@@ -188,7 +188,7 @@ export function useThreadStream(
       document.removeEventListener("visibilitychange", follow);
       source?.close();
     };
-  }, [workspaceId, threadId, onChange]);
+  }, [companyId, threadId, onChange]);
   return { running, approvals };
 }
 
@@ -255,9 +255,9 @@ function messageForm(fields: {
   return form;
 }
 
-/** A channel, or the workspace's own files and artifacts for a null `channelId`, which the orchestrator keeps. */
+/** A channel, or the company's own files and artifacts for a null `channelId`, which the orchestrator keeps. */
 export interface Place {
-  readonly workspaceId: string;
+  readonly companyId: string;
   readonly channelId: string | null;
 }
 
@@ -266,13 +266,13 @@ export interface Place {
  * channels show the files and artifacts that moved with it.
  */
 export async function moveThread(
-  workspaceId: string,
+  companyId: string,
   threadId: string,
   from: string,
   to: string
 ): Promise<void> {
   try {
-    await threadsOf(workspaceId).update(threadId, (draft) => {
+    await threadsOf(companyId).update(threadId, (draft) => {
       draft.channelId = to;
     }).isPersisted.promise;
   } catch (error) {
@@ -280,7 +280,7 @@ export async function moveThread(
     return;
   }
   const keys = [from, to].map((channelId) =>
-    placeKey({ workspaceId, channelId })
+    placeKey({ companyId, channelId })
   );
   await queryClient.invalidateQueries({
     predicate: ({ queryKey }) => keys.some((key) => queryKey.includes(key)),
@@ -288,18 +288,18 @@ export async function moveThread(
 }
 
 export function placeKey(place: Place): string {
-  return `${place.workspaceId}/${place.channelId ?? ""}`;
+  return `${place.companyId}/${place.channelId ?? ""}`;
 }
 
 function placeOf(key: string): Place {
-  const [workspaceId, channelId] = key.split("/") as [string, string];
-  return { workspaceId, channelId: channelId || null };
+  const [companyId, channelId] = key.split("/") as [string, string];
+  return { companyId, channelId: channelId || null };
 }
 
-function filesPath({ workspaceId, channelId }: Place): string {
+function filesPath({ companyId, channelId }: Place): string {
   return channelId
-    ? `/workspaces/${workspaceId}/channels/${channelId}/files`
-    : `/workspaces/${workspaceId}/files`;
+    ? `/companies/${companyId}/channels/${channelId}/files`
+    : `/companies/${companyId}/files`;
 }
 
 /** The files of a place, oldest first. Deleting one shows at once. */
@@ -308,7 +308,7 @@ export const filesOf = keyed((key: string) => {
   return createCollection(
     queryCollectionOptions({
       id: `files:${key}`,
-      queryKey: ["workspaces", place.workspaceId, "files", key],
+      queryKey: ["companies", place.companyId, "files", key],
       queryClient,
       queryFn: ({ signal }) =>
         request<{ files: SavedFile[] }>(filesPath(place), { signal }),
@@ -316,10 +316,9 @@ export const filesOf = keyed((key: string) => {
       getKey: (file) => file.id,
       onDelete: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(
-            `/workspaces/${place.workspaceId}/files/${mutation.key}`,
-            { method: "DELETE" }
-          );
+          await request(`/companies/${place.companyId}/files/${mutation.key}`, {
+            method: "DELETE",
+          });
         }
       },
     })
@@ -341,33 +340,33 @@ export async function uploadFiles(
   filesOf(placeKey(place)).utils.writeUpsert(response.files);
 }
 
-export function briefQuery(workspaceId: string, channelId: string) {
+export function briefQuery(companyId: string, channelId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "brief", channelId],
+    queryKey: ["companies", companyId, "brief", channelId],
     queryFn: ({ signal }) =>
       request<{ brief: Brief | null }>(
-        `/workspaces/${workspaceId}/channels/${channelId}/brief`,
+        `/companies/${companyId}/channels/${channelId}/brief`,
         { signal }
       ),
   });
 }
 
 /** What Shadow learned that the person sees, facts first. A correction or a delete shows at once. */
-export const learnedOf = keyed((workspaceId: string) =>
+export const learnedOf = keyed((companyId: string) =>
   createCollection(
     queryCollectionOptions({
-      id: `learned:${workspaceId}`,
-      queryKey: ["workspaces", workspaceId, "learned"],
+      id: `learned:${companyId}`,
+      queryKey: ["companies", companyId, "learned"],
       queryClient,
       queryFn: ({ signal }) =>
-        request<{ learned: Learned[] }>(`/workspaces/${workspaceId}/learned`, {
+        request<{ learned: Learned[] }>(`/companies/${companyId}/learned`, {
           signal,
         }),
       select: (response) => response.learned,
       getKey: (entry) => entry.id,
       onUpdate: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(`/workspaces/${workspaceId}/learned/${mutation.key}`, {
+          await request(`/companies/${companyId}/learned/${mutation.key}`, {
             method: "PUT",
             body: { text: mutation.modified.text },
           });
@@ -375,7 +374,7 @@ export const learnedOf = keyed((workspaceId: string) =>
       },
       onDelete: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(`/workspaces/${workspaceId}/learned/${mutation.key}`, {
+          await request(`/companies/${companyId}/learned/${mutation.key}`, {
             method: "DELETE",
           });
         }

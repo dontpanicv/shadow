@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 
 const DAY_MS = 24 * 60 * 60_000;
 
-/** The daily check time of one workspace, in its memory database. */
+/** The daily check time of one company, in its memory database. */
 export class Settling {
   private readonly database: Database;
 

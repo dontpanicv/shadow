@@ -53,8 +53,18 @@ addresses, or code and data from employers or clients.
   source check; useful answers alone never notify. No separate worker thread is made. Code selects personally relevant Slack
   conversations and keeps incoming and outgoing context. Bounded batches and subject-scoped recall reach the
   configured model provider. Silent filing starts no agent turn and sends no notification.
-- Every workspace read and write goes through `Workspaces.requireMember`; answer `404` to non-members.
-- Shadow has one workspace, the family's; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
+- Every company read and write goes through `Companies.requireMember`; answer `404` to non-members.
+- A member is an `admin` or a `member` ("User" in the app). Only an admin opens Company settings: the Slack bot, the
+  members and their roles, the facts, what Shadow learned, and the name; an admin also sets the model, the OAuth
+  clients, reads agent feedback, and restarts Shadow. Check with `Companies.requireAdmin` (`403`), or `isAdmin` for
+  what all companies share. The first of `allowed_emails` starts the company as its first admin; one admin stays.
+- The channels that every member sees copy the public channels of the company's Slack: only the Slack bot
+  (`src/integrations/slack-bot.ts`, every 5 minutes, through `Companies.syncSlackChannels`) makes, renames, or hides
+  them, by `channel.slack_id`. People and agents make, rename, and merge away only private channels. Every 15
+  minutes `src/integrations/slack-history.ts` copies the last 30 days of each such Slack channel into one
+  `slack-YYYY-MM-DD.md` file of the channel per day, with attachments as files, and gives new or changed messages to
+  the channel's brief (`Threads.briefFromSlack`).
+- Shadow has one company; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
   of it belong to one member. Every read of channels, threads, files, artifacts, routines, reminders, search, or memory
   names the `Realm` it serves: the person, or for an agent's turn `Threads.realm`, which is its thread's realm, or in a
   channel every member sees the person whose message the turn answers. Only background work that acts for no person
@@ -80,7 +90,7 @@ addresses, or code and data from employers or clients.
 
 ## Modules
 
-- `src/` is a modular monolith. A module (`accounts`, `workspaces`, `llm`, `integrations`, `places`, `artifacts`,
+- `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `places`, `artifacts`,
   `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`) holds one domain: its service, routes, and tests. `src/platform/`
   is shared code that knows no domain; `src/app/` composes the services and holds the route helpers.
 - A module uses only the modules before it in that list, through their `<module>.ts` file, or their `pages.ts` from
@@ -90,7 +100,7 @@ addresses, or code and data from employers or clients.
   imports from `src/`: `web/app/types.ts` holds the types of `docs/api.md`, and `test/web-types.test.ts` checks them
   against the server's.
 - Register new route tables in `src/app/routes.ts` and new services in `createApp` in `src/app/app.ts`.
-- A person adds integration credentials and places only in their own Settings, never in Workspace settings. Like a
+- A person adds integration credentials and places only in their own Settings, never in Company settings. Like a
   private channel, each one belongs to one member (`credential.owner_id`, `place.owner_id`) and is private to their
   turns until they set `shared`, which gives it to the turns of every member; only its owner changes or removes it. A
   tool call uses the credential of its turn's person first, else a shared one (`src/integrations/integrations.ts`). A
@@ -121,7 +131,7 @@ addresses, or code and data from employers or clients.
 ## Code Conventions
 
 - Use descriptive names; do not abbreviate domain concepts.
-- Shadow's conversations use Slack's words: a workspace has channels, and a channel has threads. A source's own
+- Shadow's conversations use Slack's words: the company has channels, as a Slack workspace does, and a channel has threads. A source's own
   conversation, such as a WhatsApp or Slack conversation of a watched account, is a `chat` (`WatchedItem.chat`).
 - Do not introduce `mock.module()` in tests; use dependency injection.
 - Order functions top-down by call hierarchy, with entry points before their helpers.

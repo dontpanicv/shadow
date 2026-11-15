@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import type { Realm } from "../workspaces/workspaces.ts";
+import type { Realm } from "../companies/companies.ts";
 import type { Summarizer } from "./memory.ts";
 
 /** The longest text of what Shadow learned about one person in one realm, in bytes of UTF-8. */
@@ -76,7 +76,7 @@ export interface ReviewInput {
   readonly people: readonly { readonly id: string; readonly name: string }[];
   /** What the review may not suggest again: the people's routines, reminders, and suggestions. */
   readonly automations: string;
-  /** The facts that the family wrote themselves in the workspace's settings. */
+  /** The facts that the family wrote themselves in the company's settings. */
   readonly facts: string;
   readonly messages: readonly ReviewMessage[];
 }
@@ -111,7 +111,7 @@ const COLUMNS =
   "id, kind, person_id AS personId, channel_id AS channelId, realm, text, thread_id AS threadId, updated_at AS updatedAt";
 
 /**
- * What Shadow learned from the family's messages, in the workspace's `memory.sqlite`: facts about each person and
+ * What Shadow learned from the family's messages, in the company's `memory.sqlite`: facts about each person and
  * how-tos of each channel, which every answer reads. After a thread is quiet, a review reads its new messages and
  * changes the lists. People change and remove entries in Settings; removed entries stay, and reviews do not learn them
  * again. An entry from a private channel or an orchestrator belongs to that person's realm.

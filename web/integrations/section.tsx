@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
 import type { Integration } from "../app/types.ts";
+import { useMe } from "../companies/data.ts";
 import {
   Button,
   Dialog,
@@ -14,16 +15,15 @@ import {
 } from "../ui/components.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { showToast } from "../ui/toast.tsx";
-import { useMe } from "../workspaces/data.ts";
 
 /**
  * The integrations, with the person's own credentials, which they share with every member's turns or keep private, and
  * the ones other members shared. Secrets go to the server and never come back.
  */
-export function IntegrationsSection({ workspaceId }: { workspaceId: string }) {
+export function IntegrationsSection({ companyId }: { companyId: string }) {
   const { user } = useMe();
-  const base = `/workspaces/${workspaceId}`;
-  const queryKey = ["workspaces", workspaceId, "integrations"];
+  const base = `/companies/${companyId}`;
+  const queryKey = ["companies", companyId, "integrations"];
   const { data: integrations = [] } = useQuery({
     queryKey,
     queryFn: ({ signal }) =>

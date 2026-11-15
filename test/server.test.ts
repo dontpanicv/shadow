@@ -18,7 +18,7 @@ afterAll(() => shadow.close());
 
 let alice: string;
 let bob: string;
-let workspaceId: string;
+let companyId: string;
 let threadId: string;
 
 test("only allowed emails sign in, and only with Google", async () => {
@@ -65,18 +65,18 @@ test("only allowed emails sign in, and only with Google", async () => {
   expect((await call("/api/v1/me", { token: alice })).status).toBe(200);
 });
 
-test("the first person to sign in starts the workspace, with a general channel", async () => {
-  const [workspace] = (
+test("the first person to sign in starts the company, with a general channel", async () => {
+  const [company] = (
     (await (await call("/api/v1/me", { token: alice })).json()) as any
-  ).workspaces;
-  workspaceId = workspace.id;
+  ).companies;
+  companyId = company.id;
   const detail = (await (
-    await call(`/api/v1/workspaces/${workspaceId}`, { token: alice })
+    await call(`/api/v1/companies/${companyId}`, { token: alice })
   ).json()) as any;
   expect(
     detail.channels.map((channel: { name: string }) => channel.name)
   ).toEqual(["general"]);
-  const duplicate = await call(`/api/v1/workspaces/${workspaceId}/channels`, {
+  const duplicate = await call(`/api/v1/companies/${companyId}/channels`, {
     token: alice,
     body: { name: "General" },
   });
@@ -86,10 +86,10 @@ test("the first person to sign in starts the workspace, with a general channel",
 test("a thread is a Pi Durable session that knows who wrote each message", async () => {
   shadow.faux.setResponses([fauxAssistantMessage("Saturday works.")]);
   const { channels } = (await (
-    await call(`/api/v1/workspaces/${workspaceId}`, { token: alice })
+    await call(`/api/v1/companies/${companyId}`, { token: alice })
   ).json()) as any;
   const thread = (await (
-    await call(`/api/v1/workspaces/${workspaceId}/threads`, {
+    await call(`/api/v1/companies/${companyId}/threads`, {
       token: alice,
       body: { channelId: channels[0].id, text: "Plan the cabin trip" },
     })
@@ -114,9 +114,9 @@ test("a thread is a Pi Durable session that knows who wrote each message", async
   ]);
 });
 
-test("workspaces are isolated until someone adds you", async () => {
+test("companies are isolated until someone adds you", async () => {
   expect(
-    (await call(`/api/v1/workspaces/${workspaceId}`, { token: bob })).status
+    (await call(`/api/v1/companies/${companyId}`, { token: bob })).status
   ).toBe(404);
   expect(
     (await call(`/api/v1/threads/${threadId}`, { token: bob })).status
@@ -130,11 +130,10 @@ test("workspaces are isolated until someone adds you", async () => {
     ).status
   ).toBe(404);
   expect(
-    ((await (await call("/api/v1/me", { token: bob })).json()) as any)
-      .workspaces
+    ((await (await call("/api/v1/me", { token: bob })).json()) as any).companies
   ).toEqual([]);
 
-  const added = await call(`/api/v1/workspaces/${workspaceId}/members`, {
+  const added = await call(`/api/v1/companies/${companyId}/members`, {
     token: alice,
     body: { email: "BOB@example.com" },
   });
@@ -145,7 +144,7 @@ test("workspaces are isolated until someone adds you", async () => {
 });
 
 test("a credential is private until its owner shares it, only its owner deletes it, and secrets never leave the server", async () => {
-  const base = `/api/v1/workspaces/${workspaceId}`;
+  const base = `/api/v1/companies/${companyId}`;
   const credential = (await (
     await call(`${base}/integrations/home_assistant/credentials`, {
       token: alice,
@@ -195,7 +194,7 @@ test("only the server's owner restarts Shadow", async () => {
   expect(refused.status).toBe(403);
 });
 
-test("everyone uses the one LLM provider, and only the server's owner changes it", async () => {
+test("everyone uses the one LLM provider, and only an admin changes it", async () => {
   const llm = (await (await call("/api/v1/llm", { token: bob })).json()) as any;
   // The faux model has no reasoning, so the default effort moves to the one level it supports.
   expect(llm).toMatchObject({
@@ -206,7 +205,7 @@ test("everyone uses the one LLM provider, and only the server's owner changes it
       { id: shadow.model.id, name: shadow.model.name, efforts: ["off"] },
     ],
     login: null,
-    owner: false,
+    admin: false,
   });
   for (const [path, method, body] of [
     ["/api/v1/llm/model", "PUT", { model: shadow.model.id }],
@@ -217,13 +216,13 @@ test("everyone uses the one LLM provider, and only the server's owner changes it
     const refused = await call(path, { method, token: bob, body });
     expect(refused.status).toBe(403);
     expect(await refused.json()).toEqual({
-      error: "Only the server's owner changes this",
+      error: "Only an admin changes this",
     });
   }
-  // Alice's email is the first in allowed_emails.
+  // Alice started the company, so she is its admin.
   expect(
     await (await call("/api/v1/llm", { token: alice })).json()
-  ).toMatchObject({ owner: true });
+  ).toMatchObject({ admin: true });
   expect(
     (
       await call("/api/v1/llm/model", {
@@ -250,7 +249,7 @@ test("everyone uses the one LLM provider, and only the server's owner changes it
         body: { effort: "off" },
       })
     ).json()
-  ).toMatchObject({ effort: "off", owner: true });
+  ).toMatchObject({ effort: "off", admin: true });
 });
 
 test("the web app signs in with Google and keeps cross-site posts out", async () => {
@@ -275,18 +274,15 @@ test("the web app signs in with Google and keeps cross-site posts out", async ()
 
   const cookie = `better-auth.session_token=${await signedCookie(alice)}`;
   const crossSite = await handler(
-    new Request(
-      `http://shadow.test/api/v1/workspaces/${workspaceId}/channels`,
-      {
-        method: "POST",
-        headers: {
-          cookie,
-          origin: "https://evil.example",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ name: "pwned" }),
-      }
-    )
+    new Request(`http://shadow.test/api/v1/companies/${companyId}/channels`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: "https://evil.example",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ name: "pwned" }),
+    })
   );
   expect(crossSite.status).toBe(403);
   expect(

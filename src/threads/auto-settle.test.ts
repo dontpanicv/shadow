@@ -29,8 +29,8 @@ test("daily settling settles channel threads quiet for more than 14 days, withou
     const { internalAdapter } = await shadow.app.auth.$context;
     const alice = (await internalAdapter.findUserByEmail("alice@example.com"))!
       .user;
-    const home = await shadow.app.workspaces.create(alice, "Daily settling");
-    const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+    const home = await shadow.app.companies.create(alice, "Daily settling");
+    const general = shadow.app.companies.channels(home.id, alice)[0]!;
     const agent = async (context: Context, options?: SimpleStreamOptions) => {
       const last = context.messages.at(-1)!;
       const text =
@@ -65,7 +65,7 @@ test("daily settling settles channel threads quiet for more than 14 days, withou
       await until(
         () =>
           shadow.app.threads.messages(
-            shadow.app.workspaces.thread(thread.id, alice)
+            shadow.app.companies.thread(thread.id, alice)
           ),
         (state) => !state.running && state.messages.length === 2
       );
@@ -92,9 +92,9 @@ test("daily settling settles channel threads quiet for more than 14 days, withou
       .run(now - 14 * DAY_MS, boundary.id);
     const states: (number | null)[] = [];
     const stopThread = await shadow.app.threads.watch(
-      shadow.app.workspaces.thread(quiet.id, alice),
+      shadow.app.companies.thread(quiet.id, alice),
       () => {
-        states.push(shadow.app.workspaces.thread(quiet.id, alice).settledAt);
+        states.push(shadow.app.companies.thread(quiet.id, alice).settledAt);
       }
     );
     try {
@@ -104,13 +104,13 @@ test("daily settling settles channel threads quiet for more than 14 days, withou
     } finally {
       await stopThread();
     }
-    expect(shadow.app.workspaces.thread(quiet.id, alice).settledAt).toEqual(
+    expect(shadow.app.companies.thread(quiet.id, alice).settledAt).toEqual(
       expect.any(Number)
     );
     expect(states.at(-1)).toEqual(expect.any(Number));
     for (const thread of [recent, boundary, running, own]) {
       expect(
-        shadow.app.workspaces.thread(thread.id, alice).settledAt
+        shadow.app.companies.thread(thread.id, alice).settledAt
       ).toBeNull();
     }
     expect(reviews).toEqual([]);
@@ -120,18 +120,18 @@ test("daily settling settles channel threads quiet for more than 14 days, withou
       .query("UPDATE thread SET updated_at = ? WHERE id = ?")
       .run(now - 20 * DAY_MS, recent.id);
     await shadow.app.threads.settleInactive(home.id, now + DAY_MS - 1);
-    expect(shadow.app.workspaces.thread(recent.id, alice).settledAt).toBeNull();
+    expect(shadow.app.companies.thread(recent.id, alice).settledAt).toBeNull();
 
     // A new message, such as a routine's answer, opens the settled thread again.
     await shadow.app.threads.send(quiet.id, alice, "One more question");
-    expect(shadow.app.workspaces.thread(quiet.id, alice).settledAt).toBeNull();
+    expect(shadow.app.companies.thread(quiet.id, alice).settledAt).toBeNull();
   } finally {
     release?.();
     await shadow.close();
   }
 });
 
-test("private threads settle without sending workspace events to another member", async () => {
+test("private threads settle without sending company events to another member", async () => {
   const shadow = await startTestApp();
   try {
     await shadow.signIn("Alice", "alice@example.com");
@@ -141,13 +141,12 @@ test("private threads settle without sending workspace events to another member"
       .user;
     const bob = (await internalAdapter.findUserByEmail("bob@example.com"))!
       .user;
-    const home = await shadow.app.workspaces.create(alice, "Private settling");
-    await shadow.app.workspaces.addMember(home.id, alice, bob.email);
-    const privateChannel = shadow.app.workspaces.createChannel(
+    const home = await shadow.app.companies.create(alice, "Private settling");
+    await shadow.app.companies.addMember(home.id, alice, bob.email);
+    const privateChannel = shadow.app.companies.createChannel(
       home.id,
       alice,
-      "private",
-      true
+      "private"
     );
     shadow.faux.setResponses(
       Array.from({ length: 100 }, () => () => fauxAssistantMessage("Done."))
@@ -161,7 +160,7 @@ test("private threads settle without sending workspace events to another member"
     await until(
       () =>
         shadow.app.threads.messages(
-          shadow.app.workspaces.thread(recipe.id, alice)
+          shadow.app.companies.thread(recipe.id, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
@@ -182,12 +181,12 @@ test("private threads settle without sending workspace events to another member"
         home.id,
         Date.now() + 15 * DAY_MS
       );
-      expect(shadow.app.workspaces.thread(recipe.id, alice).settledAt).toEqual(
+      expect(shadow.app.companies.thread(recipe.id, alice).settledAt).toEqual(
         expect.any(Number)
       );
       expect(alices).toBe(2);
       expect(bobs).toBe(1);
-      expect(() => shadow.app.workspaces.thread(recipe.id, bob)).toThrow(
+      expect(() => shadow.app.companies.thread(recipe.id, bob)).toThrow(
         "Not found"
       );
     } finally {

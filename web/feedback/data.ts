@@ -5,23 +5,22 @@ import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
 import type { Feedback } from "../app/types.ts";
 
-/** What the agents of a workspace reported about Shadow, for the server's owner; a dismiss shows at once. */
-export const feedbackOf = keyed((workspaceId: string) =>
+/** What the agents of a company reported about Shadow, for an admin; a dismiss shows at once. */
+export const feedbackOf = keyed((companyId: string) =>
   createCollection(
     queryCollectionOptions({
-      id: `feedback:${workspaceId}`,
-      queryKey: ["workspaces", workspaceId, "feedback"],
+      id: `feedback:${companyId}`,
+      queryKey: ["companies", companyId, "feedback"],
       queryClient,
       queryFn: ({ signal }) =>
-        request<{ feedback: Feedback[] }>(
-          `/workspaces/${workspaceId}/feedback`,
-          { signal }
-        ),
+        request<{ feedback: Feedback[] }>(`/companies/${companyId}/feedback`, {
+          signal,
+        }),
       select: (response) => response.feedback,
       getKey: (feedback) => feedback.id,
       onDelete: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(`/workspaces/${workspaceId}/feedback/${mutation.key}`, {
+          await request(`/companies/${companyId}/feedback/${mutation.key}`, {
             method: "DELETE",
           });
         }

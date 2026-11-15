@@ -10,6 +10,7 @@ import type {
   IntakeKept,
   IntakeUpdate,
 } from "../app/types.ts";
+import { PanelHeader } from "../companies/shell.tsx";
 import {
   Badge,
   Button,
@@ -22,7 +23,6 @@ import {
 import { weekdayTime } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
 import { showError } from "../ui/toast.tsx";
-import { PanelHeader } from "../workspaces/shell.tsx";
 import {
   changeFollowing,
   changeUpdate,
@@ -34,7 +34,7 @@ import {
   unblock,
 } from "./data.ts";
 
-const route = getRouteApi("/signed-in/w/$workspaceId/following");
+const route = getRouteApi("/signed-in/c/$companyId/following");
 
 /** The kept observations that show before "Show all". */
 const KEPT_ROWS = 15;
@@ -50,15 +50,15 @@ type Selected =
  * its sources, what it keeps, and what it did. Each row opens its detail, where the person gives feedback.
  */
 export function FollowingPage() {
-  const { workspaceId } = route.useParams();
+  const { companyId } = route.useParams();
   const [search, setSearch] = useState("");
   const query = useDeferredValue(search.trim());
   const [selected, setSelected] = useState<Selected | null>(null);
-  const { data: overview } = useQuery(overviewQuery(workspaceId, query));
+  const { data: overview } = useQuery(overviewQuery(companyId, query));
   const { data: checks = [] } = useLiveQuery({
     query: (q) =>
       q
-        .from({ check: followingOf(workspaceId) })
+        .from({ check: followingOf(companyId) })
         .orderBy(({ check }) => check.updatedAt, "desc"),
   });
   const updates = overview?.updates ?? [];
@@ -136,7 +136,7 @@ export function FollowingPage() {
                 overview={overview}
               />
               {overview.blocked.length > 0 ? (
-                <BlockedSection overview={overview} workspaceId={workspaceId} />
+                <BlockedSection companyId={companyId} overview={overview} />
               ) : null}
               <KeptSection
                 kept={overview.kept}
@@ -170,10 +170,10 @@ export function FollowingPage() {
       {overview && selected ? (
         <SelectedDialog
           checks={checks}
+          companyId={companyId}
           onClose={close}
           overview={overview}
           selected={selected}
-          workspaceId={workspaceId}
         />
       ) : null}
     </section>
@@ -209,10 +209,10 @@ function SourcesSection({
 
 function BlockedSection({
   overview,
-  workspaceId,
+  companyId,
 }: {
   overview: FollowingOverview;
-  workspaceId: string;
+  companyId: string;
 }) {
   return (
     <PageSection title="Blocked">
@@ -227,7 +227,7 @@ function BlockedSection({
           >
             <Button
               label="Unblock"
-              onClick={() => unblock(workspaceId, block.id).catch(showError)}
+              onClick={() => unblock(companyId, block.id).catch(showError)}
               variant="ghost"
             />
           </SettingsRow>
@@ -339,28 +339,24 @@ function KeptRow({ item, onOpen }: { item: IntakeKept; onOpen: () => void }) {
 }
 
 function SelectedDialog({
-  workspaceId,
+  companyId,
   overview,
   checks,
   selected,
   onClose,
 }: {
-  workspaceId: string;
+  companyId: string;
   overview: FollowingOverview;
   checks: readonly FollowingCheck[];
   selected: Selected;
   onClose: () => void;
 }) {
-  const props = { onClose, overview, workspaceId };
+  const props = { onClose, overview, companyId };
   switch (selected.kind) {
     case "check": {
       const check = checks.find((each) => each.id === selected.id);
       return check ? (
-        <CheckDialog
-          check={check}
-          onClose={onClose}
-          workspaceId={workspaceId}
-        />
+        <CheckDialog check={check} companyId={companyId} onClose={onClose} />
       ) : null;
     }
     case "update": {
@@ -379,7 +375,7 @@ function SelectedDialog({
 }
 
 interface DialogProps {
-  workspaceId: string;
+  companyId: string;
   overview: FollowingOverview;
   onClose: () => void;
 }
@@ -403,15 +399,12 @@ function UpdateDialog({
       <div className="following-actions">
         {waits ? (
           <UpdateActions
+            companyId={props.companyId}
             onDeleted={props.onClose}
             update={update}
-            workspaceId={props.workspaceId}
           />
         ) : null}
-        <OpenThread
-          threadId={update.threadId}
-          workspaceId={props.workspaceId}
-        />
+        <OpenThread companyId={props.companyId} threadId={update.threadId} />
       </div>
       <Sources evidence={update.evidence} />
     </FeedbackDialog>
@@ -431,7 +424,7 @@ function KeptDialog({ item, ...props }: DialogProps & { item: IntakeKept }) {
       <p className="following-text">{item.text}</p>
       <Attachments evidence={item} />
       <div className="following-actions">
-        <OpenThread threadId={item.threadId} workspaceId={props.workspaceId} />
+        <OpenThread companyId={props.companyId} threadId={item.threadId} />
         <OpenSource url={item.url} />
       </div>
     </FeedbackDialog>
@@ -456,14 +449,14 @@ function SourceDialog({
 
 /** A dialog whose form sends the person's feedback on `target`, after its earlier feedback. */
 function FeedbackDialog({
-  workspaceId,
+  companyId,
   overview,
   target,
   title,
   onClose,
   children,
 }: {
-  workspaceId: string;
+  companyId: string;
   overview: FollowingOverview;
   target: string;
   title: string;
@@ -483,7 +476,7 @@ function FeedbackDialog({
         }
         setBusy(true);
         try {
-          await sendFeedback(workspaceId, target, quote);
+          await sendFeedback(companyId, target, quote);
           onClose();
         } catch (error) {
           showError(error);
@@ -516,11 +509,11 @@ function FeedbackDialog({
 }
 
 function UpdateActions({
-  workspaceId,
+  companyId,
   update,
   onDeleted,
 }: {
-  workspaceId: string;
+  companyId: string;
   update: IntakeUpdate;
   onDeleted: () => void;
 }) {
@@ -530,10 +523,10 @@ function UpdateActions({
     setBusy(true);
     try {
       if (action === "delete") {
-        await deleteUpdate(workspaceId, update.id);
+        await deleteUpdate(companyId, update.id);
         onDeleted();
       } else {
-        await changeUpdate(workspaceId, update.id, action);
+        await changeUpdate(companyId, update.id, action);
       }
     } catch (error) {
       showError(error);
@@ -595,15 +588,15 @@ function UpdateActions({
 }
 
 function CheckDialog({
-  workspaceId,
+  companyId,
   check,
   onClose,
 }: {
-  workspaceId: string;
+  companyId: string;
   check: FollowingCheck;
   onClose: () => void;
 }) {
-  const query = useQuery(followingDetailQuery(workspaceId, check.id));
+  const query = useQuery(followingDetailQuery(companyId, check.id));
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (query.data && check.revision !== query.data.check.revision) {
@@ -614,7 +607,7 @@ function CheckDialog({
   const act = async (action: FollowingChange["action"], quote: string) => {
     setBusy(true);
     try {
-      await changeFollowing(workspaceId, detail?.check ?? check, action, quote);
+      await changeFollowing(companyId, detail?.check ?? check, action, quote);
       return true;
     } catch (error) {
       showError(error);
@@ -667,7 +660,7 @@ function CheckDialog({
             onClick={() => act("undo", "Undo the last change")}
           />
         ) : null}
-        <OpenThread threadId={current.threadId} workspaceId={workspaceId} />
+        <OpenThread companyId={companyId} threadId={current.threadId} />
       </div>
       {query.error ? <p role="alert">{query.error.message}</p> : null}
       {detail ? <Sources evidence={detail.evidence} /> : null}
@@ -711,17 +704,17 @@ function Attachments({ evidence }: { evidence: IntakeEvidence }) {
 }
 
 function OpenThread({
-  workspaceId,
+  companyId,
   threadId,
 }: {
-  workspaceId: string;
+  companyId: string;
   threadId: string | null;
 }) {
   return threadId ? (
     <Link
       className="button"
-      params={{ workspaceId, threadId }}
-      to="/w/$workspaceId/thread/$threadId"
+      params={{ companyId, threadId }}
+      to="/c/$companyId/thread/$threadId"
     >
       Open thread
     </Link>

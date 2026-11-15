@@ -18,7 +18,7 @@ pickers are never used; menus, selects, switches, and checkboxes are our own.
 - Text: `text` for titles and values, `textSecondary` for controls and body, `textTertiary` for descriptions,
   inactive navigation, and meta, `textQuaternary` for placeholders and times.
 - Weights: `book` (450) for body and menus, `medium` (500) for labels, navigation, and buttons, `strong` (550) for
-  the workspace name, `regular` (400) for field and select values.
+  the company name, `regular` (400) for field and select values.
 - Icons: the 16 × 16 pixel set in `icon` of `tokens.json`, lines 1 pt wide (16 pt): `bun run tokens` writes
   `web/ui/pixels.ts`. A new icon is drawn there on the same grid. A section's chevron is 8 pt, 1 pt a pixel.
 - Dither: 0.5 pt cells, an 8 × 8 Bayer threshold, on or off (`web/ui/dither.ts`). Used only for the right edge of a
@@ -81,7 +81,7 @@ pickers are never used; menus, selects, switches, and checkboxes are our own.
 
 ## Menu
 
-Used by the workspace switcher and action menus.
+Used by the company switcher and action menus.
 
 - `surfaceMenu`, 0.5 px `borderMenu` border, `radius.xl`, shadow `menu`, 6 px vertical padding, min width
   `size.menuMinWidth`. Opens 4 px below its trigger, start- or end-aligned, or above when there is no room.
@@ -133,7 +133,7 @@ Used by the workspace switcher and action menus.
 
 ## Sidebar
 
-- 244 wide on the canvas, 12 px side padding. It starts with Shadow, with no workspace name above it. Shadow's icon is
+- 244 wide on the canvas, 12 px side padding. It starts with Shadow, with no company name above it. Shadow's icon is
   its face in one color (`shadow`): the logo with its marks cut out, 16 cells across, 1 px a cell.
 - Item: 28 high, 1 px apart, padding 0 × 9 × 0 × 8, `radius.md`, a 14 px icon 6 px before the label,
   `fontSize.md` `medium` `textTertiary`. Hover: `fillHover` at once and `text` in 150 ms. Current: `fillActive`, `text`.
@@ -184,7 +184,7 @@ Used by the workspace switcher and action menus.
   and a 0.5 px `border`; and a Radius select. The pin stays in the middle of the map, which moves under it, so a
   place always has one: a 16 px `accent` circle with a 2 px `onAccent` ring. The place's circle is `accent`, 1.5 px,
   filled at 12 %. The map is OpenStreetMap through Shadow, with only "© OpenStreetMap".
-- A text field for long text, such as the workspace's facts, fills the card with 16 px padding, min 160 high, a 1.5
+- A text field for long text, such as the company's facts, fills the card with 16 px padding, min 160 high, a 1.5
   line height, and its Save button at the bottom right.
 - Text in a section, such as a channel summary: `fontSize.md` `textSecondary` on a 22 px line, with its line breaks.
 

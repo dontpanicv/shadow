@@ -500,7 +500,7 @@ export function PageSection({
   );
 }
 
-/** The threads whose agent works now, which the workspace's working stream reports. */
+/** The threads whose agent works now, which the company's working stream reports. */
 export const WorkingContext = createContext<ReadonlySet<string>>(new Set());
 
 /** A spinner that shows while the agent of a thread works. */

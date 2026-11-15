@@ -4,15 +4,15 @@ import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Artifact } from "../artifacts/artifacts.ts";
+import type { ThreadRef, ThreadSummary } from "../companies/companies.ts";
 import type { Message } from "../threads/threads.ts";
-import type { ThreadRef, ThreadSummary } from "../workspaces/workspaces.ts";
 import type { Embedder, EmbedInput } from "./embedder.ts";
 import { tools } from "./extract.ts";
 import {
   type ArtifactReader,
+  type CompanyDirectory,
   Indexer,
   type ThreadReader,
-  type WorkspaceDirectory,
 } from "./search.ts";
 
 let dataDirectory: string;
@@ -21,11 +21,11 @@ beforeAll(async () => {
 });
 afterAll(() => rm(dataDirectory, { recursive: true, force: true }));
 
-/** The directory the indexer reads: workspace ids, and the threads of each workspace and the channels they are in. */
+/** The directory the indexer reads: company ids, and the threads of each company and the channels they are in. */
 function directory(
   ids: readonly string[] = [],
   threads: readonly (ThreadSummary & ThreadRef)[] = []
-): WorkspaceDirectory {
+): CompanyDirectory {
   return {
     ids: () => [...ids],
     threadsIn: () => [...threads],
@@ -41,6 +41,7 @@ function directory(
         ownerId: null,
         summary: null,
         icon: null,
+        slackId: null,
         threads: [],
       })
     );
@@ -52,8 +53,8 @@ function artifactsWith(
   pages: readonly { artifact: Artifact; html: string }[] = []
 ): ArtifactReader {
   return {
-    inWorkspace: () => pages.map((page) => page.artifact),
-    allInWorkspace: () => pages.map((page) => page.artifact),
+    inCompany: () => pages.map((page) => page.artifact),
+    allInCompany: () => pages.map((page) => page.artifact),
     html: (id) => pages.find((page) => page.artifact.id === id)!.html,
   };
 }
@@ -135,7 +136,7 @@ async function until(
   }
 }
 
-test("start creates each workspace's folders and indexes a new file soon after it is saved", async () => {
+test("start creates each company's folders and indexes a new file soon after it is saved", async () => {
   const data = join(dataDirectory, "watch");
   const indexer = new Indexer(
     data,
@@ -148,7 +149,7 @@ test("start creates each workspace's folders and indexes a new file soon after i
     indexer.start();
     for (const folder of ["notes", "files", "raw", "channels"]) {
       expect(
-        statSync(join(data, "workspaces", "family", folder)).isDirectory()
+        statSync(join(data, "companies", "family", folder)).isDirectory()
       ).toBe(true);
     }
     await indexer.scan("family");
@@ -160,7 +161,7 @@ test("start creates each workspace's folders and indexes a new file soon after i
     });
 
     await Bun.write(
-      join(data, "workspaces", "family", "notes", "shopping.md"),
+      join(data, "companies", "family", "notes", "shopping.md"),
       "# Shopping\n\nBuy oat milk and apples."
     );
     await until(
@@ -187,7 +188,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
     [
       {
         id: "t1",
-        workspaceId: "family",
+        companyId: "family",
         conversationId: 1,
         channelId: "c1",
         title: "Holiday",
@@ -198,7 +199,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
       },
       {
         id: "t2",
-        workspaceId: "family",
+        companyId: "family",
         conversationId: 2,
         channelId: "c1",
         title: "Empty",
@@ -209,18 +210,18 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
       },
     ]
   );
-  const channel = join(data, "workspaces", "family", "channels", "c1");
+  const channel = join(data, "companies", "family", "channels", "c1");
   await mkdir(join(channel, "files"), { recursive: true });
   await Bun.write(
     join(channel, "files", "tickets.txt"),
     "Ferry tickets for Saturday"
   );
   await Bun.write(
-    join(data, "workspaces", "family", "files", "~$draft.docx"),
+    join(data, "companies", "family", "files", "~$draft.docx"),
     "lock"
   );
   await Bun.write(
-    join(data, "workspaces", "family", "files", "broken report.docx"),
+    join(data, "companies", "family", "files", "broken report.docx"),
     "not a zip"
   );
   const indexer = new Indexer(
@@ -310,7 +311,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
         (result) => [result.uri, result.snippet]
       )
     ).toEqual([["files/broken report.docx", ""]]);
-    expect(() => indexer.status("../other")).toThrow("Invalid workspace id");
+    expect(() => indexer.status("../other")).toThrow("Invalid company id");
   } finally {
     await indexer.close();
   }
@@ -321,7 +322,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
   const live = { channels: ["c1"], artifacts: true };
   const thread = {
     id: "t1",
-    workspaceId: "family",
+    companyId: "family",
     conversationId: 1,
     channelId: "c1",
     title: "Holiday",
@@ -348,6 +349,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
       ownerId: null,
       summary: null,
       icon: null,
+      slackId: null,
       threads: [],
     }));
   const indexer = new Indexer(
@@ -361,8 +363,8 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
     },
     threadsWith({ t1: [message("m1", "We take the ferry to the island")] }),
     {
-      inWorkspace: () => (live.artifacts ? [artifact] : []),
-      allInWorkspace: () => (live.artifacts ? [artifact] : []),
+      inCompany: () => (live.artifacts ? [artifact] : []),
+      allInCompany: () => (live.artifacts ? [artifact] : []),
       html: () => "<p>Ferry at 9:00</p>",
     },
     null
@@ -391,11 +393,11 @@ test("pictures read while the model is down are read again, and text waits for t
     "#!/bin/sh\nprintf '\\377\\330beach\\377\\331'\n"
   );
   await chmod(fakeFfmpeg, 0o755);
-  const files = join(data, "workspaces", "family", "files");
+  const files = join(data, "companies", "family", "files");
   await mkdir(files, { recursive: true });
   await Bun.write(join(files, "IMG_0001.jpg"), "jpeg");
   await Bun.write(
-    join(data, "workspaces", "family", "notes", "trip.md"),
+    join(data, "companies", "family", "notes", "trip.md"),
     "The children want to visit the mountain lake again next summer"
   );
   const { embedder, state } = testEmbedder();

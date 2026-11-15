@@ -4,15 +4,15 @@ import type { User } from "../platform/auth.ts";
 import type { FileRef } from "../threads/threads.ts";
 import type { Audit } from "./audit.ts";
 import type {
+  IntakeCompanies,
   IntakeIntegrations,
   IntakeThreads,
-  IntakeWorkspaces,
 } from "./intake.ts";
 import type { ItemRow } from "./recall.ts";
 
 interface ArchiveRow {
   id: string;
-  workspace_id: string;
+  company_id: string;
   owner_id: string;
   channel_id: string;
   credential_id: string;
@@ -36,7 +36,7 @@ const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export class IntakeArchives {
   constructor(
     private readonly database: Database,
-    private readonly workspaces: IntakeWorkspaces,
+    private readonly companies: IntakeCompanies,
     private readonly integrations: IntakeIntegrations,
     private readonly threads: Pick<
       IntakeThreads,
@@ -47,14 +47,14 @@ export class IntakeArchives {
   ) {}
 
   async save(
-    workspaceId: string,
+    companyId: string,
     channelId: string,
     owner: User,
     rows: ItemRow[]
   ): Promise<FileRef[]> {
-    this.workspaces.requireMember(workspaceId, owner);
-    this.threads.place(workspaceId, channelId, owner);
-    const groups = this.stage(workspaceId, channelId, owner, rows);
+    this.companies.requireMember(companyId, owner);
+    this.threads.place(companyId, channelId, owner);
+    const groups = this.stage(companyId, channelId, owner, rows);
     const files: FileRef[] = [];
     for (const id of groups) {
       files.push(...(await this.flush(id, owner)));
@@ -67,15 +67,15 @@ export class IntakeArchives {
    * its attachments, and another is written again without them. Deleted files move aside, as every delete does.
    */
   async forget(
-    workspaceId: string,
+    companyId: string,
     owner: User,
     itemIds: readonly string[]
   ): Promise<void> {
     const groups = this.database
       .query(
-        "SELECT * FROM intake_archive WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM json_each(item_ids) WHERE value IN (SELECT value FROM json_each(?)))"
+        "SELECT * FROM intake_archive WHERE company_id=? AND owner_id=? AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM json_each(item_ids) WHERE value IN (SELECT value FROM json_each(?)))"
       )
-      .all(workspaceId, owner.id, JSON.stringify(itemIds)) as ArchiveRow[];
+      .all(companyId, owner.id, JSON.stringify(itemIds)) as ArchiveRow[];
     for (const group of groups) {
       const left = this.observations(group);
       const saved = JSON.parse(group.attachment_ids) as Record<string, FileRef>;
@@ -100,7 +100,7 @@ export class IntakeArchives {
       for (const fileId of gone) {
         // A file that the person deleted already is gone too.
         await this.threads
-          .deleteFile(workspaceId, owner, fileId)
+          .deleteFile(companyId, owner, fileId)
           .catch(() => undefined);
       }
       const attachments = JSON.stringify(
@@ -124,9 +124,9 @@ export class IntakeArchives {
             attachments,
             group.id
           );
-        await this.resume(group.id, workspaceId, owner);
+        await this.resume(group.id, companyId, owner);
       }
-      this.audit.record(group.id, "archive.forgotten", workspaceId, owner.id, {
+      this.audit.record(group.id, "archive.forgotten", companyId, owner.id, {
         itemIds,
         files: gone,
       });
@@ -140,7 +140,7 @@ export class IntakeArchives {
     }
     try {
       const { path } = await this.threads.file(
-        group.workspace_id,
+        group.company_id,
         owner,
         group.file_id
       );
@@ -152,28 +152,28 @@ export class IntakeArchives {
   }
 
   /** Repairs interrupted writes. */
-  async maintain(workspaceId: string, owner: User): Promise<void> {
-    this.workspaces.requireMember(workspaceId, owner);
+  async maintain(companyId: string, owner: User): Promise<void> {
+    this.companies.requireMember(companyId, owner);
     const pending = this.database
       .query(
-        "SELECT id FROM intake_archive WHERE workspace_id=? AND owner_id=? AND deleted_at IS NULL AND pending=1"
+        "SELECT id FROM intake_archive WHERE company_id=? AND owner_id=? AND deleted_at IS NULL AND pending=1"
       )
-      .all(workspaceId, owner.id) as { id: string }[];
+      .all(companyId, owner.id) as { id: string }[];
     for (const group of pending) {
-      await this.resume(group.id, workspaceId, owner);
+      await this.resume(group.id, companyId, owner);
     }
   }
 
   private async resume(
     id: string,
-    workspaceId: string,
+    companyId: string,
     owner: User
   ): Promise<boolean> {
     try {
       await this.flush(id, owner);
       return true;
     } catch (error) {
-      this.audit.record(id, "archive.error", workspaceId, owner.id, {
+      this.audit.record(id, "archive.error", companyId, owner.id, {
         error: String(error),
       });
       return false;
@@ -181,7 +181,7 @@ export class IntakeArchives {
   }
 
   private stage(
-    workspaceId: string,
+    companyId: string,
     channelId: string,
     owner: User,
     rows: ItemRow[]
@@ -195,24 +195,24 @@ export class IntakeArchives {
       const credential = credentials.find(
         (each) =>
           each.id === candidate.credential_id &&
-          each.workspaceId === workspaceId &&
+          each.companyId === companyId &&
           each.ownerId === owner.id
       );
       if (
         !credential ||
-        candidate.workspace_id !== workspaceId ||
+        candidate.company_id !== companyId ||
         candidate.owner_id !== owner.id
       ) {
         continue;
       }
       const row = this.database
         .query(
-          "SELECT * FROM intake_item WHERE credential_id=? AND id=? AND workspace_id=? AND owner_id=? AND deleted_at IS NULL"
+          "SELECT * FROM intake_item WHERE credential_id=? AND id=? AND company_id=? AND owner_id=? AND deleted_at IS NULL"
         )
         .get(
           credential.id,
           candidate.id,
-          workspaceId,
+          companyId,
           owner.id
         ) as ItemRow | null;
       if (!row) {
@@ -225,7 +225,7 @@ export class IntakeArchives {
       const period = daily ? calendarDay(item.at) : "";
       const id = hash(
         JSON.stringify([
-          workspaceId,
+          companyId,
           owner.id,
           channelId,
           credential.id,
@@ -243,7 +243,7 @@ export class IntakeArchives {
         group = {
           row: saved ?? {
             id,
-            workspace_id: workspaceId,
+            company_id: companyId,
             owner_id: owner.id,
             channel_id: channelId,
             credential_id: credential.id,
@@ -286,11 +286,11 @@ export class IntakeArchives {
         const ids = [...members.values()].map((each) => each.row.id);
         this.database
           .query(
-            "INSERT INTO intake_archive(id,workspace_id,owner_id,channel_id,credential_id,integration,conversation,period,item_ids) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET item_ids=excluded.item_ids,pending=CASE WHEN item_ids!=excluded.item_ids OR deleted_at IS NOT NULL THEN 1 ELSE pending END,file_id=CASE WHEN deleted_at IS NULL THEN file_id END,content_hash=CASE WHEN deleted_at IS NULL THEN content_hash END,attachment_ids=CASE WHEN deleted_at IS NULL THEN attachment_ids ELSE '{}' END,deleted_at=NULL"
+            "INSERT INTO intake_archive(id,company_id,owner_id,channel_id,credential_id,integration,conversation,period,item_ids) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET item_ids=excluded.item_ids,pending=CASE WHEN item_ids!=excluded.item_ids OR deleted_at IS NOT NULL THEN 1 ELSE pending END,file_id=CASE WHEN deleted_at IS NULL THEN file_id END,content_hash=CASE WHEN deleted_at IS NULL THEN content_hash END,attachment_ids=CASE WHEN deleted_at IS NULL THEN attachment_ids ELSE '{}' END,deleted_at=NULL"
           )
           .run(
             row.id,
-            workspaceId,
+            companyId,
             owner.id,
             channelId,
             row.credential_id,
@@ -313,13 +313,13 @@ export class IntakeArchives {
     if (!group) {
       return [];
     }
-    this.workspaces.requireMember(group.workspace_id, owner);
+    this.companies.requireMember(group.company_id, owner);
     const credential = this.integrations
       .watched()
       .find(
         (each) =>
           each.id === group.credential_id &&
-          each.workspaceId === group.workspace_id &&
+          each.companyId === group.company_id &&
           each.ownerId === owner.id
       );
     if (!credential) {
@@ -336,11 +336,7 @@ export class IntakeArchives {
     if (!observations.length) {
       return [];
     }
-    const place = this.threads.place(
-      group.workspace_id,
-      group.channel_id,
-      owner
-    );
+    const place = this.threads.place(group.company_id, group.channel_id, owner);
     const stored = await this.threads.files(place);
     const attachments = await this.attachments(
       group,
@@ -358,7 +354,7 @@ export class IntakeArchives {
     let currentHash: string | null = null;
     if (source) {
       const storedFile = await this.threads.file(
-        group.workspace_id,
+        group.company_id,
         owner,
         source.id
       );
@@ -371,7 +367,7 @@ export class IntakeArchives {
         this.audit.record(
           group.id,
           "archive.edited",
-          group.workspace_id,
+          group.company_id,
           owner.id,
           { preserved: source.id }
         );
@@ -380,7 +376,7 @@ export class IntakeArchives {
     }
     if (!source || currentHash !== digest) {
       const saved = await this.threads.writeFile(
-        group.workspace_id,
+        group.company_id,
         group.channel_id,
         owner,
         new File([text], name, { type: "text/markdown" }),
@@ -397,17 +393,17 @@ export class IntakeArchives {
         .run(sourceFile.id, digest, group.id);
       this.database
         .query(
-          "UPDATE intake_item SET archived_id=? WHERE workspace_id=? AND owner_id=? AND credential_id=? AND source_id IN (SELECT source_id FROM intake_item WHERE id IN (SELECT value FROM json_each(?)))"
+          "UPDATE intake_item SET archived_id=? WHERE company_id=? AND owner_id=? AND credential_id=? AND source_id IN (SELECT source_id FROM intake_item WHERE id IN (SELECT value FROM json_each(?)))"
         )
         .run(
           sourceFile.id,
-          group.workspace_id,
+          group.company_id,
           owner.id,
           group.credential_id,
           group.item_ids
         );
     })();
-    this.audit.record(group.id, "archive.saved", group.workspace_id, owner.id, {
+    this.audit.record(group.id, "archive.saved", group.company_id, owner.id, {
       channel: group.channel_id,
       file: sourceFile,
       itemIds: observations.map((each) => each.row.id),
@@ -420,11 +416,11 @@ export class IntakeArchives {
     return (
       this.database
         .query(
-          "SELECT i.* FROM json_each(?) m JOIN intake_item i ON i.id=m.value WHERE i.workspace_id=? AND i.owner_id=? AND i.credential_id=? AND i.deleted_at IS NULL ORDER BY CAST(m.key AS INTEGER)"
+          "SELECT i.* FROM json_each(?) m JOIN intake_item i ON i.id=m.value WHERE i.company_id=? AND i.owner_id=? AND i.credential_id=? AND i.deleted_at IS NULL ORDER BY CAST(m.key AS INTEGER)"
         )
         .all(
           group.item_ids,
-          group.workspace_id,
+          group.company_id,
           group.owner_id,
           group.credential_id
         ) as ItemRow[]
@@ -451,7 +447,7 @@ export class IntakeArchives {
           this.audit.record(
             row.id,
             "attachment.skipped",
-            group.workspace_id,
+            group.company_id,
             owner.id,
             { attachment, reason: "Unsupported type or size" }
           );
@@ -470,7 +466,7 @@ export class IntakeArchives {
           this.audit.record(
             row.id,
             "attachment.skipped",
-            group.workspace_id,
+            group.company_id,
             owner.id,
             { attachment, reason: String(error) }
           );
@@ -513,12 +509,12 @@ export class IntakeArchives {
     this.audit.record(
       row.id,
       "attachment.downloaded",
-      group.workspace_id,
+      group.company_id,
       owner.id,
       { attachment, hash: blob }
     );
     return this.threads.writeFile(
-      group.workspace_id,
+      group.company_id,
       group.channel_id,
       owner,
       new File([bytes], name, { type: attachment.type })

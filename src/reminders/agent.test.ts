@@ -61,15 +61,12 @@ function agent(context: Context) {
   return fauxAssistantMessage("Ok.");
 }
 
-test("the orchestrator and a channel thread can both schedule reminders in their workspace", async () => {
-  const workspace = await shadow.app.workspaces.create(alice, "Family");
-  const orchestrator = await shadow.app.threads.orchestrator(
-    workspace.id,
-    alice
-  );
-  const channel = shadow.app.workspaces.channels(workspace.id, alice)[0]!;
+test("the orchestrator and a channel thread can both schedule reminders in their company", async () => {
+  const company = await shadow.app.companies.create(alice, "Family");
+  const orchestrator = await shadow.app.threads.orchestrator(company.id, alice);
+  const channel = shadow.app.companies.channels(company.id, alice)[0]!;
   const thread = await shadow.app.threads.create(
-    workspace.id,
+    company.id,
     alice,
     channel.id,
     "Remind me next year"
@@ -82,24 +79,24 @@ test("the orchestrator and a channel thread can both schedule reminders in their
   await until(
     () =>
       shadow.app.threads.messages(
-        shadow.app.workspaces.thread(thread.id, alice)
+        shadow.app.companies.thread(thread.id, alice)
       ),
     (state) => !state.running && state.messages.at(-1)?.text === "Scheduled."
   );
   expect(
     shadow.app.reminders
-      .list(workspace.id, alice, alice.id)
+      .list(company.id, alice, alice.id)
       .map((reminder) => reminder.threadId)
       .sort()
   ).toEqual([orchestrator.id, thread.id].sort());
   await shadow.app.threads.send(orchestrator.id, alice, "Delegate reminder");
   const delegated = await until(
-    async () => shadow.app.reminders.list(workspace.id, alice, alice.id),
+    async () => shadow.app.reminders.list(company.id, alice, alice.id),
     (reminders) => reminders.length === 3
   );
   expect(delegated.every((reminder) => reminder.recipientId === alice.id)).toBe(
     true
   );
-  const other = await shadow.app.workspaces.create(alice, "Other");
+  const other = await shadow.app.companies.create(alice, "Other");
   expect(shadow.app.reminders.list(other.id, alice, null)).toEqual([]);
 });

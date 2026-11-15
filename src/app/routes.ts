@@ -2,6 +2,7 @@ import { accountApiRoutes } from "../accounts/api.ts";
 import { agendaApiRoutes } from "../agenda/api.ts";
 import { artifactApiRoutes } from "../artifacts/api.ts";
 import { artifactWebRoutes } from "../artifacts/web.ts";
+import { companyApiRoutes } from "../companies/api.ts";
 import { feedbackApiRoutes } from "../feedback/api.ts";
 import { intakeApiRoutes } from "../intake/api.ts";
 import { integrationApiRoutes } from "../integrations/api.ts";
@@ -12,7 +13,6 @@ import { HttpError } from "../platform/errors.ts";
 import { routineApiRoutes } from "../routines/api.ts";
 import { searchApiRoutes } from "../search/api.ts";
 import { threadApiRoutes } from "../threads/api.ts";
-import { workspaceApiRoutes } from "../workspaces/api.ts";
 import { api } from "./api.ts";
 import type { Route } from "./http.ts";
 import { appFile, appPage, asset } from "./web.ts";
@@ -22,8 +22,8 @@ const APP_PATHS = [
   "/",
   "/login",
   "/settings",
-  "/workspaces/new",
-  "/w/*",
+  "/companies/new",
+  "/c/*",
 ] as const;
 
 /**
@@ -35,7 +35,7 @@ export const allRoutes: readonly Route[] = [
   ["GET", "/app/*", async ({ request }) => appFile(request)],
   ...APP_PATHS.map((path): Route => ["GET", path, appPage]),
   ...accountApiRoutes,
-  ...workspaceApiRoutes,
+  ...companyApiRoutes,
   ...llmApiRoutes,
   ...integrationApiRoutes,
   ...intakeApiRoutes,
@@ -52,10 +52,8 @@ export const allRoutes: readonly Route[] = [
     "POST",
     "/api/v1/server/restart",
     api(async ({ app, user }) => {
-      if (
-        user.email.toLowerCase() !== app.config.allowedEmails[0]?.toLowerCase()
-      ) {
-        throw new HttpError(403, "Only the server's owner restarts Shadow");
+      if (!app.companies.isAdmin(user)) {
+        throw new HttpError(403, "Only an admin restarts Shadow");
       }
       restart();
       return new Response(null, { status: 202 });

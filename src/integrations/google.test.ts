@@ -279,7 +279,7 @@ test("a Doc comes from a Markdown file that gog reads, and gog's errors reach th
   );
 });
 
-test("a draft attaches workspace files under their own names", async () => {
+test("a draft attaches company files under their own names", async () => {
   const stored = join(directory, "0190-a,b.zip");
   await Bun.write(stored, "zip");
   const file: FileOf = async (fileId) => {
@@ -353,7 +353,7 @@ test("a Drive file goes to the thread's channel under its own name", async () =>
   );
 });
 
-test("a workspace file goes to Drive under its own name, and a share sends no invitation", async () => {
+test("a company file goes to Drive under its own name, and a share sends no invitation", async () => {
   const stored = join(directory, "0190-report.zip");
   await Bun.write(stored, "zip");
   const file: FileOf = async () => ({ path: stored, name: "report.zip" });

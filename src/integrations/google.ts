@@ -598,7 +598,7 @@ export function googleConnector(
       {
         name: "google_drive_upload",
         description:
-          "Uploads a file of the workspace to Drive, and gives its ID and link.",
+          "Uploads a file of the company to Drive, and gives its ID and link.",
         parameters: Type.Object({
           file: Type.String({
             description:
@@ -877,7 +877,7 @@ class Gog {
   }
 
   /**
-   * Runs `use` with a link to each workspace file, named as the file, so gog attaches it under its own name; removes
+   * Runs `use` with a link to each company file, named as the file, so gog attaches it under its own name; removes
    * the links after.
    */
   async withLinks<Result>(

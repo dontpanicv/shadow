@@ -45,8 +45,8 @@ export interface LlmModel {
 
 export interface LlmStatus {
   readonly connected: boolean;
-  /** Whether the person is the server's owner, who alone changes the login, the model, and the effort. */
-  readonly owner: boolean;
+  /** Whether the person is an admin, who alone changes the login, the model, and the effort. */
+  readonly admin: boolean;
   readonly effort: ModelThinkingLevel;
   readonly error: string | null;
   readonly login: {
@@ -73,7 +73,7 @@ export type UsageSource =
 
 /** Whom a model call's cost counts for. */
 export interface Spend {
-  readonly workspaceId: string;
+  readonly companyId: string;
   /** The person whose turn or memory it was; null for work that acts for no person, such as a brief. */
   readonly userId: string | null;
   readonly source: UsageSource;
@@ -96,14 +96,14 @@ export interface UsageTotals {
   readonly cost: number;
 }
 
-/** The usage of the last days in a workspace that one person may see, newest day last. */
+/** The usage of the last days in a company that one person may see, newest day last. */
 export interface UsageReport {
   readonly days: readonly (UsageTotals & { readonly day: string })[];
   readonly total: UsageTotals;
   readonly sources: readonly (UsageTotals & { readonly source: UsageSource })[];
   readonly models: readonly (UsageTotals & { readonly model: string })[];
   readonly threads: readonly (UsageTotals & { readonly threadId: string })[];
-  /** Each person's usage, and `""` for work for nobody; only for the server's owner, else null. */
+  /** Each person's usage, and `""` for work for nobody; only for an admin, else null. */
   readonly people:
     | readonly (UsageTotals & { readonly userId: string })[]
     | null;
@@ -118,7 +118,7 @@ const TOTALS =
   "sum(input) AS input, sum(output) AS output, sum(cache_read) AS cacheRead, sum(cache_write) AS cacheWrite, sum(cost) AS cost";
 
 /**
- * The one LLM provider every workspace's agents use, connected once with ChatGPT device login. Only the server's owner,
+ * The one LLM provider every company's agents use, connected once with ChatGPT device login. Only an admin,
  * the first email in `allowed_emails`, changes it.
  */
 export class Llm {
@@ -135,7 +135,8 @@ export class Llm {
     private readonly database: Database,
     secrets: Secrets,
     readonly llmProvider: LlmProvider,
-    private readonly owner: string | null,
+    /** Whether the person is an admin, who alone changes the provider. */
+    private readonly isAdmin: (user: User, companyId?: string) => boolean,
     private readonly observe?: (spend: Spend | undefined, data: unknown) => void
   ) {
     this.models = createModels({
@@ -153,8 +154,14 @@ export class Llm {
     return chosen && this.find(chosen) ? chosen : this.llmProvider.defaultModel;
   }
 
+  /** The cheap fast model, such as ChatGPT's Luna, for background summaries; the chosen model when there is none. */
+  fastModel(): string {
+    const fast = this.llmProvider.fastModel;
+    return fast && this.find(fast) ? fast : this.model();
+  }
+
   setModel(user: User, model: string): void {
-    this.requireOwner(user);
+    this.requireAdmin(user);
     if (!this.find(model)) {
       throw new HttpError(400, `Unknown model: ${model}`);
     }
@@ -170,7 +177,7 @@ export class Llm {
   }
 
   setEffort(user: User, effort: string): void {
-    this.requireOwner(user);
+    this.requireAdmin(user);
     const model = this.find(this.model());
     if (
       !(
@@ -184,14 +191,14 @@ export class Llm {
   }
 
   async status(user: User): Promise<LlmStatus> {
-    const owner = this.isOwner(user);
+    const admin = this.isAdmin(user);
     const connected =
       (await this.models.checkAuth(this.providerId).catch(() => undefined)) !==
       undefined;
     const { abort: _, ...login } = this.login ?? { abort: undefined };
     return {
       connected,
-      owner,
+      admin,
       provider: this.llmProvider.name,
       model: this.model(),
       effort: this.effort(),
@@ -200,14 +207,14 @@ export class Llm {
         name: model.name,
         efforts: getSupportedThinkingLevels(model),
       })),
-      login: owner && this.login ? (login as LlmStatus["login"]) : null,
+      login: admin && this.login ? (login as LlmStatus["login"]) : null,
       error: this.error,
     };
   }
 
   /** Starts a device login and returns once the code to enter is known, or the login failed. */
   async startLogin(user: User): Promise<LlmStatus> {
-    this.requireOwner(user);
+    this.requireAdmin(user);
     if (this.login) {
       return this.status(user);
     }
@@ -262,7 +269,7 @@ export class Llm {
   }
 
   async logout(user: User): Promise<LlmStatus> {
-    this.requireOwner(user);
+    this.requireAdmin(user);
     this.login?.abort.abort();
     this.login = null;
     this.error = null;
@@ -270,17 +277,13 @@ export class Llm {
     return this.status(user);
   }
 
-  private isOwner(user: User): boolean {
-    return user.email.toLowerCase() === this.owner;
-  }
-
-  private requireOwner(user: User): void {
-    if (!this.isOwner(user)) {
-      throw new HttpError(403, "Only the server's owner changes this");
+  private requireAdmin(user: User): void {
+    if (!this.isAdmin(user)) {
+      throw new HttpError(403, "Only an admin changes this");
     }
   }
 
-  /** The agent tools of every workspace. */
+  /** The agent tools of every company. */
   tools() {
     return this.llmProvider.fastModel ? llmTools(this) : [];
   }
@@ -314,7 +317,7 @@ export class Llm {
   }
 
   /**
-   * The text answer of a model, by default the chosen one, at low effort, for background work such as summaries.
+   * The text answer of a model, by default the chosen one at low effort, for background work such as summaries.
    * Throws on a failed call.
    */
   async complete(
@@ -322,13 +325,14 @@ export class Llm {
     text: string,
     signal?: AbortSignal,
     modelId = this.model(),
-    spend?: Spend
+    spend?: Spend,
+    wanted: ModelThinkingLevel = "low"
   ): Promise<string> {
     const model = this.find(modelId);
     if (!model) {
       throw new Error(`Unknown model: ${modelId}`);
     }
-    const effort = clampThinkingLevel(model, "low");
+    const effort = clampThinkingLevel(model, wanted);
     const callId = randomUUID();
     this.observe?.(spend, {
       callId,
@@ -374,9 +378,9 @@ export class Llm {
   ): void {
     const seenRow = this.database
       .query(
-        "SELECT usage FROM llm_usage_seen WHERE workspace_id = ? AND conversation_id = ?"
+        "SELECT usage FROM llm_usage_seen WHERE company_id = ? AND conversation_id = ?"
       )
-      .get(spend.workspaceId, conversationId) as { usage: string } | null;
+      .get(spend.companyId, conversationId) as { usage: string } | null;
     const seen = seenRow
       ? (JSON.parse(seenRow.usage) as ConversationUsage)
       : { models: {}, tools: {} };
@@ -394,24 +398,24 @@ export class Llm {
       }
       this.database
         .query(
-          "INSERT INTO llm_usage_seen (workspace_id, conversation_id, usage) VALUES (?, ?, ?) ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET usage = excluded.usage"
+          "INSERT INTO llm_usage_seen (company_id, conversation_id, usage) VALUES (?, ?, ?) ON CONFLICT (company_id, conversation_id) DO UPDATE SET usage = excluded.usage"
         )
-        .run(spend.workspaceId, conversationId, JSON.stringify(usage));
+        .run(spend.companyId, conversationId, JSON.stringify(usage));
     })();
   }
 
   /**
-   * The usage of a workspace in its last `days` days, by day in UTC: the person's own, and for the server's owner
+   * The usage of a company in its last `days` days, by day in UTC: the person's own, and for an admin
    * also everyone's, with each person's share.
    */
-  usage(workspaceId: string, user: User, days: number): UsageReport {
+  usage(companyId: string, user: User, days: number): UsageReport {
     const span = Math.min(Math.max(Math.floor(days) || 30, 1), MAX_USAGE_DAYS);
     const from = new Date(Date.now() - (span - 1) * 86_400_000)
       .toISOString()
       .slice(0, 10);
-    const owner = this.isOwner(user);
-    const where = `workspace_id = ? AND day >= ?${owner ? "" : " AND user_id = ?"}`;
-    const values = owner ? [workspaceId, from] : [workspaceId, from, user.id];
+    const admin = this.isAdmin(user, companyId);
+    const where = `company_id = ? AND day >= ?${admin ? "" : " AND user_id = ?"}`;
+    const values = admin ? [companyId, from] : [companyId, from, user.id];
     const query = <Row>(columns: string, groupBy: string, tail = "") =>
       (
         this.database
@@ -441,7 +445,7 @@ export class Llm {
         "thread_id",
         `HAVING thread_id != '' ORDER BY cost DESC, input + output DESC LIMIT ${TOP_THREADS}`
       ),
-      people: owner
+      people: admin
         ? query<{ userId: string }>(
             "user_id AS userId",
             "user_id",
@@ -454,14 +458,14 @@ export class Llm {
   private record(spend: Spend, model: string, usage: Usage): void {
     this.database
       .query(
-        `INSERT INTO llm_usage (workspace_id, day, user_id, source, thread_id, model, input, output, cache_read, cache_write, cost)
+        `INSERT INTO llm_usage (company_id, day, user_id, source, thread_id, model, input, output, cache_read, cache_write, cost)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (workspace_id, day, user_id, source, thread_id, model) DO UPDATE SET
+        ON CONFLICT (company_id, day, user_id, source, thread_id, model) DO UPDATE SET
           input = input + excluded.input, output = output + excluded.output, cache_read = cache_read + excluded.cache_read,
           cache_write = cache_write + excluded.cache_write, cost = cost + excluded.cost`
       )
       .run(
-        spend.workspaceId,
+        spend.companyId,
         new Date().toISOString().slice(0, 10),
         spend.userId ?? "",
         spend.source,

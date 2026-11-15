@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { type ConversationId, defineTool } from "@earendil-works/pi-durable";
-import type { Artifact, Artifacts, ArtifactWorkspaces } from "./artifacts.ts";
+import type { Artifact, ArtifactCompanies, Artifacts } from "./artifacts.ts";
 
 const RUNTIME = `An artifact is one self-contained HTML page: a schedule, an invite, an explainer, a poll, a sign-up list, a game for the kids, or any small app. People open its link on their phones, often from WhatsApp, so make it mobile-first and good-looking. Put the CSS and JavaScript inline; scripts, styles, and fonts may also come from cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, and Google Fonts. Pictures must be in the page: SVG, CSS, emoji, or data: URLs. The page cannot use fetch or reach other sites: it keeps data only through the \`shadow\` object, which is ready when \`await shadow.ready\` returns. Every call returns a promise.
 - \`shadow.me\`: { id, name, member } of the person looking. Members have their name; a public visitor's name is null until \`await shadow.setName(name)\`, so ask for a name before you save anything that needs one.
@@ -14,18 +14,18 @@ const idParameter = Type.String({ description: "The artifact id" });
 /** The tools that let agents make artifacts in their channel, change them, and read the data their visitors keep. */
 export function artifactTools(
   artifacts: Artifacts,
-  workspaces: ArtifactWorkspaces,
-  workspaceId: string,
+  companies: ArtifactCompanies,
+  companyId: string,
   realmOf: (conversationId: ConversationId) => Promise<string | null>
 ) {
   const threadOf = (conversationId: number) => {
-    const thread = workspaces.threadOf(workspaceId, conversationId);
+    const thread = companies.threadOf(companyId, conversationId);
     if (!thread) {
       throw new Error("This tool works only in a thread.");
     }
     return thread;
   };
-  /** The channel an artifact belongs to: the named one, or the thread's; null, the workspace, for an orchestrator. */
+  /** The channel an artifact belongs to: the named one, or the thread's; null, the company, for an orchestrator. */
   const placeOf = (
     thread: { readonly channelId: string; readonly ownerId: string | null },
     realm: string | null,
@@ -33,8 +33,8 @@ export function artifactTools(
   ) => {
     if (channel !== undefined) {
       const name = channel.replace(/^#/, "");
-      const named = workspaces
-        .channelsIn(workspaceId, realm)
+      const named = companies
+        .channelsIn(companyId, realm)
         .find((candidate) => candidate.name === name);
       if (!named) {
         throw new Error(
@@ -48,7 +48,7 @@ export function artifactTools(
   /** An artifact that the realm of the tool's thread sees. */
   const artifactOf = async (id: string, conversationId: ConversationId) => {
     const artifact = artifacts
-      .inWorkspace(workspaceId, await realmOf(conversationId))
+      .inCompany(companyId, await realmOf(conversationId))
       .find((candidate) => candidate.id === id);
     if (!artifact) {
       throw new Error(
@@ -60,14 +60,14 @@ export function artifactTools(
   const visibility = Type.Optional(
     Type.Union([Type.Literal("members"), Type.Literal("public")], {
       description:
-        "members: only members of this workspace, signed in. public: anyone with the link, such as family on WhatsApp. Default members; choose public only when they want to share it outside the workspace.",
+        "members: only members of this company, signed in. public: anyone with the link, such as family on WhatsApp. Default members; choose public only when they want to share it outside the company.",
     })
   );
 
   return [
     defineTool({
       name: "artifacts_create",
-      description: `Make an artifact and give its link to the people. It belongs to the channel of this thread, or to another channel you name, and stays there after the thread is settled; the orchestrator's belong to the workspace. Before you make one, look for an artifact to change with artifacts_list or recall. Never use an artifact to keep facts or a list; save files and say them in your answer. ${RUNTIME}`,
+      description: `Make an artifact and give its link to the people. It belongs to the channel of this thread, or to another channel you name, and stays there after the thread is settled; the orchestrator's belong to the company. Before you make one, look for an artifact to change with artifacts_list or recall. Never use an artifact to keep facts or a list; save files and say them in your answer. ${RUNTIME}`,
       parameters: Type.Object({
         title: Type.String({
           description: "A short title; link previews show it",
@@ -90,7 +90,7 @@ export function artifactTools(
           placeOf(thread, await realmOf(api.conversationId), channel),
           {
             ...args,
-            requestKey: `${workspaceId}:${api.taskId}`,
+            requestKey: `${companyId}:${api.taskId}`,
           }
         );
         return text(
@@ -114,7 +114,7 @@ export function artifactTools(
       replay: "safe",
       execute: async ({ id, ...changes }, api) =>
         text(
-          `Changed the artifact.\n${describe(artifacts.update(workspaceId, (await artifactOf(id, api.conversationId)).id, changes))}`
+          `Changed the artifact.\n${describe(artifacts.update(companyId, (await artifactOf(id, api.conversationId)).id, changes))}`
         ),
     }),
 
@@ -137,7 +137,7 @@ export function artifactTools(
             `The text occurs ${count} times; give text that occurs exactly once.`
           );
         }
-        artifacts.update(workspaceId, id, {
+        artifacts.update(companyId, id, {
           html: html.replace(find, () => replace),
         });
         return text("Changed the artifact.");
@@ -158,28 +158,24 @@ export function artifactTools(
     defineTool({
       name: "artifacts_list",
       description:
-        "List the artifacts of this workspace, newest first, with their links, channels, and the threads that made them.",
+        "List the artifacts of this company, newest first, with their links, channels, and the threads that made them.",
       parameters: Type.Object({}),
       replay: "safe",
       execute: async (_args, api) => {
         const realm = await realmOf(api.conversationId);
-        const channels = workspaces.channelsIn(workspaceId, realm);
-        const threads = workspaces.threadsIn(workspaceId, realm);
-        const list = artifacts
-          .inWorkspace(workspaceId, realm)
-          .map((artifact) => {
-            const channel = channels.find(
-              (candidate) => candidate.id === artifact.channelId
-            );
-            const thread = threads.find(
-              (candidate) => candidate.id === artifact.threadId
-            );
-            const place = channel
-              ? `Channel: #${channel.name}`
-              : "The workspace's";
-            return `${describe(artifact)}\n${place}\nMade in: [${thread?.title}](thread:${artifact.threadId})`;
-          });
-        return text(list.join("\n\n") || "This workspace has no artifacts.");
+        const channels = companies.channelsIn(companyId, realm);
+        const threads = companies.threadsIn(companyId, realm);
+        const list = artifacts.inCompany(companyId, realm).map((artifact) => {
+          const channel = channels.find(
+            (candidate) => candidate.id === artifact.channelId
+          );
+          const thread = threads.find(
+            (candidate) => candidate.id === artifact.threadId
+          );
+          const place = channel ? `Channel: #${channel.name}` : "The company's";
+          return `${describe(artifact)}\n${place}\nMade in: [${thread?.title}](thread:${artifact.threadId})`;
+        });
+        return text(list.join("\n\n") || "This company has no artifacts.");
       },
     }),
 

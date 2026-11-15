@@ -9,7 +9,7 @@ export class HttpError extends Error {
   }
 }
 
-/** Not found, also for things that exist but belong to a workspace the person is not a member of. */
+/** Not found, also for things that exist but belong to a company the person is not a member of. */
 export const notFound = () => new HttpError(404, "Not found");
 
 /** The trimmed text, or a 400 that names the field. */

@@ -6,7 +6,7 @@ import { unzipSync } from "fflate";
 import { extractText, getDocumentProxy, getMeta } from "unpdf";
 import { element, entities, htmlText, withoutTag } from "../platform/html.ts";
 import { program, type Requirement } from "../platform/requirements.ts";
-import { chunk, isProse } from "./workspace-index.ts";
+import { chunk, isProse } from "./company-index.ts";
 
 /**
  * Turns a file into searchable segments, after DigUp (github.com/ARahim3/DigUp, MIT), which supports the same kinds:

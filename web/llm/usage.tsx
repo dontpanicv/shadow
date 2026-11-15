@@ -2,6 +2,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { request } from "../app/api.ts";
 import type { Usage, UsageSource, UsageTotals } from "../app/types.ts";
+import { membersQuery } from "../companies/data.ts";
 import {
   Avatar,
   Empty,
@@ -12,7 +13,6 @@ import {
   WorkingSpinner,
 } from "../ui/components.tsx";
 import { day } from "../ui/format.ts";
-import { membersQuery } from "../workspaces/data.ts";
 
 const DAYS = 30;
 const DAY = 24 * 60 * 60 * 1000;
@@ -26,20 +26,20 @@ const SOURCES: Record<UsageSource, string> = {
   background: "Background work",
 };
 
-function usageQuery(workspaceId: string) {
+function usageQuery(companyId: string) {
   return queryOptions({
-    queryKey: ["workspaces", workspaceId, "usage"],
+    queryKey: ["companies", companyId, "usage"],
     queryFn: ({ signal }) =>
-      request<Usage>(`/workspaces/${workspaceId}/usage?days=${DAYS}`, {
+      request<Usage>(`/companies/${companyId}/usage?days=${DAYS}`, {
         signal,
       }),
   });
 }
 
 /** The model use of the last 30 days: the totals, a bar for each day, and where the tokens went. */
-export function UsageSection({ workspaceId }: { workspaceId: string }) {
-  const { data: usage } = useQuery(usageQuery(workspaceId));
-  const { data: members = [] } = useQuery(membersQuery(workspaceId));
+export function UsageSection({ companyId }: { companyId: string }) {
+  const { data: usage } = useQuery(usageQuery(companyId));
+  const { data: members = [] } = useQuery(membersQuery(companyId));
   const pictures = new Map(
     members.map((member) => [member.userId, member.picture])
   );
@@ -87,8 +87,8 @@ export function UsageSection({ workspaceId }: { workspaceId: string }) {
             <>
               <Link
                 className="thread-link"
-                params={{ workspaceId, threadId: row.threadId }}
-                to="/w/$workspaceId/thread/$threadId"
+                params={{ companyId, threadId: row.threadId }}
+                to="/c/$companyId/thread/$threadId"
               >
                 {row.title}
               </Link>

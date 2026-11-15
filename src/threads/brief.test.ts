@@ -139,3 +139,35 @@ test("a restart starts the brief from nothing, and unread threads are read from 
   expect(briefs.latest("trips")?.text).toContain("Train");
   briefs.close();
 });
+
+test("Slack messages go into the same brief, each with the link of its day file, and no section keeps wishes", async () => {
+  const systems: string[] = [];
+  const prompts: string[] = [];
+  const briefs = new Briefs(
+    join(directory, `${crypto.randomUUID()}.sqlite`),
+    async (system, prompt) => {
+      systems.push(system);
+      prompts.push(prompt);
+      return "<summary>Customer support.</summary>\n<brief>\n## Now\n- The invoice is paid [slack-2026-11-14.md](file:f1)\n</brief>";
+    }
+  );
+  const summary = await briefs.mergeSlack(
+    { id: "support", name: "support" },
+    [
+      {
+        file: { id: "f1", name: "slack-2026-11-14.md" },
+        author: "Bob Smith",
+        text: "The invoice\nis paid",
+        time: Date.UTC(2026, 10, 14, 9, 12),
+      },
+    ],
+    signal
+  );
+  expect(summary).toBe("Customer support.");
+  expect(prompts[0]).toContain(
+    "[slack-2026-11-14.md](file:f1) Bob Smith, 2026-11-14 09:12 UTC: The invoice is paid"
+  );
+  expect(systems[0]).not.toContain("What each person wants");
+  expect(briefs.latest("support")?.text).toContain("The invoice is paid");
+  briefs.close();
+});

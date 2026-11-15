@@ -6,6 +6,7 @@ import { request } from "../app/api.ts";
 import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
 import type { Routine, RoutineOutcome, RoutineRun } from "../app/types.ts";
+import { channelsOf } from "../companies/data.ts";
 import { briefQuery } from "../threads/data.ts";
 import { AgentText } from "../threads/message.tsx";
 import {
@@ -21,7 +22,6 @@ import {
 import { placeWords, weekdayTime } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
 import { showError, showToast } from "../ui/toast.tsx";
-import { channelsOf } from "../workspaces/data.ts";
 
 const OUTCOMES: Record<
   RoutineOutcome,
@@ -39,19 +39,19 @@ interface RoutineList {
 }
 
 function routinesKey(key: string) {
-  const [workspaceId] = key.split("/");
-  return ["workspaces", workspaceId, "routines", key];
+  const [companyId] = key.split("/");
+  return ["companies", companyId, "routines", key];
 }
 
 function routinesRequest(key: string, signal?: AbortSignal) {
-  const [workspaceId, channelId] = key.split("/");
+  const [companyId, channelId] = key.split("/");
   return request<RoutineList>(
-    `/workspaces/${workspaceId}/channels/${channelId}/routines`,
+    `/companies/${companyId}/channels/${channelId}/routines`,
     { signal }
   );
 }
 
-/** The routines of a channel, `<workspace id>/<channel id>`. Pausing or deleting one shows at once. */
+/** The routines of a channel, `<company id>/<channel id>`. Pausing or deleting one shows at once. */
 const routinesOf = keyed((key: string) =>
   createCollection(
     queryCollectionOptions({
@@ -78,24 +78,24 @@ const routinesOf = keyed((key: string) =>
   )
 );
 
-const route = getRouteApi("/signed-in/w/$workspaceId/channel/$channelId");
+const route = getRouteApi("/signed-in/c/$companyId/channel/$channelId");
 
 /**
  * A channel's name, its summary, its routines, their newest runs, and its brief, which can be long, under its threads. People
  * create routines by asking an agent; the model writes the summary and the brief from the channel's threads.
  */
 export function ChannelDetails() {
-  const { workspaceId, channelId } = route.useParams();
-  const key = `${workspaceId}/${channelId}`;
+  const { companyId, channelId } = route.useParams();
+  const key = `${companyId}/${channelId}`;
   const navigate = useNavigate();
   const { data: channel } = useLiveQuery({
     query: (q) =>
       q
-        .from({ channel: channelsOf(workspaceId) })
+        .from({ channel: channelsOf(companyId) })
         .where(({ channel: row }) => eq(row.id, channelId))
         .findOne(),
   });
-  const brief = useQuery(briefQuery(workspaceId, channelId)).data?.brief;
+  const brief = useQuery(briefQuery(companyId, channelId)).data?.brief;
   const routines = routinesOf(key);
   const { data: rows = [] } = useLiveQuery({
     query: (q) => q.from({ routine: routines }),
@@ -118,7 +118,7 @@ export function ChannelDetails() {
   };
   return (
     <>
-      {channel ? (
+      {channel?.ownerId ? (
         <PageSection title="Channel">
           <SettingsCard>
             <form
@@ -130,7 +130,7 @@ export function ChannelDetails() {
                 if (name === channel.name) {
                   return;
                 }
-                channelsOf(workspaceId)
+                channelsOf(companyId)
                   .update(channelId, (draft) => {
                     draft.name = name;
                   })
@@ -189,9 +189,9 @@ export function ChannelDetails() {
                             icon: "compose" as const,
                             onSelect: () =>
                               navigate({
-                                to: "/w/$workspaceId/thread/$threadId",
+                                to: "/c/$companyId/thread/$threadId",
                                 params: {
-                                  workspaceId,
+                                  companyId,
                                   threadId: routine.threadId!,
                                 },
                               }),
@@ -260,9 +260,9 @@ export function ChannelDetails() {
         <PageSection title="Brief">
           <div className="page-text prose">
             <AgentText
+              companyId={companyId}
               // The brief's headings sit under the section's own heading.
               text={brief.text.replace(/^#{1,2} /gm, "### ")}
-              workspaceId={workspaceId}
             />
           </div>
         </PageSection>

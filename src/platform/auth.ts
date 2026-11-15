@@ -19,7 +19,7 @@ export interface User {
 }
 
 /**
- * Accounts and the workspace. The workspace is a better-auth organization; Shadow has one, the family's.
+ * Accounts and the company. The company is a better-auth organization; Shadow has one.
  * People sign in only with Google, and only with an allowed email; there is no other way to create an account.
  */
 export function createAuth(options: AuthOptions) {
@@ -48,9 +48,11 @@ export function createAuth(options: AuthOptions) {
     onAPIError: { errorURL: `${options.baseUrl}/login` },
     plugins: [
       organization({
-        // Shadow has one workspace, which only the server makes; deletes are soft, and better-auth's would remove rows.
+        // Shadow has one company, which only the server makes; deletes are soft, and better-auth's would remove rows.
         allowUserToCreateOrganization: false,
         disableOrganizationDeletion: true,
+        // A company has admins and members; the person who starts it is its first admin.
+        creatorRole: "admin",
         schema: {
           organization: {
             additionalFields: {

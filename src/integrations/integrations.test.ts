@@ -22,7 +22,7 @@ let shadow: TestApp;
 let alice: User;
 /** A member who is not the server's owner. */
 let notOwner: User;
-let workspaceId: string;
+let companyId: string;
 /** A sign-in server and an MCP server's address, as Rohlík's are, on a local port. */
 let signInServer: ReturnType<typeof Bun.serve>;
 /** What the sign-in server's token endpoint got. */
@@ -40,11 +40,11 @@ beforeAll(async () => {
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
+  companyId = (await shadow.app.companies.create(alice, "Family")).id;
   await shadow.signIn("Eve", "eve@example.com");
   const eve = (await internalAdapter.findUserByEmail("eve@example.com"))!;
   notOwner = { id: eve.user.id, name: eve.user.name, email: eve.user.email };
-  await shadow.app.workspaces.addMember(workspaceId, alice, notOwner.email);
+  await shadow.app.companies.addMember(companyId, alice, notOwner.email);
   signInServer = Bun.serve({ port: 0, fetch: signIn });
   const shop: Connector = {
     id: "shop",
@@ -57,7 +57,7 @@ beforeAll(async () => {
   integrations = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [shop],
@@ -197,15 +197,15 @@ function shopServer(): Server {
 }
 
 test("people connect an MCP server by signing in, and agents get its tools", async () => {
-  expect(await integrations.tools(workspaceId)).toEqual([]);
+  expect(await integrations.tools(companyId)).toEqual([]);
   await expect(
-    integrations.addCredential(workspaceId, alice, "shop", {
+    integrations.addCredential(companyId, alice, "shop", {
       label: "Shop",
       secret: "x",
     })
   ).rejects.toThrow("Connect it by signing in");
 
-  const { url } = (await integrations.connect(workspaceId, alice, "shop")) as {
+  const { url } = (await integrations.connect(companyId, alice, "shop")) as {
     url: string;
   };
   const page = new URL(url);
@@ -221,24 +221,24 @@ test("people connect an MCP server by signing in, and agents get its tools", asy
   const address = `https://localhost/shadow-sign-in?code=code-1&state=${state}`;
 
   await expect(
-    integrations.finishConnect(workspaceId, alice, "shop", "https://localhost/")
+    integrations.finishConnect(companyId, alice, "shop", "https://localhost/")
   ).rejects.toThrow("This is not the address of your sign-in");
   expect(
-    await integrations.finishConnect(workspaceId, alice, "shop", address)
+    await integrations.finishConnect(companyId, alice, "shop", address)
   ).toMatchObject({ label: "Shop", ownerName: "Alice" });
   expect(tokenRequests.at(-1)?.get("code")).toBe("code-1");
   expect(tokenRequests.at(-1)?.get("code_verifier")).toBeTruthy();
-  expect(changes).toContain(workspaceId);
+  expect(changes).toContain(companyId);
   await expect(
-    integrations.finishConnect(workspaceId, alice, "shop", address)
+    integrations.finishConnect(companyId, alice, "shop", address)
   ).rejects.toThrow("This is not the address of your sign-in");
-  const [shop] = integrations.list(workspaceId, alice);
+  const [shop] = integrations.list(companyId, alice);
   expect(shop).toMatchObject({ connect: "sign-in", secretLabel: null });
   expect(shop!.credentials).toMatchObject([
     { label: "Shop", ownerName: "Alice" },
   ]);
 
-  const tools = await integrations.tools(workspaceId);
+  const tools = await integrations.tools(companyId);
   expect(tools.map((tool) => tool.name)).toEqual([
     "shop_search_products",
     "shop_cart",
@@ -260,52 +260,48 @@ test("people connect an MCP server by signing in, and agents get its tools", asy
     { name: "shop", prefix: "shop_", description: "Groceries." },
   ]);
 
-  integrations.deleteCredential(workspaceId, alice, shop!.credentials[0]!.id);
-  expect(await integrations.tools(workspaceId)).toEqual([]);
+  integrations.deleteCredential(companyId, alice, shop!.credentials[0]!.id);
+  expect(await integrations.tools(companyId)).toEqual([]);
 });
 
 test("a shared sign-in lists an MCP server's tools, else a private one", async () => {
   const signInTo = async (code: string) => {
-    const { url } = (await integrations.connect(
-      workspaceId,
-      alice,
-      "shop"
-    )) as {
+    const { url } = (await integrations.connect(companyId, alice, "shop")) as {
       url: string;
     };
     const state = new URL(url).searchParams.get("state")!;
     return integrations.finishConnect(
-      workspaceId,
+      companyId,
       alice,
       "shop",
       `https://localhost/shadow-sign-in?code=${code}&state=${state}`
     );
   };
   const shared = await signInTo("code-1");
-  integrations.setShared(workspaceId, alice, shared.id, true);
+  integrations.setShared(companyId, alice, shared.id, true);
   const own = await signInTo("code-own");
-  await integrations.tools(workspaceId);
+  await integrations.tools(companyId);
   expect(connectedWith.at(-1)).toBe("access-1");
-  integrations.deleteCredential(workspaceId, alice, shared.id);
-  await integrations.tools(workspaceId);
+  integrations.deleteCredential(companyId, alice, shared.id);
+  await integrations.tools(companyId);
   expect(connectedWith.at(-1)).toBe("access-own");
-  integrations.deleteCredential(workspaceId, alice, own.id);
+  integrations.deleteCredential(companyId, alice, own.id);
 });
 
 test("a sign-in that did not finish adds nothing", async () => {
-  const { url } = (await integrations.connect(workspaceId, alice, "shop")) as {
+  const { url } = (await integrations.connect(companyId, alice, "shop")) as {
     url: string;
   };
   const state = new URL(url).searchParams.get("state")!;
   await expect(
     integrations.finishConnect(
-      workspaceId,
+      companyId,
       alice,
       "shop",
       `https://localhost/shadow-sign-in?error=access_denied&state=${state}`
     )
   ).rejects.toThrow("The sign-in did not finish");
-  expect(integrations.list(workspaceId, alice)[0]!.credentials).toEqual([]);
+  expect(integrations.list(companyId, alice)[0]!.credentials).toEqual([]);
 });
 
 test("a turn uses its person's own credential, else a shared one, and only its owner shares or deletes it", async () => {
@@ -317,12 +313,12 @@ test("a turn uses its person's own credential, else a shared one, and only its o
     name: found.user.name,
     email: found.user.email,
   };
-  await shadow.app.workspaces.addMember(workspaceId, alice, bob.email);
+  await shadow.app.companies.addMember(companyId, alice, bob.email);
   const reached: string[] = [];
   const notes = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
@@ -345,15 +341,15 @@ test("a turn uses its person's own credential, else a shared one, and only its o
     }
   );
   const token = async (userId: string | null) => {
-    const [tool] = await notes.tools(workspaceId);
+    const [tool] = await notes.tools(companyId);
     return tool!.execute({}, { userId });
   };
-  const family = await notes.addCredential(workspaceId, bob, "notes", {
+  const family = await notes.addCredential(companyId, bob, "notes", {
     label: "Family",
     secret: "family",
   });
   expect(family).toMatchObject({ ownerId: bob.id, shared: false });
-  const own = await notes.addCredential(workspaceId, alice, "notes", {
+  const own = await notes.addCredential(companyId, alice, "notes", {
     label: "Mine",
     secret: "alice",
   });
@@ -361,37 +357,37 @@ test("a turn uses its person's own credential, else a shared one, and only its o
   expect(await token(alice.id)).toBe("alice");
   expect(await token(bob.id)).toBe("family");
   await expect(token(null)).rejects.toThrow("Notes is not connected");
-  expect(notes.list(workspaceId, alice)[0]!.credentials).toMatchObject([
+  expect(notes.list(companyId, alice)[0]!.credentials).toMatchObject([
     { label: "Mine" },
   ]);
 
-  expect(() => notes.setShared(workspaceId, alice, family.id, true)).toThrow(
+  expect(() => notes.setShared(companyId, alice, family.id, true)).toThrow(
     "Not found"
   );
-  expect(notes.setShared(workspaceId, bob, family.id, true)).toMatchObject({
+  expect(notes.setShared(companyId, bob, family.id, true)).toMatchObject({
     label: "Family",
     shared: true,
   });
-  expect(reached).toEqual([workspaceId, workspaceId, workspaceId]);
+  expect(reached).toEqual([companyId, companyId, companyId]);
   expect(await token(null)).toBe("family");
   expect(await token(alice.id)).toBe("alice");
-  expect(notes.list(workspaceId, alice)[0]!.credentials).toMatchObject([
+  expect(notes.list(companyId, alice)[0]!.credentials).toMatchObject([
     { label: "Family", ownerName: "Bob", shared: true },
     { label: "Mine", shared: false },
   ]);
-  expect(notes.list(workspaceId, bob)[0]!.credentials).toMatchObject([
+  expect(notes.list(companyId, bob)[0]!.credentials).toMatchObject([
     { label: "Family" },
   ]);
 
-  expect(() => notes.deleteCredential(workspaceId, bob, own.id)).toThrow(
+  expect(() => notes.deleteCredential(companyId, bob, own.id)).toThrow(
     "Not found"
   );
-  expect(() => notes.deleteCredential(workspaceId, alice, family.id)).toThrow(
+  expect(() => notes.deleteCredential(companyId, alice, family.id)).toThrow(
     "Not found"
   );
-  notes.deleteCredential(workspaceId, alice, own.id);
+  notes.deleteCredential(companyId, alice, own.id);
   expect(await token(alice.id)).toBe("family");
-  notes.deleteCredential(workspaceId, bob, family.id);
+  notes.deleteCredential(companyId, bob, family.id);
 });
 
 test("a tool that acts as a person asks its credential's owner every time, and only an agent in a thread can ask", async () => {
@@ -402,7 +398,7 @@ test("a tool that acts as a person asks its credential's owner every time, and o
   const messenger = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
@@ -434,19 +430,19 @@ test("a tool that acts as a person asks its credential's owner every time, and o
       ],
     }
   );
-  expect(messenger.list(workspaceId, alice)[0]!.labeled).toBe(false);
+  expect(messenger.list(companyId, alice)[0]!.labeled).toBe(false);
   await expect(
-    messenger.addCredential(workspaceId, alice, "messenger", {
+    messenger.addCredential(companyId, alice, "messenger", {
       secret: "hello",
     })
   ).rejects.toThrow("Paste a cURL command");
-  const chat = await messenger.addCredential(workspaceId, alice, "messenger", {
+  const chat = await messenger.addCredential(companyId, alice, "messenger", {
     secret: "curl x",
   });
   expect(chat).toMatchObject({ label: "Family chat" });
-  messenger.setShared(workspaceId, alice, chat.id, true);
+  messenger.setShared(companyId, alice, chat.id, true);
 
-  const [send] = await messenger.tools(workspaceId);
+  const [send] = await messenger.tools(companyId);
   const asked: [string, string | null][] = [];
   // Bob's turn uses Alice's shared credential, so Alice allows it.
   await send!.execute(
@@ -479,7 +475,7 @@ test("a secret of a connector with an address keeps its server's address", async
   const home = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
@@ -502,7 +498,7 @@ test("a secret of a connector with an address keeps its server's address", async
     }
   );
   const add = (address?: string) =>
-    home.addCredential(workspaceId, alice, "home", {
+    home.addCredential(companyId, alice, "home", {
       label: "Home",
       secret: "token",
       ...(address === undefined ? {} : { address }),
@@ -510,8 +506,8 @@ test("a secret of a connector with an address keeps its server's address", async
   await expect(add()).rejects.toThrow("Address is required");
   await expect(add("file:///etc")).rejects.toThrow("http:// or https://");
   await add("http://home.local:8123");
-  expect(home.list(workspaceId, alice)[0]!.address).toBe(true);
-  const [tool] = await home.tools(workspaceId);
+  expect(home.list(companyId, alice)[0]!.address).toBe(true);
+  const [tool] = await home.tools(companyId);
   expect(await tool!.execute({}, { userId: alice.id })).toEqual({
     address: "http://home.local:8123/",
     secret: "token",
@@ -522,7 +518,7 @@ test("a secret of a connector with an account keeps the account, which names the
   const thermostat = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
@@ -545,17 +541,17 @@ test("a secret of a connector with an account keeps the account, which names the
     }
   );
   const add = (username?: string) =>
-    thermostat.addCredential(workspaceId, alice, "thermostat", {
+    thermostat.addCredential(companyId, alice, "thermostat", {
       secret: "pw",
       ...(username === undefined ? {} : { username }),
     });
   await expect(add()).rejects.toThrow("Email is required");
   expect((await add(" anna@example.com ")).label).toBe("anna@example.com");
-  expect(thermostat.list(workspaceId, alice)[0]).toMatchObject({
+  expect(thermostat.list(companyId, alice)[0]).toMatchObject({
     labeled: false,
     username: "Email",
   });
-  const [tool] = await thermostat.tools(workspaceId);
+  const [tool] = await thermostat.tools(companyId);
   expect(await tool!.execute({}, { userId: alice.id })).toEqual({
     username: "anna@example.com",
     secret: "pw",
@@ -581,18 +577,17 @@ test("a sign-in server that does not publish its endpoints signs in at the conne
   const withOwner = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [station],
-      owner: "alice@example.com",
     }
   );
   await withOwner.setClient(alice, "station", {
     clientId: "own-client",
     clientSecret: "shh",
   });
-  const { url } = (await withOwner.connect(workspaceId, alice, "station")) as {
+  const { url } = (await withOwner.connect(companyId, alice, "station")) as {
     url: string;
   };
   const page = new URL(url);
@@ -601,7 +596,7 @@ test("a sign-in server that does not publish its endpoints signs in at the conne
     "https://shadow.example.com/shadow-sign-in"
   );
   const credential = await withOwner.finishConnect(
-    workspaceId,
+    companyId,
     alice,
     "station",
     `https://shadow.example.com/shadow-sign-in?code=code-4&state=${page.searchParams.get("state")}`
@@ -611,11 +606,11 @@ test("a sign-in server that does not publish its endpoints signs in at the conne
   expect(tokenRequests.at(-1)?.get("redirect_uri")).toBe(
     "https://shadow.example.com/shadow-sign-in"
   );
-  withOwner.deleteCredential(workspaceId, alice, credential.id);
+  withOwner.deleteCredential(companyId, alice, credential.id);
   await withOwner.close();
 });
 
-test("only the server's owner sets Shadow's own client, and its MCP server hides the tools that send", async () => {
+test("only an admin sets Shadow's own client, and its MCP server hides the tools that send", async () => {
   const chat: Connector = {
     id: "chat",
     name: "Chat",
@@ -627,55 +622,56 @@ test("only the server's owner sets Shadow's own client, and its MCP server hides
     scope: "search chat:write",
     hiddenTools: ["checkout"],
   };
-  const { database, workspaces } = shadow.app;
-  const withOwner = new Integrations(database, Secrets.forTests(), workspaces, {
+  const { database, companies } = shadow.app;
+  const withOwner = new Integrations(database, Secrets.forTests(), companies, {
     directory: join(shadow.app.config.dataDirectory, "integrations"),
     catalog: [chat],
-    owner: "Alice@example.com",
     transport: () => {
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
       shopServer().connect(serverSide);
       return clientSide;
     },
   });
-  // Until the owner sets the client, only the owner sees the integration, and nobody can connect it.
-  expect(withOwner.list(workspaceId, notOwner)).toEqual([]);
-  expect(withOwner.list(workspaceId, alice)[0]!.client).toEqual({
+  // Until an admin sets the client, only admins see the integration, and nobody can connect it.
+  expect(withOwner.list(companyId, notOwner)).toEqual([]);
+  expect(withOwner.list(companyId, alice)[0]!.client).toEqual({
     clientId: null,
     changeable: true,
   });
-  await expect(withOwner.connect(workspaceId, alice, "chat")).rejects.toThrow(
-    "The server's owner has not set the client of Chat"
+  await expect(withOwner.connect(companyId, alice, "chat")).rejects.toThrow(
+    "An admin has not set the client of Chat"
   );
   await expect(
     withOwner.setClient(notOwner, "chat", { clientId: "x", clientSecret: "y" })
-  ).rejects.toThrow("Only the server's owner sets the client");
+  ).rejects.toThrow("Only an admin sets the client");
   await withOwner.setClient(alice, "chat", {
     clientId: " own-client ",
     clientSecret: "shh",
   });
-  expect(withOwner.list(workspaceId, notOwner)[0]!.client).toEqual({
+  expect(withOwner.list(companyId, notOwner)[0]!.client).toEqual({
     clientId: "own-client",
     changeable: false,
   });
 
-  const { url } = (await withOwner.connect(workspaceId, alice, "chat")) as {
+  const { url } = (await withOwner.connect(companyId, alice, "chat")) as {
     url: string;
   };
   const page = new URL(url);
   expect(page.searchParams.get("client_id")).toBe("own-client");
   expect(page.searchParams.get("scope")).toBe("search chat:write");
   const credential = await withOwner.finishConnect(
-    workspaceId,
+    companyId,
     alice,
     "chat",
     `https://localhost/shadow-sign-in?code=code-2&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("anna@work.example");
-  expect((await withOwner.tools(workspaceId)).map((tool) => tool.name)).toEqual(
-    ["chat_search_products", "chat_cart", "chat_accounts"]
-  );
-  withOwner.deleteCredential(workspaceId, alice, credential.id);
+  expect((await withOwner.tools(companyId)).map((tool) => tool.name)).toEqual([
+    "chat_search_products",
+    "chat_cart",
+    "chat_accounts",
+  ]);
+  withOwner.deleteCredential(companyId, alice, credential.id);
   await withOwner.close();
 });
 
@@ -694,7 +690,7 @@ test("people sign in to the MCP server at the address of their own machine, and 
   const own = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [coding],
@@ -707,23 +703,23 @@ test("people sign in to the MCP server at the address of their own machine, and 
     }
   );
   await expect(
-    own.connect(workspaceId, alice, "coding", { address: "my-mac:3774" })
+    own.connect(companyId, alice, "coding", { address: "my-mac:3774" })
   ).rejects.toThrow("Address must start with http:// or https://");
   const machine = new URL(signInServer.url);
-  const { url } = (await own.connect(workspaceId, alice, "coding", {
+  const { url } = (await own.connect(companyId, alice, "coding", {
     address: `${machine.origin}/`,
   })) as { url: string };
   const page = new URL(url);
   expect(page.origin).toBe(machine.origin);
   expect(page.searchParams.get("resource")).toBe(`${machine.origin}/mcp`);
   const credential = await own.finishConnect(
-    workspaceId,
+    companyId,
     alice,
     "coding",
     `https://localhost/shadow-sign-in?code=code-5&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe(machine.host);
-  const tools = await own.tools(workspaceId);
+  const tools = await own.tools(companyId);
   expect(tools.map((tool) => tool.name)).toEqual([
     "coding_cart",
     "coding_accounts",
@@ -732,7 +728,7 @@ test("people sign in to the MCP server at the address of their own machine, and 
     "The cart is empty."
   );
   expect(connectedTo).toEqual([`${machine.origin}/mcp`]);
-  own.deleteCredential(workspaceId, alice, credential.id);
+  own.deleteCredential(companyId, alice, credential.id);
   await own.close();
 });
 
@@ -758,21 +754,20 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
   const withOwner = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [google],
-      owner: "alice@example.com",
     }
   );
   await withOwner.setClient(alice, "google", {
     clientId: "own-client",
     clientSecret: "shh",
   });
-  expect(withOwner.list(workspaceId, alice)[0]).toMatchObject({
+  expect(withOwner.list(companyId, alice)[0]).toMatchObject({
     connect: "sign-in",
   });
-  const { url } = (await withOwner.connect(workspaceId, alice, "google")) as {
+  const { url } = (await withOwner.connect(companyId, alice, "google")) as {
     url: string;
   };
   const page = new URL(url);
@@ -780,14 +775,14 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
   expect(page.searchParams.get("access_type")).toBe("offline");
   expect(page.searchParams.has("resource")).toBe(false);
   const credential = await withOwner.finishConnect(
-    workspaceId,
+    companyId,
     alice,
     "google",
     `https://localhost/shadow-sign-in?code=code-3&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("anna@work.example");
 
-  const [token, accounts] = await withOwner.tools(workspaceId);
+  const [token, accounts] = await withOwner.tools(companyId);
   expect(accounts!.name).toBe("google_accounts");
   const refreshes = () =>
     tokenRequests.filter(
@@ -800,7 +795,7 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
   expect(await token!.execute({}, turn)).toBe("access-refreshed");
   expect(refreshes()).toBe(before + 1);
   expect(tokenRequests.at(-1)?.get("refresh_token")).toBe("refresh-1");
-  withOwner.deleteCredential(workspaceId, alice, credential.id);
+  withOwner.deleteCredential(companyId, alice, credential.id);
   await withOwner.close();
 });
 
@@ -846,12 +841,12 @@ test("a keeper keeps the store of each credential while Shadow runs, and Shadow 
     catalog: [car],
     owner: "alice@example.com",
   };
-  const { database, workspaces } = shadow.app;
+  const { database, companies } = shadow.app;
   const secretsOfServer = Secrets.forTests();
   const withOwner = new Integrations(
     database,
     secretsOfServer,
-    workspaces,
+    companies,
     options
   );
   expect(withOwner.publicKey("car")).toBe("PUBLIC KEY");
@@ -859,25 +854,25 @@ test("a keeper keeps the store of each credential while Shadow runs, and Shadow 
   await expect(
     withOwner.setClient(alice, "car", { clientId: "wrong", clientSecret: "x" })
   ).rejects.toThrow("Car refused the client");
-  expect(withOwner.list(workspaceId, alice)[0]!.client?.clientId).toBeNull();
+  expect(withOwner.list(companyId, alice)[0]!.client?.clientId).toBeNull();
   await withOwner.setClient(alice, "car", {
     clientId: "own-client",
     clientSecret: "shh",
   });
   expect(registered).toEqual(["own-client"]);
 
-  const { url } = (await withOwner.connect(workspaceId, alice, "car")) as {
+  const { url } = (await withOwner.connect(companyId, alice, "car")) as {
     url: string;
   };
   const credential = await withOwner.finishConnect(
-    workspaceId,
+    companyId,
     alice,
     "car",
     `https://localhost/shadow-sign-in?code=code-5&state=${new URL(url).searchParams.get("state")}`
   );
   const credentialStore = join(options.directory, credential.id);
   expect(kept).toEqual([credentialStore]);
-  const [carSecret] = await withOwner.tools(workspaceId);
+  const [carSecret] = await withOwner.tools(companyId);
   expect(await carSecret!.execute({}, { userId: alice.id })).toEqual({
     store: credentialStore,
     secret: "access-refreshed",
@@ -886,11 +881,11 @@ test("a keeper keeps the store of each credential while Shadow runs, and Shadow 
   const restarted = new Integrations(
     database,
     secretsOfServer,
-    workspaces,
+    companies,
     options
   );
   expect(kept).toEqual([credentialStore, credentialStore]);
-  withOwner.deleteCredential(workspaceId, alice, credential.id);
+  withOwner.deleteCredential(companyId, alice, credential.id);
   expect(stopped).toEqual([credentialStore]);
   expect(secrets).toContain("access-refreshed");
   await restarted.close();
@@ -901,7 +896,7 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
   const notes = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
@@ -922,20 +917,20 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
       ],
     }
   );
-  const family = await notes.addCredential(workspaceId, alice, "mail", {
+  const family = await notes.addCredential(companyId, alice, "mail", {
     label: "family@example.com",
     secret: "family",
   });
-  notes.setShared(workspaceId, alice, family.id, true);
-  await notes.addCredential(workspaceId, alice, "mail", {
+  notes.setShared(companyId, alice, family.id, true);
+  await notes.addCredential(companyId, alice, "mail", {
     label: "work@example.com",
     secret: "work",
   });
-  await notes.addCredential(workspaceId, alice, "mail", {
+  await notes.addCredential(companyId, alice, "mail", {
     label: "me@example.com",
     secret: "me",
   });
-  const [secret, accounts] = await notes.tools(workspaceId);
+  const [secret, accounts] = await notes.tools(companyId);
   expect(secret!.parameters).toMatchObject({
     properties: { account: { type: "string" } },
   });
@@ -989,30 +984,26 @@ esac
   const whatsApp = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     { directory, catalog: [whatsAppConnector(wacli)] }
   );
-  expect(whatsApp.list(workspaceId, alice)[0]).toMatchObject({
+  expect(whatsApp.list(companyId, alice)[0]).toMatchObject({
     connect: "phone",
   });
   await expect(
-    whatsApp.finishConnect(workspaceId, alice, "whatsapp")
+    whatsApp.finishConnect(companyId, alice, "whatsapp")
   ).rejects.toThrow("Start linking again");
   expect(
-    await whatsApp.connect(workspaceId, alice, "whatsapp", {
+    await whatsApp.connect(companyId, alice, "whatsapp", {
       phone: "+420 123 456 789",
     })
   ).toEqual({
     code: "ABCD-1234",
   });
-  const credential = await whatsApp.finishConnect(
-    workspaceId,
-    alice,
-    "whatsapp"
-  );
+  const credential = await whatsApp.finishConnect(companyId, alice, "whatsapp");
   expect(credential.label).toBe("+420 123 456 789");
 
-  const tools = await whatsApp.tools(workspaceId);
+  const tools = await whatsApp.tools(companyId);
   expect(tools.map((tool) => tool.name)).toEqual([
     "whatsapp_chats",
     "whatsapp_messages",
@@ -1113,13 +1104,13 @@ esac
     tools[8]!.execute({ chat: "family@g.us", message: "M1" }, turn)
   ).rejects.toThrow("Only an agent in a thread can save files.");
 
-  whatsApp.deleteCredential(workspaceId, alice, credential.id);
+  whatsApp.deleteCredential(companyId, alice, credential.id);
   const unlinked = join(directory, "deleted", credential.id, "logged-out");
   for (let tries = 0; tries < 50 && !(await exists(unlinked)); tries += 1) {
     await Bun.sleep(20);
   }
   expect(await exists(unlinked)).toBe(true);
-  expect(await whatsApp.tools(workspaceId)).toHaveLength(10);
+  expect(await whatsApp.tools(companyId)).toHaveLength(10);
   await expect(tools[0]!.execute({}, turn)).rejects.toThrow(
     "WhatsApp is not connected"
   );
@@ -1142,17 +1133,17 @@ test("only a credential's owner lets Shadow read it for them, and only a watched
     email: found.user.email,
   };
   if (
-    !shadow.app.workspaces
-      .members(workspaceId, alice)
+    !shadow.app.companies
+      .members(companyId, alice)
       .some((member) => member.userId === bob.id)
   ) {
-    await shadow.app.workspaces.addMember(workspaceId, alice, bob.email);
+    await shadow.app.companies.addMember(companyId, alice, bob.email);
   }
   const sinces: number[] = [];
   const watching = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
@@ -1192,36 +1183,37 @@ test("only a credential's owner lets Shadow read it for them, and only a watched
       ],
     }
   );
-  const mail = await watching.addCredential(workspaceId, bob, "mail", {
+  const mail = await watching.addCredential(companyId, bob, "mail", {
     label: "bob@mail",
     secret: "token",
   });
-  const lights = await watching.addCredential(workspaceId, bob, "lights", {
+  const lights = await watching.addCredential(companyId, bob, "lights", {
     label: "Home",
     secret: "token",
   });
-  expect(watching.list(workspaceId, bob).map((each) => each.watchable)).toEqual(
-    [true, false]
-  );
+  expect(watching.list(companyId, bob).map((each) => each.watchable)).toEqual([
+    true,
+    false,
+  ]);
   expect(watching.watched()).toEqual([]);
   await expect(watching.watch(mail.id, 1, () => false)).rejects.toThrow(
     "Shadow does not watch this credential"
   );
-  watching.setShared(workspaceId, bob, mail.id, true);
-  expect(() => watching.setWatched(workspaceId, alice, mail.id, true)).toThrow(
+  watching.setShared(companyId, bob, mail.id, true);
+  expect(() => watching.setWatched(companyId, alice, mail.id, true)).toThrow(
     "Not found"
   );
-  expect(() => watching.setWatched(workspaceId, bob, lights.id, true)).toThrow(
+  expect(() => watching.setWatched(companyId, bob, lights.id, true)).toThrow(
     "Shadow cannot read this integration for you"
   );
-  expect(watching.setWatched(workspaceId, bob, mail.id, true)).toMatchObject({
+  expect(watching.setWatched(companyId, bob, mail.id, true)).toMatchObject({
     shared: true,
     watched: true,
   });
   expect(watching.watched()).toEqual([
     {
       id: mail.id,
-      workspaceId,
+      companyId,
       integration: "mail",
       integrationName: "Mail",
       ownerId: bob.id,
@@ -1235,7 +1227,7 @@ test("only a credential's owner lets Shadow read it for them, and only a watched
   expect(
     new TextDecoder().decode(await watching.attachment(mail.id, "m1", "a1"))
   ).toBe("m1 a1 token");
-  watching.setWatched(workspaceId, bob, mail.id, false);
+  watching.setWatched(companyId, bob, mail.id, false);
   await expect(watching.attachment(mail.id, "m1", "a1")).rejects.toThrow(
     "Shadow does not watch this credential"
   );
@@ -1278,19 +1270,19 @@ test("only an opted-in account owner's chat receives verified read observations"
   const observed = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
-    shadow.app.workspaces,
+    shadow.app.companies,
     {
       directory: join(shadow.app.config.dataDirectory, "observations"),
       catalog: [connector],
     }
   );
   const credential = await observed.addCredential(
-    workspaceId,
+    companyId,
     alice,
     "evidence",
     { label: "Private", secret: "token" }
   );
-  const tools = await observed.tools(workspaceId);
+  const tools = await observed.tools(companyId);
   const read = tools.find((tool) => tool.name === "evidence_read")!;
   const received: SourceRead[] = [];
   const observe = async (observation: SourceRead) => {
@@ -1299,7 +1291,7 @@ test("only an opted-in account owner's chat receives verified read observations"
   };
   await read.execute({}, { userId: alice.id, observe });
   expect(received).toEqual([]);
-  observed.setWatched(workspaceId, alice, credential.id, true);
+  observed.setWatched(companyId, alice, credential.id, true);
   await read.execute({}, { userId: alice.id, observe });
   expect(received).toHaveLength(1);
   expect(received[0]).toMatchObject({
@@ -1316,10 +1308,10 @@ test("only an opted-in account owner's chat receives verified read observations"
       .find((tool) => tool.name === "evidence_fail")!
       .execute({}, { userId: alice.id, observe })
   ).rejects.toThrow("Read failed");
-  observed.setShared(workspaceId, alice, credential.id, true);
+  observed.setShared(companyId, alice, credential.id, true);
   await read.execute({}, { userId: notOwner.id, observe });
   await read.execute({}, { userId: alice.id });
-  observed.setWatched(workspaceId, alice, credential.id, false);
+  observed.setWatched(companyId, alice, credential.id, false);
   await read.execute({}, { userId: alice.id, observe });
   expect(received).toHaveLength(1);
   await observed.close();

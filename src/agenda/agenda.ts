@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import type { Companies } from "../companies/companies.ts";
 import type { Place, PlaceEvent, Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound } from "../platform/errors.ts";
@@ -13,7 +14,6 @@ import type {
   Suggestion as ReviewSuggestion,
   Threads,
 } from "../threads/threads.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 
 /** An automation that Shadow suggests to a person; nothing runs until they accept it. */
 export interface Suggestion {
@@ -60,15 +60,12 @@ export interface Upcoming {
   }[];
 }
 
-export type AgendaWorkspaces = Pick<
-  Workspaces,
+export type AgendaCompanies = Pick<
+  Companies,
   "channelsIn" | "members" | "requireMember"
 >;
 export type AgendaThreads = Pick<Threads, "approvalsFor" | "orchestrator">;
-export type AgendaRoutines = Pick<
-  Routines,
-  "atPlace" | "create" | "inWorkspace"
->;
+export type AgendaRoutines = Pick<Routines, "atPlace" | "create" | "inCompany">;
 export type AgendaReminders = Pick<
   Reminders,
   "atPlace" | "cancel" | "create" | "get" | "list"
@@ -98,7 +95,7 @@ interface SuggestionRow extends Omit<Suggestion, "at"> {
 export class Agenda {
   constructor(
     private readonly database: Database,
-    private readonly workspaces: AgendaWorkspaces,
+    private readonly companies: AgendaCompanies,
     private readonly threads: AgendaThreads,
     private readonly routines: AgendaRoutines,
     private readonly reminders: AgendaReminders,
@@ -110,7 +107,7 @@ export class Agenda {
    * it; a schedule or a time that does not work is dropped.
    */
   offer(
-    workspaceId: string,
+    companyId: string,
     threadId: string,
     channelId: string,
     suggestion: ReviewSuggestion
@@ -130,9 +127,9 @@ export class Agenda {
     const name = routine ? suggestion.name : suggestion.text;
     const { open, same } = this.database
       .query(
-        "SELECT count(*) FILTER (WHERE answered_at IS NULL) AS open, count(*) FILTER (WHERE kind = ? AND lower(name) = lower(?)) AS same FROM suggestion WHERE workspace_id = ? AND person_id = ? AND deleted_at IS NULL"
+        "SELECT count(*) FILTER (WHERE answered_at IS NULL) AS open, count(*) FILTER (WHERE kind = ? AND lower(name) = lower(?)) AS same FROM suggestion WHERE company_id = ? AND person_id = ? AND deleted_at IS NULL"
       )
-      .get(suggestion.kind, name, workspaceId, suggestion.personId) as {
+      .get(suggestion.kind, name, companyId, suggestion.personId) as {
       open: number;
       same: number;
     };
@@ -141,11 +138,11 @@ export class Agenda {
     }
     this.database
       .query(
-        "INSERT INTO suggestion (id, workspace_id, person_id, thread_id, channel_id, kind, name, text, schedule, at, time_zone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO suggestion (id, company_id, person_id, thread_id, channel_id, kind, name, text, schedule, at, time_zone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         Bun.randomUUIDv7(),
-        workspaceId,
+        companyId,
         suggestion.personId,
         threadId,
         channelId,
@@ -178,30 +175,30 @@ export class Agenda {
   }
 
   /** What a review may not suggest to a person again, as lines: their routines, reminders, and suggestions. */
-  automations(workspaceId: string, personId: string): string {
-    const person = this.workspaces
-      .members(workspaceId, { id: personId, name: "", email: "" })
+  automations(companyId: string, personId: string): string {
+    const person = this.companies
+      .members(companyId, { id: personId, name: "", email: "" })
       .find((member) => member.userId === personId);
     if (!person) {
       return "";
     }
     const user = { id: personId, name: person.name, email: person.email };
     const routines = this.routines
-      .inWorkspace(workspaceId, personId)
+      .inCompany(companyId, personId)
       .map(
         (routine) =>
           `- Routine "${routine.name}" (${routine.place ? `when they ${routine.place.event === "arrive" ? "arrive at" : "leave"} ${routine.place.name}` : routine.schedule})${routine.enabled ? "" : ", paused"}`
       );
-    const reminders = this.pendingReminders(workspaceId, user).map(
+    const reminders = this.pendingReminders(companyId, user).map(
       (reminder) =>
         `- Reminder ${reminder.place ? `when they ${reminder.place.event === "arrive" ? "arrive at" : "leave"} ${reminder.place.name}` : `for ${new Date(reminder.dueAt).toISOString()}`}: ${reminder.text}`
     );
     const suggested = (
       this.database
         .query(
-          `SELECT kind, name, answered_at AS answeredAt, accepted FROM suggestion WHERE workspace_id = ? AND person_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ${ANSWERED}`
+          `SELECT kind, name, answered_at AS answeredAt, accepted FROM suggestion WHERE company_id = ? AND person_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ${ANSWERED}`
         )
-        .all(workspaceId, personId) as {
+        .all(companyId, personId) as {
         kind: string;
         name: string;
         answeredAt: number | null;
@@ -213,14 +210,14 @@ export class Agenda {
   }
 
   /** The suggestions that wait for the person, oldest first. */
-  suggestions(workspaceId: string, user: User): Suggestion[] {
-    this.workspaces.requireMember(workspaceId, user);
+  suggestions(companyId: string, user: User): Suggestion[] {
+    this.companies.requireMember(companyId, user);
     return (
       this.database
         .query(
-          `SELECT ${COLUMNS} FROM suggestion WHERE workspace_id = ? AND person_id = ? AND answered_at IS NULL AND deleted_at IS NULL ORDER BY created_at`
+          `SELECT ${COLUMNS} FROM suggestion WHERE company_id = ? AND person_id = ? AND answered_at IS NULL AND deleted_at IS NULL ORDER BY created_at`
         )
-        .all(workspaceId, user.id) as SuggestionRow[]
+        .all(companyId, user.id) as SuggestionRow[]
     ).map((row) => suggestionOf(row));
   }
 
@@ -229,17 +226,17 @@ export class Agenda {
    * orchestrator, both as theirs; otherwise reviews do not ask again.
    */
   async answer(
-    workspaceId: string,
+    companyId: string,
     user: User,
     id: string,
     accept: boolean
   ): Promise<void> {
-    this.workspaces.requireMember(workspaceId, user);
+    this.companies.requireMember(companyId, user);
     const row = this.database
       .query(
-        `SELECT ${COLUMNS}, time_zone AS timeZone FROM suggestion WHERE id = ? AND workspace_id = ? AND person_id = ? AND answered_at IS NULL AND deleted_at IS NULL`
+        `SELECT ${COLUMNS}, time_zone AS timeZone FROM suggestion WHERE id = ? AND company_id = ? AND person_id = ? AND answered_at IS NULL AND deleted_at IS NULL`
       )
-      .get(id, workspaceId, user.id) as
+      .get(id, companyId, user.id) as
       | (SuggestionRow & { timeZone: string | null })
       | null;
     if (!row) {
@@ -250,13 +247,13 @@ export class Agenda {
       resultId = Bun.randomUUIDv7();
       if (row.kind === "routine") {
         if (
-          !this.workspaces
-            .channelsIn(workspaceId, user.id)
+          !this.companies
+            .channelsIn(companyId, user.id)
             .some((channel) => channel.id === row.channelId)
         ) {
           throw new HttpError(409, "Its channel is gone");
         }
-        this.routines.create(workspaceId, row.channelId, {
+        this.routines.create(companyId, row.channelId, {
           id: resultId,
           name: row.name,
           schedule: row.schedule!,
@@ -264,9 +261,9 @@ export class Agenda {
           createdBy: user.id,
         });
       } else {
-        const orchestrator = await this.threads.orchestrator(workspaceId, user);
+        const orchestrator = await this.threads.orchestrator(companyId, user);
         try {
-          this.reminders.create(workspaceId, user, orchestrator.id, user.id, {
+          this.reminders.create(companyId, user, orchestrator.id, user.id, {
             id: resultId,
             text: row.text,
             at: row.at!,
@@ -288,24 +285,24 @@ export class Agenda {
   }
 
   /** The person's agenda: the routines they see, their pending reminders, suggestions, and approvals. */
-  upcoming(workspaceId: string, user: User): Upcoming {
-    this.workspaces.requireMember(workspaceId, user);
+  upcoming(companyId: string, user: User): Upcoming {
+    this.companies.requireMember(companyId, user);
     return {
-      routines: this.routines.inWorkspace(workspaceId, user.id),
-      reminders: this.pendingReminders(workspaceId, user),
-      suggestions: this.suggestions(workspaceId, user),
-      approvals: this.threads.approvalsFor(workspaceId, user),
+      routines: this.routines.inCompany(companyId, user.id),
+      reminders: this.pendingReminders(companyId, user),
+      suggestions: this.suggestions(companyId, user),
+      approvals: this.threads.approvalsFor(companyId, user),
     };
   }
 
   /** Cancels a pending reminder for the person or from them. */
-  cancelReminder(workspaceId: string, user: User, id: string): void {
-    const reminder = this.reminders.get(workspaceId, user, user.id, id);
+  cancelReminder(companyId: string, user: User, id: string): void {
+    const reminder = this.reminders.get(companyId, user, user.id, id);
     if (reminder.recipientId !== user.id && reminder.createdBy !== user.id) {
       throw notFound();
     }
     try {
-      this.reminders.cancel(workspaceId, user, user.id, id);
+      this.reminders.cancel(companyId, user, user.id, id);
     } catch (error) {
       throw error instanceof HttpError
         ? error
@@ -317,10 +314,10 @@ export class Agenda {
    * The places that the person's phone watches from now on, as it asks for them. Their last state at the other places
    * no longer counts: nothing keeps it current, and a new reminder there waits for what the phone says.
    */
-  watchPlaces(workspaceId: string, user: User): WatchedPlace[] {
-    const places = this.watchedPlaces(workspaceId, user);
+  watchPlaces(companyId: string, user: User): WatchedPlace[] {
+    const places = this.watchedPlaces(companyId, user);
     this.places.unwatch(
-      workspaceId,
+      companyId,
       user.id,
       places.map((place) => place.id)
     );
@@ -328,8 +325,8 @@ export class Agenda {
   }
 
   /** The places that the person's phone watches: those of their pending reminders and enabled routines at a place. */
-  private watchedPlaces(workspaceId: string, user: User): WatchedPlace[] {
-    this.workspaces.requireMember(workspaceId, user);
+  private watchedPlaces(companyId: string, user: User): WatchedPlace[] {
+    this.companies.requireMember(companyId, user);
     const places = new Map<string, WatchedPlace>();
     const add = (
       place: Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius">
@@ -345,7 +342,7 @@ export class Agenda {
       places.set(place.id, watched);
       return watched.reminders as WatchedPlace["reminders"][number][];
     };
-    for (const reminder of this.pendingReminders(workspaceId, user)) {
+    for (const reminder of this.pendingReminders(companyId, user)) {
       if (
         reminder.place &&
         reminder.triggeredAt === null &&
@@ -358,7 +355,7 @@ export class Agenda {
         });
       }
     }
-    for (const routine of this.routines.inWorkspace(workspaceId, user.id)) {
+    for (const routine of this.routines.inCompany(companyId, user.id)) {
       if (routine.enabled && routine.place?.personId === user.id) {
         add(routine.place);
       }
@@ -373,15 +370,13 @@ export class Agenda {
    * one, or a second one of the same state, changes nothing.
    */
   reportPlace(
-    workspaceId: string,
+    companyId: string,
     user: User,
     placeId: string,
     input: unknown
   ): void {
     const report = placeReport(input);
-    if (
-      !this.watchedPlaces(workspaceId, user).some(({ id }) => id === placeId)
-    ) {
+    if (!this.watchedPlaces(companyId, user).some(({ id }) => id === placeId)) {
       throw notFound();
     }
     const recorded = this.places.record(placeId, user.id, report);
@@ -392,7 +387,7 @@ export class Agenda {
     const crossed = !report.initial && recorded.before !== inside;
     if (crossed || (report.initial && inside)) {
       this.reminders.atPlace(
-        workspaceId,
+        companyId,
         user.id,
         placeId,
         report.event,
@@ -401,7 +396,7 @@ export class Agenda {
     }
     if (crossed && Date.now() - report.at <= ROUTINE_EVENT_AGE) {
       for (const run of this.routines.atPlace(
-        workspaceId,
+        companyId,
         user.id,
         placeId,
         report.event
@@ -413,9 +408,9 @@ export class Agenda {
     }
   }
 
-  private pendingReminders(workspaceId: string, user: User): Reminder[] {
+  private pendingReminders(companyId: string, user: User): Reminder[] {
     return this.reminders
-      .list(workspaceId, user, user.id)
+      .list(companyId, user, user.id)
       .filter(
         (reminder) =>
           reminder.deliveredAt === null &&

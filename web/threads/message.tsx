@@ -9,12 +9,12 @@ import {
 } from "react";
 import { fileHref } from "../app/api.ts";
 import type { Message, Step, Work } from "../app/types.ts";
+import { usePicture } from "../companies/data.ts";
 import { Avatar, Mark, PixelSpinner } from "../ui/components.tsx";
 import { fileKind } from "../ui/file-kind.ts";
 import { previewLink } from "../ui/file-preview.tsx";
 import { clockTime, duration } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
-import { usePicture } from "../workspaces/data.ts";
 import { ThreadLink } from "./thread-link.tsx";
 
 // Markdown and its sanitizer load on their own, once a page shows an agent's answer.
@@ -23,14 +23,14 @@ const Markdown = lazy(() => import("./markdown.tsx"));
 /** An agent's Markdown; its plain text shows until the renderer loads. */
 export function AgentText({
   text,
-  workspaceId,
+  companyId,
 }: {
   text: string;
-  workspaceId: string;
+  companyId: string;
 }) {
   return (
     <Suspense fallback={<p>{text}</p>}>
-      <Markdown text={text} workspaceId={workspaceId} />
+      <Markdown companyId={companyId} text={text} />
     </Suspense>
   );
 }
@@ -44,12 +44,12 @@ export const MessageView = memo(MessageCard);
  */
 function MessageCard({
   message,
-  workspaceId,
+  companyId,
   pending = false,
   continued = false,
 }: {
   message: Message;
-  workspaceId: string;
+  companyId: string;
   pending?: boolean;
   continued?: boolean;
 }) {
@@ -67,7 +67,7 @@ function MessageCard({
       {continued ? <span className="avatar-space" /> : null}
       {!continued && message.agent ? <Mark /> : null}
       {continued || message.agent ? null : (
-        <AuthorAvatar message={message} workspaceId={workspaceId} />
+        <AuthorAvatar companyId={companyId} message={message} />
       )}
       <div className="message-body">
         {continued ? null : (
@@ -79,16 +79,16 @@ function MessageCard({
           </div>
         )}
         {message.work ? (
-          <WorkLog work={message.work} workspaceId={workspaceId} />
+          <WorkLog companyId={companyId} work={message.work} />
         ) : null}
         {message.text && message.agent && !message.failed ? (
           <div className="message-text prose">
-            <AgentText text={message.text} workspaceId={workspaceId} />
+            <AgentText companyId={companyId} text={message.text} />
           </div>
         ) : null}
         {message.text && !(message.agent && !message.failed) ? (
           <p className="message-text">
-            <Linked text={message.text} workspaceId={workspaceId} />
+            <Linked companyId={companyId} text={message.text} />
           </p>
         ) : null}
         {message.files.length > 0 ? (
@@ -98,13 +98,13 @@ function MessageCard({
                 key={file.id}
                 link={previewLink(
                   files.map((each) => ({
-                    href: fileHref(workspaceId, each.id),
+                    href: fileHref(companyId, each.id),
                     name: each.name,
                   })),
                   index
                 )}
                 name={file.name}
-                picture={`${fileHref(workspaceId, file.id)}/picture`}
+                picture={`${fileHref(companyId, file.id)}/picture`}
               />
             ))}
           </div>
@@ -116,15 +116,15 @@ function MessageCard({
 
 function AuthorAvatar({
   message,
-  workspaceId,
+  companyId,
 }: {
   message: Message;
-  workspaceId: string;
+  companyId: string;
 }) {
   return (
     <Avatar
       name={message.author}
-      picture={usePicture(workspaceId, message.authorId)}
+      picture={usePicture(companyId, message.authorId)}
     />
   );
 }
@@ -185,7 +185,7 @@ function FileItem({
 const THREAD_LINK = /\[([^\]\n]+)\]\(thread:([\w-]+)\)/g;
 
 /** Text with each thread link as a link that opens the thread, and its spinner while the thread's agent works. */
-function Linked({ text, workspaceId }: { text: string; workspaceId: string }) {
+function Linked({ text, companyId }: { text: string; companyId: string }) {
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of text.matchAll(THREAD_LINK)) {
@@ -197,7 +197,7 @@ function Linked({ text, workspaceId }: { text: string; workspaceId: string }) {
     parts.push(text.slice(last, match.index));
     parts.push(
       <Fragment key={match.index}>
-        <ThreadLink threadId={threadId} workspaceId={workspaceId}>
+        <ThreadLink companyId={companyId} threadId={threadId}>
           {title}
         </ThreadLink>
       </Fragment>
@@ -212,7 +212,7 @@ function Linked({ text, workspaceId }: { text: string; workspaceId: string }) {
  * The work before an answer: open while the agent works, then folded into "Worked for …". Calls of one tool in a row
  * fold into one row, and each tool call opens to show its arguments and result.
  */
-function WorkLog({ work, workspaceId }: { work: Work; workspaceId: string }) {
+function WorkLog({ work, companyId }: { work: Work; companyId: string }) {
   const working = work.endedAt === null;
   const groups = runs(work.steps);
   let label: ReactNode = `Worked for ${duration(work.endedAt! - work.startedAt)}`;
@@ -248,11 +248,7 @@ function WorkLog({ work, workspaceId }: { work: Work; workspaceId: string }) {
         <ol className="work-steps" ref={working ? followEnd : undefined}>
           {groups.map(({ start, steps }) =>
             steps.length === 1 ? (
-              <WorkStep
-                key={start}
-                step={steps[0]!}
-                workspaceId={workspaceId}
-              />
+              <WorkStep companyId={companyId} key={start} step={steps[0]!} />
             ) : (
               <li key={start}>
                 <details
@@ -269,10 +265,10 @@ function WorkLog({ work, workspaceId }: { work: Work; workspaceId: string }) {
                   <ol className="work-group-steps">
                     {steps.map((step, index) => (
                       <WorkStep
+                        companyId={companyId}
                         // biome-ignore lint/suspicious/noArrayIndexKey: steps only grow, so their place is their identity
                         key={index}
                         step={step}
-                        workspaceId={workspaceId}
                       />
                     ))}
                   </ol>
@@ -313,11 +309,11 @@ export function runs(
   return result;
 }
 
-function WorkStep({ step, workspaceId }: { step: Step; workspaceId: string }) {
+function WorkStep({ step, companyId }: { step: Step; companyId: string }) {
   if (step.kind !== "tool") {
     return (
       <li className={`work-${step.kind}`}>
-        <Linked text={step.text} workspaceId={workspaceId} />
+        <Linked companyId={companyId} text={step.text} />
       </li>
     );
   }
@@ -339,7 +335,7 @@ function WorkStep({ step, workspaceId }: { step: Step; workspaceId: string }) {
           <ToolName tool={step.tool!} />
           {step.text ? (
             <span className="work-tool-detail">
-              <Linked text={step.text} workspaceId={workspaceId} />
+              <Linked companyId={companyId} text={step.text} />
             </span>
           ) : null}
         </summary>

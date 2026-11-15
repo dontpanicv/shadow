@@ -14,14 +14,9 @@ import { routes } from "../app/http.ts";
 import { allRoutes } from "../app/routes.ts";
 import type { User } from "../platform/auth.ts";
 import { Secrets } from "../platform/secrets.ts";
+import { CompanyIndex, chunk, isProse, type Segment } from "./company-index.ts";
 import type { Embedder } from "./embedder.ts";
 import { cardWords } from "./search.ts";
-import {
-  chunk,
-  isProse,
-  type Segment,
-  WorkspaceIndex,
-} from "./workspace-index.ts";
 
 /** Every source is visible: these tests check ranking, not who sees what. */
 const all = () => true;
@@ -107,11 +102,11 @@ async function person(
 }
 
 async function note(
-  workspaceId: string,
+  companyId: string,
   path: string,
   text: string
 ): Promise<void> {
-  const file = join(dataDirectory, "workspaces", workspaceId, "notes", path);
+  const file = join(dataDirectory, "companies", companyId, "notes", path);
   await mkdir(join(file, ".."), { recursive: true });
   await Bun.write(file, text);
 }
@@ -126,7 +121,7 @@ test("text is chunked with overlap, and only prose is embedded", () => {
 
 test("an index finds by meaning and by words, and re-embeds when the model changes", async () => {
   const path = join(dataDirectory, "unit.sqlite");
-  const index = new WorkspaceIndex(path, "model-a");
+  const index = new CompanyIndex(path, "model-a");
   const source = { kind: "note" as const, version: "1", updatedAt: 0 };
   await index.sync(
     { ...source, uri: "notes/dentist.md", title: "Dentist" },
@@ -164,16 +159,16 @@ test("an index finds by meaning and by words, and re-embeds when the model chang
     index.search("insurance", null, 5, all).map((result) => result.title)
   ).toEqual(["Car"]);
   index.close();
-  const reopened = new WorkspaceIndex(path, "model-b");
+  const reopened = new CompanyIndex(path, "model-b");
   expect(reopened.counts().waiting).toBe(2);
   reopened.close();
 });
 
-test("search covers one workspace and never another, also through the agent's recall tool", async () => {
+test("search covers one company and never another, also through the agent's recall tool", async () => {
   const anna = await person("Anna", "anna@example.com");
   const otto = await person("Otto", "otto@example.com");
-  const family = await app.workspaces.create(anna.user, "Family");
-  const work = await app.workspaces.create(otto.user, "Work");
+  const family = await app.companies.create(anna.user, "Family");
+  const work = await app.companies.create(otto.user, "Work");
   await note(
     family.id,
     "health/dentist.md",
@@ -199,7 +194,7 @@ test("search covers one workspace and never another, also through the agent's re
   ]);
   await app.indexer.scan(family.id);
   await app.indexer.scan(work.id);
-  const channel = app.workspaces.channels(family.id, anna.user)[0]!;
+  const channel = app.companies.channels(family.id, anna.user)[0]!;
   await app.threads.create(
     family.id,
     anna.user,
@@ -225,14 +220,14 @@ test("search covers one workspace and never another, also through the agent's re
 
   const response = await handler(
     new Request(
-      `http://shadow.test/api/v1/workspaces/${family.id}/search?q=dentist`,
+      `http://shadow.test/api/v1/companies/${family.id}/search?q=dentist`,
       { headers: { authorization: `Bearer ${otto.token}` } }
     )
   );
   expect(response.status).toBe(404);
   const own = await handler(
     new Request(
-      `http://shadow.test/api/v1/workspaces/${work.id}/search?q=dentist`,
+      `http://shadow.test/api/v1/companies/${work.id}/search?q=dentist`,
       { headers: { authorization: `Bearer ${otto.token}` } }
     )
   );
@@ -246,10 +241,10 @@ test("search covers one workspace and never another, also through the agent's re
 test("each person sees only their own recent searches, newest first, and a search again moves to the top", async () => {
   const eva = await person("Eva", "eva@example.com");
   const karel = await person("Karel", "karel@example.com");
-  const home = await app.workspaces.create(eva.user, "Home");
+  const home = await app.companies.create(eva.user, "Home");
   const searches = (token: string, query?: string) =>
     handler(
-      new Request(`http://shadow.test/api/v1/workspaces/${home.id}/searches`, {
+      new Request(`http://shadow.test/api/v1/companies/${home.id}/searches`, {
         method: query === undefined ? "GET" : "POST",
         headers: {
           authorization: `Bearer ${token}`,
@@ -284,7 +279,7 @@ test("a card block is indexed as the words on its cards", () => {
 });
 
 test("a snippet keeps the Markdown lines around the term", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   const text = `# Trip\n\n${"We pack the bags and the snacks. ".repeat(8)}\n\n\n\n- **Ferry** at 9:00   \n- Hotel by the sea\n\n${"Then we rest. ".repeat(20)}`;
   await sync(index, "notes/trip.md", "1", [{ key: "0", text }]);
   const [result] = index.search("ferry", null, 5, all);
@@ -309,7 +304,7 @@ const prose = (channel: string) =>
   `The family wrote this note about the ${channel} for the whole week`;
 
 async function sync(
-  index: WorkspaceIndex,
+  index: CompanyIndex,
   uri: string,
   version: string,
   segments: Segment[],
@@ -326,7 +321,7 @@ async function sync(
   return read;
 }
 
-function embedWaiting(index: WorkspaceIndex): number[] {
+function embedWaiting(index: CompanyIndex): number[] {
   const waiting = index.waiting(100);
   index.storeVectors(
     waiting.map((segment) => ({
@@ -338,7 +333,7 @@ function embedWaiting(index: WorkspaceIndex): number[] {
 }
 
 test("a changed source keeps the vectors of unchanged segments and replaces the others", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   const segments = [
     { key: "a", text: prose("garden") },
     { key: "b", text: prose("kitchen") },
@@ -384,7 +379,7 @@ test("a changed source keeps the vectors of unchanged segments and replaces the 
 
 test("a picture without a vector is read again until the model gives one, and again after the model changes", async () => {
   const path = join(dataDirectory, "media.sqlite");
-  let index = new WorkspaceIndex(path, "model-a");
+  let index = new CompanyIndex(path, "model-a");
   const picture = {
     key: "image",
     modality: "image" as const,
@@ -418,7 +413,7 @@ test("a picture without a vector is read again until the model gives one, and ag
   expect(index.search("beach", null, 5, all).length).toBe(1);
   index.close();
 
-  index = new WorkspaceIndex(path, "model-b");
+  index = new CompanyIndex(path, "model-b");
   expect(index.search("photo", bagOfWords("picture"), 5, all).length).toBe(1);
   expect(await sync(index, "files/beach.jpg", "1", [picture], "beach")).toBe(
     true
@@ -427,7 +422,7 @@ test("a picture without a vector is read again until the model gives one, and ag
 });
 
 test("a channel file that moves to another channel keeps its segments and vectors", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   const file = (channelId: string) => ({
     uri: `channels/${channelId}/files/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b-plan.txt`,
     kind: "file" as const,
@@ -457,7 +452,7 @@ test("a channel file that moves to another channel keeps its segments and vector
 });
 
 test("prune removes sources that are gone, with their keywords", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   await sync(index, "notes/keep.md", "1", [
     { key: "0", text: "violin lesson" },
   ]);
@@ -475,7 +470,7 @@ test("prune removes sources that are gone, with their keywords", async () => {
 });
 
 test("search handles stop words, a text without vectors, and long excerpts", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   const long = `${"Morning routine and breakfast. ".repeat(10)}The passport is in the blue folder. ${"Evening routine and dinner. ".repeat(10)}`;
   await sync(index, "notes/long.md", "1", [{ key: "0", text: long }]);
   expect(index.search("the and of", null, 5, all)).toEqual([]);
@@ -492,7 +487,7 @@ test("search handles stop words, a text without vectors, and long excerpts", asy
 
 test("standard Czech stems find inflections, exact words ignore accents, and English plurals match", async () => {
   const path = join(dataDirectory, "stems.sqlite");
-  const index = new WorkspaceIndex(path, "model");
+  const index = new CompanyIndex(path, "model");
   await sync(index, "notes/claim.md", "1", [
     { key: "0", text: "Poslali jsme reklamace balkonu developerovi." },
   ]);
@@ -523,7 +518,7 @@ test("standard Czech stems find inflections, exact words ignore accents, and Eng
 
 test("an index of older keywords rebuilds them with stems and keeps its vectors", async () => {
   const path = join(dataDirectory, "rebuild.sqlite");
-  const index = new WorkspaceIndex(path, "model");
+  const index = new CompanyIndex(path, "model");
   await sync(index, "notes/claim.md", "1", [
     { key: "0", text: prose("reklamace balkonu") },
   ]);
@@ -536,7 +531,7 @@ test("an index of older keywords rebuilds them with stems and keeps its vectors"
   );
   older.run("DELETE FROM meta WHERE key = 'keywords'");
   older.close();
-  const reopened = new WorkspaceIndex(path, "model");
+  const reopened = new CompanyIndex(path, "model");
   expect(reopened.counts().waiting).toBe(0);
   expect(
     reopened.search("reklamací", null, 5, all).map((result) => result.uri)
@@ -545,7 +540,7 @@ test("an index of older keywords rebuilds them with stems and keeps its vectors"
 });
 
 test("a query of 500 words uses only its first 32 terms", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   await sync(index, "notes/passport.md", "1", [
     { key: "0", text: "The passport is in the blue folder." },
   ]);
@@ -560,7 +555,7 @@ test("a query of 500 words uses only its first 32 terms", async () => {
 });
 
 test("with many vectors, meaning is measured against the index's own spread", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   const channels = Array.from(
     { length: 60 },
     (_, number) =>
@@ -588,7 +583,7 @@ test("with many vectors, meaning is measured against the index's own spread", as
 });
 
 test("a picture that only stands out among widely spread pictures does not show", async () => {
-  const index = new WorkspaceIndex(":memory:", "model");
+  const index = new CompanyIndex(":memory:", "model");
   // A unit vector whose cosine with the query (the first axis) is `similarity`.
   const scored = (similarity: number) => {
     const vector = new Float32Array(768);

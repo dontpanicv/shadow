@@ -1,12 +1,12 @@
 import type { Database } from "bun:sqlite";
+import type { Companies } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import { notFound } from "../platform/errors.ts";
-import type { Workspaces } from "../workspaces/workspaces.ts";
 
 /** Something that needs a person's attention. It opens its thread, or its channel when `threadId` is null. */
 export interface Notification {
   readonly id: string;
-  readonly workspaceId: string;
+  readonly companyId: string;
   readonly channelId: string;
   readonly threadId: string | null;
   readonly title: string;
@@ -18,7 +18,7 @@ export interface Notification {
 
 export type NotificationInput = Pick<
   Notification,
-  "workspaceId" | "channelId" | "threadId" | "title" | "text"
+  "companyId" | "channelId" | "threadId" | "title" | "text"
 > & {
   readonly userId: string;
   /** A durable producer's id, so a retry creates no second notification. */
@@ -27,18 +27,18 @@ export type NotificationInput = Pick<
 
 export interface Inbox {
   readonly notifications: readonly Notification[];
-  /** The unread notifications of this workspace. */
+  /** The unread notifications of this company. */
   readonly unread: number;
 }
 
-export type NotificationWorkspaces = Pick<Workspaces, "requireMember">;
+export type NotificationCompanies = Pick<Companies, "requireMember">;
 
 /** The newest notifications an inbox shows. */
 const INBOX_SIZE = 100;
 /** The most of an answer a notification keeps; the thread has all of it. */
 const MAX_TEXT = 500;
 const COLUMNS =
-  "id, workspace_id AS workspaceId, channel_id AS channelId, thread_id AS threadId, title, text, created_at AS createdAt, read_at AS readAt";
+  "id, company_id AS companyId, channel_id AS channelId, thread_id AS threadId, title, text, created_at AS createdAt, read_at AS readAt";
 
 /**
  * The inbox of each person. A person who has the thread open on a screen sees what happens there, so a notification
@@ -50,14 +50,14 @@ export class Notifications {
 
   constructor(
     private readonly database: Database,
-    private readonly workspaces: NotificationWorkspaces
+    private readonly companies: NotificationCompanies
   ) {}
 
   /**
    * Puts a notification in a person's inbox, read at once when they have the thread open.
    *
    * @example
-   * notifications.notify({ workspaceId, userId: anna.id, channelId, threadId, title: "Flights", text: answer });
+   * notifications.notify({ companyId, userId: anna.id, channelId, threadId, title: "Flights", text: answer });
    */
   notify(input: NotificationInput): Notification {
     if (input.id) {
@@ -74,7 +74,7 @@ export class Notifications {
       this.watching.has(watchKey(input.userId, input.threadId));
     const notification: Notification = {
       id: input.id ?? Bun.randomUUIDv7(),
-      workspaceId: input.workspaceId,
+      companyId: input.companyId,
       channelId: input.channelId,
       threadId: input.threadId,
       title: input.title,
@@ -84,11 +84,11 @@ export class Notifications {
     };
     this.database
       .query(
-        "INSERT INTO notification (id, workspace_id, user_id, channel_id, thread_id, title, text, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO notification (id, company_id, user_id, channel_id, thread_id, title, text, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         notification.id,
-        notification.workspaceId,
+        notification.companyId,
         input.userId,
         notification.channelId,
         notification.threadId,
@@ -100,18 +100,18 @@ export class Notifications {
     return notification;
   }
 
-  inbox(workspaceId: string, user: User): Inbox {
-    this.workspaces.requireMember(workspaceId, user);
+  inbox(companyId: string, user: User): Inbox {
+    this.companies.requireMember(companyId, user);
     const notifications = this.database
       .query(
-        `SELECT ${COLUMNS} FROM notification WHERE user_id = ? AND workspace_id = ? ORDER BY created_at DESC LIMIT ?`
+        `SELECT ${COLUMNS} FROM notification WHERE user_id = ? AND company_id = ? ORDER BY created_at DESC LIMIT ?`
       )
-      .all(user.id, workspaceId, INBOX_SIZE) as Notification[];
+      .all(user.id, companyId, INBOX_SIZE) as Notification[];
     const { unread } = this.database
       .query(
-        "SELECT count(*) AS unread FROM notification WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL"
+        "SELECT count(*) AS unread FROM notification WHERE user_id = ? AND company_id = ? AND read_at IS NULL"
       )
-      .get(user.id, workspaceId) as { unread: number };
+      .get(user.id, companyId) as { unread: number };
     return { notifications, unread };
   }
 
@@ -129,26 +129,26 @@ export class Notifications {
       .run(channelId, threadId);
   }
 
-  /** Marks one notification of the person read, or all of them in the workspace for a null `id`. */
-  read(workspaceId: string, user: User, id: string | null): Inbox {
-    this.workspaces.requireMember(workspaceId, user);
+  /** Marks one notification of the person read, or all of them in the company for a null `id`. */
+  read(companyId: string, user: User, id: string | null): Inbox {
+    this.companies.requireMember(companyId, user);
     const now = Date.now();
     if (id === null) {
       this.database
         .query(
-          "UPDATE notification SET read_at = ? WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL"
+          "UPDATE notification SET read_at = ? WHERE user_id = ? AND company_id = ? AND read_at IS NULL"
         )
-        .run(now, user.id, workspaceId);
+        .run(now, user.id, companyId);
     } else if (
       this.database
         .query(
-          "UPDATE notification SET read_at = coalesce(read_at, ?) WHERE id = ? AND user_id = ? AND workspace_id = ?"
+          "UPDATE notification SET read_at = coalesce(read_at, ?) WHERE id = ? AND user_id = ? AND company_id = ?"
         )
-        .run(now, id, user.id, workspaceId).changes === 0
+        .run(now, id, user.id, companyId).changes === 0
     ) {
       throw notFound();
     }
-    return this.inbox(workspaceId, user);
+    return this.inbox(companyId, user);
   }
 
   /**

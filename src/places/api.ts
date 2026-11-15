@@ -7,34 +7,34 @@ import { USER_AGENT } from "./places.ts";
 const TILES = "https://tile.openstreetmap.org";
 const MAX_ZOOM = 19;
 
-/** The places that a person sees in the workspace, their own and the shared ones, which they add, change, or remove. */
+/** The places that a person sees in the company, their own and the shared ones, which they add, change, or remove. */
 export const placeApiRoutes: readonly Route[] = [
   [
     "GET",
-    "/api/v1/workspaces/:workspace/places",
+    "/api/v1/companies/:company/places",
     api(async ({ app, user, params }) =>
-      json({ places: app.places.list(params.workspace!, user) })
+      json({ places: app.places.list(params.company!, user) })
     ),
   ],
   [
     "POST",
-    "/api/v1/workspaces/:workspace/places",
+    "/api/v1/companies/:company/places",
     api(async ({ app, user, params, body }) =>
-      json(app.places.create(params.workspace!, user, body), 201)
+      json(app.places.create(params.company!, user, body), 201)
     ),
   ],
   [
     "PUT",
-    "/api/v1/workspaces/:workspace/places/:place",
+    "/api/v1/companies/:company/places/:place",
     api(async ({ app, user, params, body }) =>
-      json(app.places.update(params.workspace!, user, params.place!, body))
+      json(app.places.update(params.company!, user, params.place!, body))
     ),
   ],
   [
     "DELETE",
-    "/api/v1/workspaces/:workspace/places/:place",
+    "/api/v1/companies/:company/places/:place",
     api(async ({ app, user, params }) => {
-      app.places.remove(params.workspace!, user, params.place!);
+      app.places.remove(params.company!, user, params.place!);
       return new Response(null, { status: 204 });
     }),
   ],

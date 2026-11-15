@@ -3,15 +3,15 @@ import { authDatabase } from "../../test/database.ts";
 import type { User } from "../platform/auth.ts";
 import { migrate } from "../platform/database.ts";
 import {
+  type NotificationCompanies,
   Notifications,
-  type NotificationWorkspaces,
   plainText,
 } from "./notifications.ts";
 
 const alice: User = { id: "alice", name: "Alice", email: "alice@example.com" };
 const eve: User = { id: "eve", name: "Eve", email: "eve@example.com" };
 const answer = {
-  workspaceId: "home",
+  companyId: "home",
   userId: alice.id,
   channelId: "general",
   threadId: "flights",
@@ -22,15 +22,15 @@ const answer = {
 function setup() {
   const database = authDatabase();
   migrate(database);
-  const workspaces = {
-    requireMember(workspaceId: string, user: User) {
-      if (workspaceId !== "home" || user.id !== alice.id) {
+  const companies = {
+    requireMember(companyId: string, user: User) {
+      if (companyId !== "home" || user.id !== alice.id) {
         throw new Error("Not found");
       }
-      return { id: "home", name: "Home", role: "owner" };
+      return { id: "home", name: "Home", role: "admin" };
     },
-  } as NotificationWorkspaces;
-  return { notifications: new Notifications(database, workspaces) };
+  } as NotificationCompanies;
+  return { notifications: new Notifications(database, companies) };
 }
 
 test("a notification goes to the person's inbox as plain text", () => {

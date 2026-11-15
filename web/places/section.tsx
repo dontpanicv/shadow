@@ -3,6 +3,7 @@ import { lazy, Suspense, useState } from "react";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
 import type { Place } from "../app/types.ts";
+import { useMe } from "../companies/data.ts";
 import {
   Button,
   Dialog,
@@ -13,7 +14,6 @@ import {
   TextField,
 } from "../ui/components.tsx";
 import { showError, showToast } from "../ui/toast.tsx";
-import { useMe } from "../workspaces/data.ts";
 import type { Pin } from "./map.tsx";
 
 const PlaceMap = lazy(() => import("./map.tsx"));
@@ -31,10 +31,10 @@ type PlaceInput = Pick<
  * The person's own places, which they mark with a pin on a map and share with every member's turns or keep private,
  * and the ones other members shared. A reminder waits for a person to arrive at one or leave it.
  */
-export function PlacesSection({ workspaceId }: { workspaceId: string }) {
+export function PlacesSection({ companyId }: { companyId: string }) {
   const { user } = useMe();
-  const base = `/workspaces/${workspaceId}/places`;
-  const queryKey = ["workspaces", workspaceId, "places"];
+  const base = `/companies/${companyId}/places`;
+  const queryKey = ["companies", companyId, "places"];
   const [editing, setEditing] = useState<Place | "new" | null>(null);
   const { data } = useQuery({
     queryKey,

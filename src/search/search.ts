@@ -2,10 +2,17 @@ import type { Database } from "bun:sqlite";
 import { type FSWatcher, mkdirSync, statSync, watch } from "node:fs";
 import { basename, join } from "node:path";
 import type { Artifacts } from "../artifacts/artifacts.ts";
+import type { Companies, Realm } from "../companies/companies.ts";
 import { HttpError } from "../platform/errors.ts";
 import { htmlText } from "../platform/html.ts";
 import type { Threads } from "../threads/threads.ts";
-import type { Realm, Workspaces } from "../workspaces/workspaces.ts";
+import {
+  CompanyIndex,
+  chunk,
+  type SearchKind,
+  type SearchResult,
+  type Segment,
+} from "./company-index.ts";
 import { documentPrompt, type Embedder, queryPrompt } from "./embedder.ts";
 import {
   type ExtractedSegment,
@@ -13,15 +20,8 @@ import {
   extract,
   isIgnored,
 } from "./extract.ts";
-import {
-  chunk,
-  type SearchKind,
-  type SearchResult,
-  type Segment,
-  WorkspaceIndex,
-} from "./workspace-index.ts";
 
-/** Folders of a workspace that are indexed, and what their files are. Channel files are found per channel. */
+/** Folders of a company that are indexed, and what their files are. Channel files are found per channel. */
 const FOLDERS: readonly { folder: string; kind: SearchKind }[] = [
   { folder: "notes", kind: "note" },
   { folder: "files", kind: "file" },
@@ -45,42 +45,42 @@ const RECENT_SEARCHES = 10;
 const MAX_QUERY = 200;
 
 /**
- * What each person searched in a workspace, newest first; the search page shows it before a query. The caller has
+ * What each person searched in a company, newest first; the search page shows it before a query. The caller has
  * checked that the person is a member.
  */
 export class RecentSearches {
   constructor(private readonly database: Database) {}
 
-  list(workspaceId: string, userId: string): RecentSearch[] {
+  list(companyId: string, userId: string): RecentSearch[] {
     return this.database
       .query(
-        "SELECT query, searched_at AS searchedAt FROM recent_search WHERE workspace_id = ? AND user_id = ? ORDER BY searched_at DESC LIMIT ?"
+        "SELECT query, searched_at AS searchedAt FROM recent_search WHERE company_id = ? AND user_id = ? ORDER BY searched_at DESC LIMIT ?"
       )
-      .all(workspaceId, userId, RECENT_SEARCHES) as RecentSearch[];
+      .all(companyId, userId, RECENT_SEARCHES) as RecentSearch[];
   }
 
   /** Saves a search; the same query again, in any case, only moves to the top. */
-  add(workspaceId: string, userId: string, query: unknown): RecentSearch[] {
+  add(companyId: string, userId: string, query: unknown): RecentSearch[] {
     const text = typeof query === "string" ? query.trim() : "";
     if (!text || text.length > MAX_QUERY) {
       throw new HttpError(400, `Query must be 1 to ${MAX_QUERY} characters`);
     }
     this.database
       .query(
-        "INSERT INTO recent_search (workspace_id, user_id, query, searched_at) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET query = excluded.query, searched_at = excluded.searched_at"
+        "INSERT INTO recent_search (company_id, user_id, query, searched_at) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET query = excluded.query, searched_at = excluded.searched_at"
       )
-      .run(workspaceId, userId, text, Date.now());
-    return this.list(workspaceId, userId);
+      .run(companyId, userId, text, Date.now());
+    return this.list(companyId, userId);
   }
 }
 
 /**
- * Keeps each workspace's index in step with its threads and folders, and embeds in the background.
- * Every index belongs to one workspace and reads only that workspace's folder; searches never cross workspaces.
+ * Keeps each company's index in step with its threads and folders, and embeds in the background.
+ * Every index belongs to one company and reads only that company's folder; searches never cross companies.
  */
-/** What the indexer reads from the directory in `shadow.sqlite`: every workspace, and the channels and threads in one. */
-export type WorkspaceDirectory = Pick<
-  Workspaces,
+/** What the indexer reads from the directory in `shadow.sqlite`: every company, and the channels and threads in one. */
+export type CompanyDirectory = Pick<
+  Companies,
   "ids" | "allChannelsIn" | "allThreadsIn" | "channelsIn" | "threadsIn"
 >;
 /** The indexer reads thread messages; it never writes to a thread. */
@@ -88,11 +88,11 @@ export type ThreadReader = Pick<Threads, "messages" | "version">;
 /** The indexer reads the live artifacts and their HTML. */
 export type ArtifactReader = Pick<
   Artifacts,
-  "allInWorkspace" | "inWorkspace" | "html"
+  "allInCompany" | "inCompany" | "html"
 >;
 
 export class Indexer {
-  private readonly indexes = new Map<string, WorkspaceIndex>();
+  private readonly indexes = new Map<string, CompanyIndex>();
   private readonly scans = new Map<string, Promise<void>>();
   private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -101,13 +101,13 @@ export class Indexer {
 
   constructor(
     private readonly dataDirectory: string,
-    private readonly directory: WorkspaceDirectory,
+    private readonly directory: CompanyDirectory,
     private readonly threads: ThreadReader,
     private readonly artifacts: ArtifactReader,
     private readonly embedder: Embedder | null
   ) {}
 
-  /** Scans every workspace now and then every minute, which also embeds what waited for the model. */
+  /** Scans every company now and then every minute, which also embeds what waited for the model. */
   start(): void {
     const watched = new Set<string>();
     const scanAll = () => {
@@ -125,52 +125,52 @@ export class Indexer {
     this.timer = setInterval(scanAll, SCAN_EVERY_MS);
   }
 
-  /** Schedules a scan soon, after something changed in the workspace. */
-  touch(workspaceId: string): void {
+  /** Schedules a scan soon, after something changed in the company. */
+  touch(companyId: string): void {
     if (this.closed) {
       return;
     }
-    clearTimeout(this.pending.get(workspaceId));
+    clearTimeout(this.pending.get(companyId));
     this.pending.set(
-      workspaceId,
+      companyId,
       setTimeout(() => {
-        this.pending.delete(workspaceId);
-        this.scan(workspaceId).catch((error: unknown) =>
-          console.error(`Indexing ${workspaceId} failed`, error)
+        this.pending.delete(companyId);
+        this.scan(companyId).catch((error: unknown) =>
+          console.error(`Indexing ${companyId} failed`, error)
         );
       }, 1000)
     );
   }
 
-  /** One scan at a time per workspace; a scan asked for during another waits for it. */
-  scan(workspaceId: string): Promise<void> {
+  /** One scan at a time per company; a scan asked for during another waits for it. */
+  scan(companyId: string): Promise<void> {
     if (this.closed) {
       return Promise.resolve();
     }
-    const running = this.scans.get(workspaceId);
+    const running = this.scans.get(companyId);
     const next = (running ?? Promise.resolve()).then(() =>
-      this.scanNow(workspaceId)
+      this.scanNow(companyId)
     );
     this.scans.set(
-      workspaceId,
+      companyId,
       next.catch(() => undefined)
     );
     return next;
   }
 
   /**
-   * Searches one workspace for what `realm` sees: the channels every member sees, and the person's own thread with
+   * Searches one company for what `realm` sees: the channels every member sees, and the person's own thread with
    * Shadow and private channels; no other person's. The caller has checked that the person is a member. Results of a
    * deleted channel or artifact stay out at once, before the next scan takes them from the index.
    */
   async search(
-    workspaceId: string,
+    companyId: string,
     query: string,
     limit: number,
     realm: Realm,
     kind?: SearchKind
   ): Promise<SearchResponse> {
-    const index = this.index(workspaceId);
+    const index = this.index(companyId);
     let vector: Float32Array | null = null;
     if (this.embedder?.ready() && query.trim()) {
       vector =
@@ -179,17 +179,17 @@ export class Indexer {
         )[0] ?? null;
     }
     const channels = new Set(
-      this.directory.channelsIn(workspaceId, realm).map((channel) => channel.id)
+      this.directory.channelsIn(companyId, realm).map((channel) => channel.id)
     );
     // Threads as the person sees them now: a thread that moved leaves search at once, before the next scan.
     const threads = new Set(
       this.directory
-        .threadsIn(workspaceId, realm)
+        .threadsIn(companyId, realm)
         .map((thread) => `thread:${thread.id}`)
     );
     const artifacts = new Set(
       this.artifacts
-        .inWorkspace(workspaceId, realm)
+        .inCompany(companyId, realm)
         .map((artifact) => `artifact:${artifact.id}`)
     );
     return {
@@ -207,9 +207,9 @@ export class Indexer {
     };
   }
 
-  status(workspaceId: string) {
+  status(companyId: string) {
     return {
-      ...this.index(workspaceId).counts(),
+      ...this.index(companyId).counts(),
       model: this.embedder?.ready() ?? false,
     };
   }
@@ -232,16 +232,16 @@ export class Indexer {
   }
 
   /** Creates the folders people drop files into, and scans a second after anything in them changes. */
-  private watchFolders(workspaceId: string): void {
+  private watchFolders(companyId: string): void {
     for (const folder of [
       ...FOLDERS.map((indexed) => indexed.folder),
       "channels",
     ]) {
-      const directory = join(this.workspaceDirectory(workspaceId), folder);
+      const directory = join(this.companyDirectory(companyId), folder);
       mkdirSync(directory, { recursive: true });
       try {
         this.watchers.push(
-          watch(directory, { recursive: true }, () => this.touch(workspaceId))
+          watch(directory, { recursive: true }, () => this.touch(companyId))
         );
       } catch {
         // Without file watching the scan every minute still finds new files.
@@ -249,11 +249,11 @@ export class Indexer {
     }
   }
 
-  private async scanNow(workspaceId: string): Promise<void> {
-    const index = this.index(workspaceId);
-    const root = this.workspaceDirectory(workspaceId);
+  private async scanNow(companyId: string): Promise<void> {
+    const index = this.index(companyId);
+    const root = this.companyDirectory(companyId);
     const seen = new Set<string>();
-    for (const thread of this.directory.allThreadsIn(workspaceId)) {
+    for (const thread of this.directory.allThreadsIn(companyId)) {
       const uri = `thread:${thread.id}`;
       seen.add(uri);
       await index.sync(
@@ -289,7 +289,7 @@ export class Indexer {
         }
       );
     }
-    for (const artifact of this.artifacts.allInWorkspace(workspaceId)) {
+    for (const artifact of this.artifacts.allInCompany(companyId)) {
       const uri = `artifact:${artifact.id}`;
       seen.add(uri);
       await index.sync(
@@ -309,7 +309,7 @@ export class Indexer {
         })
       );
     }
-    for (const channel of this.directory.allChannelsIn(workspaceId)) {
+    for (const channel of this.directory.allChannelsIn(companyId)) {
       await this.syncFolder(
         index,
         seen,
@@ -327,7 +327,7 @@ export class Indexer {
   }
 
   private async syncFolder(
-    index: WorkspaceIndex,
+    index: CompanyIndex,
     seen: Set<string>,
     root: string,
     folder: string,
@@ -437,7 +437,7 @@ export class Indexer {
     });
   }
 
-  private async embedWaiting(index: WorkspaceIndex): Promise<void> {
+  private async embedWaiting(index: CompanyIndex): Promise<void> {
     const { embedder } = this;
     if (!embedder?.ready()) {
       return;
@@ -459,26 +459,26 @@ export class Indexer {
     }
   }
 
-  private index(workspaceId: string): WorkspaceIndex {
-    let index = this.indexes.get(workspaceId);
+  private index(companyId: string): CompanyIndex {
+    let index = this.indexes.get(companyId);
     if (!index) {
-      const directory = this.workspaceDirectory(workspaceId);
+      const directory = this.companyDirectory(companyId);
       mkdirSync(directory, { recursive: true });
-      index = new WorkspaceIndex(
+      index = new CompanyIndex(
         join(directory, "index.sqlite"),
         this.embedder?.fingerprint ?? "keywords"
       );
-      this.indexes.set(workspaceId, index);
+      this.indexes.set(companyId, index);
     }
     return index;
   }
 
-  private workspaceDirectory(workspaceId: string): string {
-    // Ids come from the database, but a path must never leave the workspaces folder.
-    if (!/^[\w-]+$/.test(workspaceId)) {
-      throw new Error(`Invalid workspace id: ${workspaceId}`);
+  private companyDirectory(companyId: string): string {
+    // Ids come from the database, but a path must never leave the companies folder.
+    if (!/^[\w-]+$/.test(companyId)) {
+      throw new Error(`Invalid company id: ${companyId}`);
     }
-    return join(this.dataDirectory, "workspaces", workspaceId);
+    return join(this.dataDirectory, "companies", companyId);
   }
 }
 

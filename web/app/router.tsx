@@ -6,18 +6,18 @@ import {
 } from "@tanstack/react-router";
 import { LoginPage } from "../accounts/login.tsx";
 import { SuggestionCards, UpcomingPage } from "../agenda/page.tsx";
+import { CompanyHome, Home, OrchestratorPage } from "../companies/pages.tsx";
+import { CompanyLayout, SignedIn } from "../companies/shell.tsx";
 import { FeedbackPage } from "../feedback/page.tsx";
 import { FollowingPage } from "../intake/page.tsx";
 import { InboxPage } from "../notifications/page.tsx";
 import { ChannelDetails } from "../routines/details.tsx";
 import { SearchPage } from "../search/page.tsx";
-import { SettingsPage, WorkspaceSettingsPage } from "../settings/pages.tsx";
+import { CompanySettingsPage, SettingsPage } from "../settings/pages.tsx";
 import { ChannelPage, ThreadPage } from "../threads/pages.tsx";
 import { TooltipProvider } from "../ui/components.tsx";
 import { FilePreview } from "../ui/file-preview.tsx";
 import { Toasts } from "../ui/toast.tsx";
-import { Home, OrchestratorPage, WorkspaceHome } from "../workspaces/pages.tsx";
-import { SignedIn, WorkspaceLayout } from "../workspaces/shell.tsx";
 
 /** A search parameter that is text, or nothing. */
 function text(value: unknown): string | undefined {
@@ -70,27 +70,27 @@ const settings = createRoute({
   component: SettingsPage,
 });
 
-const workspace = createRoute({
+const company = createRoute({
   getParentRoute: () => signedIn,
-  path: "/w/$workspaceId",
-  component: WorkspaceLayout,
+  path: "/c/$companyId",
+  component: CompanyLayout,
 });
 
-const workspaceHome = createRoute({
-  getParentRoute: () => workspace,
+const companyHome = createRoute({
+  getParentRoute: () => company,
   path: "/",
-  component: WorkspaceHome,
+  component: CompanyHome,
 });
 
 const orchestrator = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/orchestrator",
   validateSearch: withArtifact,
   component: OrchestratorPage,
 });
 
 const channel = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/channel/$channelId",
   validateSearch: withArtifact,
   // The channel's details come from the routines module, which comes after threads.
@@ -98,7 +98,7 @@ const channel = createRoute({
 });
 
 const thread = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/thread/$threadId",
   validateSearch: withArtifact,
   // The suggestions over the orchestrator's composer come from the agenda module, which comes after threads.
@@ -106,40 +106,40 @@ const thread = createRoute({
 });
 
 const inbox = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/inbox",
   component: InboxPage,
 });
 
 const upcoming = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/upcoming",
   component: UpcomingPage,
 });
 
 const following = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/following",
   component: FollowingPage,
 });
 
 const feedback = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/feedback",
   component: FeedbackPage,
 });
 
 const searchRoute = createRoute({
-  getParentRoute: () => workspace,
+  getParentRoute: () => company,
   path: "/search",
   validateSearch: (values): { q?: string } => ({ q: text(values.q) }),
   component: SearchPage,
 });
 
-const workspaceSettings = createRoute({
-  getParentRoute: () => workspace,
+const companySettings = createRoute({
+  getParentRoute: () => company,
   path: "/settings",
-  component: WorkspaceSettingsPage,
+  component: CompanySettingsPage,
 });
 
 export const router = createRouter({
@@ -148,8 +148,8 @@ export const router = createRouter({
     signedIn.addChildren([
       home,
       settings,
-      workspace.addChildren([
-        workspaceHome,
+      company.addChildren([
+        companyHome,
         orchestrator,
         channel,
         thread,
@@ -158,7 +158,7 @@ export const router = createRouter({
         following,
         feedback,
         searchRoute,
-        workspaceSettings,
+        companySettings,
       ]),
     ]),
   ]),

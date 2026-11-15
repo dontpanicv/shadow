@@ -13,20 +13,20 @@ import { startTestApp, type TestApp, until } from "./harness.ts";
 let shadow: TestApp;
 let alice: string;
 let bob: string;
-let workspaceId: string;
+let companyId: string;
 let channelId: string;
 
 beforeAll(async () => {
   shadow = await startTestApp();
   alice = await shadow.signIn("Alice", "alice@example.com");
   bob = await shadow.signIn("Bob", "bob@example.com");
-  // The first person to sign in starts Shadow's one workspace.
-  const [workspace] = (
+  // The first person to sign in starts Shadow's one company.
+  const [company] = (
     await body(await shadow.call("/api/v1/me", { token: alice }))
-  ).workspaces;
-  workspaceId = workspace.id;
+  ).companies;
+  companyId = company.id;
   const detail = await body(
-    await shadow.call(`/api/v1/workspaces/${workspaceId}`, { token: alice })
+    await shadow.call(`/api/v1/companies/${companyId}`, { token: alice })
   );
   channelId = detail.channels[0].id;
 });
@@ -37,10 +37,10 @@ async function body(response: Response): Promise<any> {
   return await response.json();
 }
 
-/** Another workspace, which only the server makes, for a test of what stays apart. */
-async function workspaceOf(token: string, name: string) {
+/** Another company, which only the server makes, for a test of what stays apart. */
+async function companyOf(token: string, name: string) {
   const { user } = await body(await shadow.call("/api/v1/me", { token }));
-  return shadow.app.workspaces.create(user, name);
+  return shadow.app.companies.create(user, name);
 }
 
 async function failure(response: Response) {
@@ -60,17 +60,14 @@ test("JSON for the apps has no half emoji and no line end that splits an event",
 test("a request body must be a JSON object", async () => {
   const post = (text: string) =>
     shadow.handler(
-      new Request(
-        `http://shadow.test/api/v1/workspaces/${workspaceId}/channels`,
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${alice}`,
-            "content-type": "application/json",
-          },
-          body: text,
-        }
-      )
+      new Request(`http://shadow.test/api/v1/companies/${companyId}/channels`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${alice}`,
+          "content-type": "application/json",
+        },
+        body: text,
+      })
     );
   for (const text of ["{", "[1]", '"Family"', "null"]) {
     expect(await failure(await post(text))).toEqual({
@@ -86,7 +83,7 @@ test("a request body must be a JSON object", async () => {
 });
 
 test("names and messages are checked before anything is stored", async () => {
-  const base = `/api/v1/workspaces/${workspaceId}`;
+  const base = `/api/v1/companies/${companyId}`;
   expect(
     await failure(
       await shadow.call(`${base}/channels`, {
@@ -137,7 +134,7 @@ test("names and messages are checked before anything is stored", async () => {
 });
 
 test("a channel name keeps Czech letters, and only a member renames a channel", async () => {
-  const base = `/api/v1/workspaces/${workspaceId}/channels`;
+  const base = `/api/v1/companies/${companyId}/channels`;
   const trips = await body(
     await shadow.call(base, { token: alice, body: { name: "Výlety do hor" } })
   );
@@ -173,7 +170,7 @@ test("a channel name keeps Czech letters, and only a member renames a channel", 
 test("a long first line makes a short thread title", async () => {
   shadow.faux.setResponses([fauxAssistantMessage("Noted.")]);
   const thread = await body(
-    await shadow.call(`/api/v1/workspaces/${workspaceId}/threads`, {
+    await shadow.call(`/api/v1/companies/${companyId}/threads`, {
       token: alice,
       body: { channelId, text: `${"a".repeat(80)}\nsecond line` },
     })
@@ -193,7 +190,7 @@ test("a message sent again with the same request id, as the web app's outbox ret
     fauxAssistantMessage("Got it."),
   ]);
   const thread = await body(
-    await shadow.call(`/api/v1/workspaces/${workspaceId}/threads`, {
+    await shadow.call(`/api/v1/companies/${companyId}/threads`, {
       token: alice,
       body: { channelId, text: "Groceries" },
     })
@@ -218,7 +215,7 @@ test("a message sent again with the same request id, as the web app's outbox ret
 });
 
 test("members are listed, and only people who signed in once can be added once", async () => {
-  const members = `/api/v1/workspaces/${workspaceId}/members`;
+  const members = `/api/v1/companies/${companyId}/members`;
   expect((await shadow.call(members, { token: bob })).status).toBe(404);
   expect(
     await failure(
@@ -248,7 +245,7 @@ test("members are listed, and only people who signed in once can be added once",
     expect.objectContaining({
       name: "Alice",
       email: "alice@example.com",
-      role: "owner",
+      role: "admin",
     }),
     expect.objectContaining({
       name: "Bob",
@@ -263,10 +260,48 @@ test("members are listed, and only people who signed in once can be added once",
         body: { email: "alice@example.com" },
       })
     )
-  ).toEqual({ status: 403, error: "Only an owner can do this" });
+  ).toEqual({ status: 403, error: "Only an admin can do this" });
 });
 
-test("a profile picture shows to its person and the members of their workspace only", async () => {
+test("an admin makes a member an admin and back, and a company keeps one admin at least", async () => {
+  const idOf = async (token: string) =>
+    (await body(await shadow.call("/api/v1/me", { token }))).user.id as string;
+  const [aliceId, bobId] = await Promise.all([idOf(alice), idOf(bob)]);
+  const role = (userId: string, value: string, token: string) =>
+    shadow.call(`/api/v1/companies/${companyId}/members/${userId}`, {
+      token,
+      method: "PUT",
+      body: { role: value },
+    });
+  const admin = async (token: string) =>
+    (await body(await shadow.call("/api/v1/me", { token }))).admin;
+
+  expect(await failure(await role(bobId, "admin", bob))).toEqual({
+    status: 403,
+    error: "Only an admin can do this",
+  });
+  expect(await failure(await role(bobId, "owner", alice))).toEqual({
+    status: 400,
+    error: "A role is admin or member",
+  });
+  expect(await body(await role(bobId, "admin", alice))).toMatchObject({
+    userId: bobId,
+    role: "admin",
+  });
+  expect(await admin(bob)).toBe(true);
+  expect((await role(aliceId, "member", bob)).status).toBe(200);
+  expect(await admin(alice)).toBe(false);
+  expect(await failure(await role(bobId, "member", bob))).toEqual({
+    status: 409,
+    error: "A company keeps one admin at least",
+  });
+  // Alice is the admin again, and Bob a member, for the tests after this one.
+  expect((await role(aliceId, "admin", bob)).status).toBe(200);
+  expect((await role(bobId, "member", alice)).status).toBe(200);
+  expect(await admin(bob)).toBe(false);
+});
+
+test("a profile picture shows to its person and the members of their company only", async () => {
   const eve = await shadow.signIn("Eve", "eve@example.com");
   const { user } = await body(await shadow.call("/api/v1/me", { token: bob }));
   const id = await shadow.app.pictures.set(
@@ -280,7 +315,7 @@ test("a profile picture shows to its person and the members of their workspace o
   expect(
     (
       await body(
-        await shadow.call(`/api/v1/workspaces/${workspaceId}/members`, {
+        await shadow.call(`/api/v1/companies/${companyId}/members`, {
           token: alice,
         })
       )
@@ -296,25 +331,34 @@ test("a profile picture shows to its person and the members of their workspace o
   expect((await shadow.call(picture, { token: bob })).status).toBe(404);
 });
 
-test("every member writes the workspace's facts, and nobody else reads them", async () => {
-  const facts = `/api/v1/workspaces/${workspaceId}/facts`;
+test("only an admin writes the company's facts, every member reads them, and nobody else", async () => {
+  const facts = `/api/v1/companies/${companyId}/facts`;
   expect(await body(await shadow.call(facts, { token: alice }))).toEqual({
     text: "",
   });
-  const text = "Bob: born 2 March 1990\nCottage: Lipno";
+  const text = "Sales: Bob\nOffice: Prague";
+  expect(
+    (
+      await shadow.call(facts, {
+        token: bob,
+        method: "PUT",
+        body: { text },
+      })
+    ).status
+  ).toBe(403);
   expect(
     await body(
       await shadow.call(facts, {
-        token: bob,
+        token: alice,
         method: "PUT",
         body: { text: `  ${text}\n` },
       })
     )
   ).toEqual({ text });
-  expect(await body(await shadow.call(facts, { token: alice }))).toEqual({
+  expect(await body(await shadow.call(facts, { token: bob }))).toEqual({
     text,
   });
-  expect(shadow.app.workspaces.factsOf(workspaceId)).toBe(text);
+  expect(shadow.app.companies.factsOf(companyId)).toBe(text);
   const eve = await shadow.signIn("Eve", "eve@example.com");
   expect((await shadow.call(facts, { token: eve })).status).toBe(404);
   expect(
@@ -329,7 +373,7 @@ test("every member writes the workspace's facts, and nobody else reads them", as
 });
 
 test("an unknown integration is not found", async () => {
-  const base = `/api/v1/workspaces/${workspaceId}/integrations/nope`;
+  const base = `/api/v1/companies/${companyId}/integrations/nope`;
   expect(
     (
       await shadow.call(`${base}/credentials`, {
@@ -341,7 +385,7 @@ test("an unknown integration is not found", async () => {
 });
 
 test("routines of a channel are listed, paused, run, and deleted, and only members see them", async () => {
-  const routine = shadow.app.routines.create(workspaceId, channelId, {
+  const routine = shadow.app.routines.create(companyId, channelId, {
     id: crypto.randomUUID(),
     name: "Morning",
     schedule: "0 7 * * *",
@@ -349,7 +393,7 @@ test("routines of a channel are listed, paused, run, and deleted, and only membe
     script: "return [];",
     createdBy: "shadow",
   });
-  const list = `/api/v1/workspaces/${workspaceId}/channels/${channelId}/routines`;
+  const list = `/api/v1/companies/${companyId}/channels/${channelId}/routines`;
   expect(await body(await shadow.call(list, { token: alice }))).toMatchObject({
     routines: [
       {
@@ -368,7 +412,7 @@ test("routines of a channel are listed, paused, run, and deleted, and only membe
     runs: [],
   });
   const path = `/api/v1/routines/${routine.id}`;
-  // Bob joined the workspace in an earlier test; Eve is not a member.
+  // Bob joined the company in an earlier test; Eve is not a member.
   const eve = await shadow.signIn("Eve", "eve@example.com");
   expect((await shadow.call(list, { token: eve })).status).toBe(404);
   expect(
@@ -407,14 +451,14 @@ test("routines of a channel are listed, paused, run, and deleted, and only membe
 test("artifacts of a channel open with their runtime, run calls, and change and delete only for members", async () => {
   shadow.faux.setResponses([fauxAssistantMessage("Here it is.")]);
   const thread = await body(
-    await shadow.call(`/api/v1/workspaces/${workspaceId}/threads`, {
+    await shadow.call(`/api/v1/companies/${companyId}/threads`, {
       token: alice,
       body: { channelId, text: "Make a quiz" },
     })
   );
   const artifact = shadow.app.artifacts.create(
-    shadow.app.workspaces
-      .allThreadsIn(workspaceId)
+    shadow.app.companies
+      .allThreadsIn(companyId)
       .find((t) => t.id === thread.id)!,
     channelId,
     { title: "Quiz", html: "<p>Q</p>", requestKey: "api-test" }
@@ -425,7 +469,7 @@ test("artifacts of a channel open with their runtime, run calls, and change and 
   expect(
     await body(
       await shadow.call(
-        `/api/v1/workspaces/${workspaceId}/channels/${channelId}/artifacts`,
+        `/api/v1/companies/${companyId}/channels/${channelId}/artifacts`,
         { token: alice }
       )
     )
@@ -458,7 +502,7 @@ test("artifacts of a channel open with their runtime, run calls, and change and 
     )
   ).toMatchObject({ visibility: "public" });
   expect(await body(await rpc("me", {}, eve))).toMatchObject({
-    // A visitor of another workspace is an id of this artifact only, with no name.
+    // A visitor of another company is an id of this artifact only, with no name.
     result: { name: null, member: false },
   });
   expect(
@@ -489,7 +533,7 @@ test("artifacts of a channel open with their runtime, run calls, and change and 
 });
 
 test("a place is its owner's until they share it, and only members see the map", async () => {
-  const base = `/api/v1/workspaces/${workspaceId}/places`;
+  const base = `/api/v1/companies/${companyId}/places`;
   const created = await shadow.call(base, {
     token: alice,
     body: {
@@ -534,13 +578,10 @@ test("a place is its owner's until they share it, and only members see the map",
 });
 
 test("a JSON body over 1 MB gets 413 before the route reads it", async () => {
-  const large = await shadow.call(
-    `/api/v1/workspaces/${workspaceId}/channels`,
-    {
-      token: alice,
-      body: { name: "x".repeat(2 * 1024 ** 2) },
-    }
-  );
+  const large = await shadow.call(`/api/v1/companies/${companyId}/channels`, {
+    token: alice,
+    body: { name: "x".repeat(2 * 1024 ** 2) },
+  });
   expect(await failure(large)).toEqual({
     status: 413,
     error: "The request is too large",
@@ -550,7 +591,7 @@ test("a JSON body over 1 MB gets 413 before the route reads it", async () => {
 test("thread events stream every change until the client leaves", async () => {
   shadow.faux.setResponses([fauxAssistantMessage("Saturday works.")]);
   const thread = await body(
-    await shadow.call(`/api/v1/workspaces/${workspaceId}/threads`, {
+    await shadow.call(`/api/v1/companies/${companyId}/threads`, {
       token: alice,
       body: { channelId, text: "Plan the cabin trip" },
     })
@@ -587,7 +628,7 @@ test("thread events stream every change until the client leaves", async () => {
   ]);
   // A new message moves the thread up.
   const { channels } = await body(
-    await shadow.call(`/api/v1/workspaces/${workspaceId}`, { token: bob })
+    await shadow.call(`/api/v1/companies/${companyId}`, { token: bob })
   );
   const general = channels.find(
     (channel: { id: string }) => channel.id === channelId
@@ -605,18 +646,18 @@ test("thread events stream every change until the client leaves", async () => {
   ).toBe(401);
 });
 
-test("a person who leaves a workspace stops getting its thread's events", async () => {
+test("a person who leaves a company stops getting its thread's events", async () => {
   shadow.faux.setResponses([fauxAssistantMessage("Noted.")]);
-  const leaving = await workspaceOf(alice, "Leaving");
-  await shadow.call(`/api/v1/workspaces/${leaving.id}/members`, {
+  const leaving = await companyOf(alice, "Leaving");
+  await shadow.call(`/api/v1/companies/${leaving.id}/members`, {
     token: alice,
     body: { email: "bob@example.com" },
   });
   const { channels } = await body(
-    await shadow.call(`/api/v1/workspaces/${leaving.id}`, { token: alice })
+    await shadow.call(`/api/v1/companies/${leaving.id}`, { token: alice })
   );
   const thread = await body(
-    await shadow.call(`/api/v1/workspaces/${leaving.id}/threads`, {
+    await shadow.call(`/api/v1/companies/${leaving.id}/threads`, {
       token: alice,
       body: { channelId: channels[0].id, text: "A secret plan" },
     })
@@ -643,7 +684,7 @@ test("a person who leaves a workspace stops getting its thread's events", async 
   );
 });
 
-test("the recall tool says when the workspace has nothing", async () => {
+test("the recall tool says when the company has nothing", async () => {
   shadow.faux.setResponses([
     fauxAssistantMessage(fauxToolCall("recall", { query: "zebra" }), {
       stopReason: "toolUse",
@@ -658,12 +699,12 @@ test("the recall tool says when the workspace has nothing", async () => {
       );
     },
   ]);
-  const empty = await workspaceOf(alice, "Empty");
+  const empty = await companyOf(alice, "Empty");
   const emptyDetail = await body(
-    await shadow.call(`/api/v1/workspaces/${empty.id}`, { token: alice })
+    await shadow.call(`/api/v1/companies/${empty.id}`, { token: alice })
   );
   const thread = await body(
-    await shadow.call(`/api/v1/workspaces/${empty.id}/threads`, {
+    await shadow.call(`/api/v1/companies/${empty.id}/threads`, {
       token: alice,
       body: { channelId: emptyDetail.channels[0].id, text: "Any zebras?" },
     })
@@ -677,7 +718,7 @@ test("the recall tool says when the workspace has nothing", async () => {
   await stream.stop();
   expect(done.messages[1]).toMatchObject({
     agent: true,
-    text: "Nothing found in this workspace.",
+    text: "Nothing found in this company.",
   });
 });
 
@@ -739,9 +780,9 @@ function threadEvents(response: Response) {
   };
 }
 
-test("only an owner renames the workspace, and nobody makes or deletes one", async () => {
-  const trip = await workspaceOf(alice, "Trip");
-  const path = `/api/v1/workspaces/${trip.id}`;
+test("only an admin renames the company, and nobody makes or deletes one", async () => {
+  const trip = await companyOf(alice, "Trip");
+  const path = `/api/v1/companies/${trip.id}`;
   expect(
     (
       await shadow.call(path, {
@@ -763,7 +804,7 @@ test("only an owner renames the workspace, and nobody makes or deletes one", asy
         body: { name: "X" },
       })
     )
-  ).toEqual({ status: 403, error: "Only an owner can do this" });
+  ).toEqual({ status: 403, error: "Only an admin can do this" });
   expect(
     await failure(
       await shadow.call(path, {
@@ -781,30 +822,30 @@ test("only an owner renames the workspace, and nobody makes or deletes one", asy
         body: { name: " Holiday " },
       })
     )
-  ).toEqual({ id: trip.id, name: "Holiday", role: "owner" });
+  ).toEqual({ id: trip.id, name: "Holiday", role: "admin" });
   expect(
-    (await body(await shadow.call("/api/v1/me", { token: bob }))).workspaces
+    (await body(await shadow.call("/api/v1/me", { token: bob }))).companies
   ).toContainEqual({ id: trip.id, name: "Holiday", role: "member" });
 
-  // better-auth's own routes neither delete a workspace nor make another.
+  // better-auth's own routes neither delete a company nor make another.
   await shadow.call("/api/auth/organization/delete", {
     token: alice,
     body: { organizationId: trip.id },
   });
   expect((await shadow.call(path, { token: alice })).status).toBe(200);
-  const before = shadow.app.workspaces.ids().length;
+  const before = shadow.app.companies.ids().length;
   await shadow.call("/api/auth/organization/create", {
     token: alice,
     body: { name: "Another", slug: "another" },
   });
-  await shadow.call("/api/v1/workspaces", {
+  await shadow.call("/api/v1/companies", {
     token: alice,
     body: { name: "Another" },
   });
   expect(
     (await shadow.call(path, { token: alice, method: "DELETE" })).status
   ).toBe(404);
-  expect(shadow.app.workspaces.ids()).toHaveLength(before);
+  expect(shadow.app.companies.ids()).toHaveLength(before);
 });
 
 test("a private channel and its search results are private, and neither orchestrator copies its messages", async () => {
@@ -812,7 +853,7 @@ test("a private channel and its search results are private, and neither orchestr
     fauxAssistantMessage("Noted."),
     fauxAssistantMessage("Noted."),
   ]);
-  const base = `/api/v1/workspaces/${workspaceId}`;
+  const base = `/api/v1/companies/${companyId}`;
   // Bob is a member already when the earlier tests ran.
   await shadow.call(`${base}/members`, {
     token: alice,
@@ -836,14 +877,15 @@ test("a private channel and its search results are private, and neither orchestr
       body: { name: "together" },
     })
   );
-  expect(shared.ownerId).toBeNull();
+  // A person makes only private channels; the shared ones come from Slack.
+  expect(shared.ownerId).toBe(channel.ownerId);
   const listed = async (token: string) =>
     (await body(await shadow.call(base, { token }))).channels.map(
       (candidate: { name: string }) => candidate.name
     );
   expect(await listed(alice)).toContain("surprise");
   expect(await listed(bob)).not.toContain("surprise");
-  expect(await listed(bob)).toContain("together");
+  expect(await listed(bob)).not.toContain("together");
 
   const thread = await body(
     await shadow.call(`${base}/threads`, {
@@ -871,7 +913,7 @@ test("a private channel and its search results are private, and neither orchestr
     ).status
   ).toBe(404);
 
-  await shadow.app.indexer.scan(workspaceId);
+  await shadow.app.indexer.scan(companyId);
   const found = async (token: string) =>
     (
       await body(await shadow.call(`${base}/search?q=zebrafish`, { token }))
@@ -882,8 +924,8 @@ test("a private channel and its search results are private, and neither orchestr
   const linesOf = (orchestratorId: string) => {
     const path = join(
       shadow.dataDirectory,
-      "workspaces",
-      workspaceId,
+      "companies",
+      companyId,
       "threads",
       orchestratorId,
       "memory.sqlite"
@@ -904,8 +946,8 @@ test("a private channel and its search results are private, and neither orchestr
         existsSync(
           join(
             shadow.dataDirectory,
-            "workspaces",
-            workspaceId,
+            "companies",
+            companyId,
             "threads",
             orchestrator.id,
             "memory.sqlite"
@@ -919,7 +961,7 @@ test("a private channel and its search results are private, and neither orchestr
 });
 
 test("in a channel every member sees, a turn finds the private threads of the person it answers, and only theirs", async () => {
-  const base = `/api/v1/workspaces/${workspaceId}`;
+  const base = `/api/v1/companies/${companyId}`;
   await shadow.call(`${base}/members`, {
     token: alice,
     body: { email: "bob@example.com" },
@@ -956,7 +998,7 @@ test("in a channel every member sees, a turn finds the private threads of the pe
       body(await shadow.call(`/api/v1/threads/${hidden.id}`, { token: alice })),
     (state) => !state.running && state.messages.length === 2
   );
-  await shadow.app.indexer.scan(workspaceId);
+  await shadow.app.indexer.scan(companyId);
 
   const { channels } = await body(await shadow.call(base, { token: alice }));
   const general = channels.find(

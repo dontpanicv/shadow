@@ -21,13 +21,18 @@ function setup() {
     database,
     {
       requireMember: () => ({ id: "home", name: "Home", role: "member" }),
-      threadOf: (_workspaceId: string, conversationId: number) =>
+      requireAdmin: (_companyId: string, user: User) => {
+        if (user.id !== alice.id) {
+          throw new Error("Only an admin can do this");
+        }
+        return { id: "home", name: "Home", role: "admin" };
+      },
+      threadOf: (_companyId: string, conversationId: number) =>
         threads.find((each) => each.conversationId === conversationId) ?? null,
-      threadsIn: (_workspaceId: string, realm: string | null) =>
+      threadsIn: (_companyId: string, realm: string | null) =>
         threads.filter((each) => each.realm === null || each.realm === realm),
     } as never,
-    { requester: async () => bob } as never,
-    "alice@example.com"
+    { requester: async () => bob } as never
   );
   const report = (conversationId: number, taskId: string, summary: string) =>
     feedback
@@ -56,12 +61,10 @@ test("an agent reports once per call, and only the server's owner reads the repo
       createdAt: expect.any(Number),
     },
   ]);
-  expect(() => feedback.list("home", bob)).toThrow(
-    "Only the server's owner reads feedback"
-  );
+  expect(() => feedback.list("home", bob)).toThrow("Only an admin can do this");
 });
 
-test("the owner reads a report from another person's private thread without its link", async () => {
+test("an admin reads a report from another person's private thread without its link", async () => {
   const { feedback, report } = setup();
   await report(2, "task-2", "Private");
 

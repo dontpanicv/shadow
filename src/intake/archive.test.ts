@@ -18,18 +18,13 @@ async function setup(integration = "google") {
   const { user: owner } = (await (
     await app.call("/api/v1/me", { token })
   ).json()) as { user: User };
-  const workspace =
-    app.app.workspaces.list(owner)[0] ??
-    (await app.app.workspaces.create(owner, "Home"));
-  const channel = app.app.workspaces.createChannel(
-    workspace.id,
-    owner,
-    "sources",
-    true
-  );
+  const company =
+    app.app.companies.list(owner)[0] ??
+    (await app.app.companies.create(owner, "Home"));
+  const channel = app.app.companies.createChannel(company.id, owner, "sources");
   const credential = {
     id: "account",
-    workspaceId: workspace.id,
+    companyId: company.id,
     ownerId: owner.id,
     integration,
     integrationName: integration,
@@ -50,7 +45,7 @@ async function setup(integration = "google") {
   const make = (threads = app.app.threads) =>
     new IntakeArchives(
       app.app.database,
-      app.app.workspaces,
+      app.app.companies,
       integrations,
       threads,
       app.app.intake.audit,
@@ -87,12 +82,12 @@ async function setup(integration = "google") {
       .run(Date.now(), credential.id, id);
     app.app.database
       .query(
-        "INSERT INTO intake_item(id,credential_id,workspace_id,owner_id,source_id,version,payload,at) VALUES(?,?,?,?,?,?,?,?)"
+        "INSERT INTO intake_item(id,credential_id,company_id,owner_id,source_id,version,payload,at) VALUES(?,?,?,?,?,?,?,?)"
       )
       .run(
         rowId,
         credential.id,
-        workspace.id,
+        company.id,
         owner.id,
         id,
         rowId,
@@ -104,14 +99,12 @@ async function setup(integration = "google") {
       .get(rowId) as ItemRow;
   };
   const files = () =>
-    app.app.threads.files(
-      app.app.threads.place(workspace.id, channel.id, owner)
-    );
+    app.app.threads.files(app.app.threads.place(company.id, channel.id, owner));
   const text = async (id: string) =>
-    Bun.file((await app.app.threads.file(workspace.id, owner, id)).path).text();
+    Bun.file((await app.app.threads.file(company.id, owner, id)).path).text();
   return {
     owner,
-    workspace,
+    company,
     channel,
     credential,
     archives,
@@ -130,7 +123,7 @@ test.each(["google", "slack"])(
     const thread = integration === "slack" ? "channel/root" : "mail-thread";
     const first = run.put("one", thread, START, "First question");
     const [initial] = await run.archives.save(
-      run.workspace.id,
+      run.company.id,
       run.channel.id,
       run.owner,
       [first]
@@ -139,7 +132,7 @@ test.each(["google", "slack"])(
       fromOwner: true,
     });
     const [updated] = await run.archives.save(
-      run.workspace.id,
+      run.company.id,
       run.channel.id,
       run.owner,
       [second, first]
@@ -153,7 +146,7 @@ test.each(["google", "slack"])(
     const edited = run.put("two", thread, START + DAY, "The corrected reply", {
       fromOwner: true,
     });
-    await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
+    await run.archives.save(run.company.id, run.channel.id, run.owner, [
       edited,
     ]);
     const body = await run.text(updated!.id);
@@ -161,7 +154,7 @@ test.each(["google", "slack"])(
     expect(body).not.toContain("The reply");
     expect(body.match(/Source message: two/g)).toHaveLength(1);
     const [stored] = await run.files();
-    await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
+    await run.archives.save(run.company.id, run.channel.id, run.owner, [
       second,
     ]);
     expect((await run.files())[0]!.time).toBe(stored!.time);
@@ -179,7 +172,7 @@ test.each(["whatsapp", "slack"])(
       run.put("three", thread, START + DAY, "Tomorrow", { group: true }),
     ];
     const saved = await run.archives.save(
-      run.workspace.id,
+      run.company.id,
       run.channel.id,
       run.owner,
       rows
@@ -208,7 +201,7 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
     kind: "document",
   });
   const [file] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [initial]
@@ -221,7 +214,7 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
     { kind: "document", observedAt: START + DAY }
   );
   const [updated] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [later]
@@ -237,21 +230,21 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
     "Newest complete summary",
     { kind: "document" }
   );
-  await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
+  await run.archives.save(run.company.id, run.channel.id, run.owner, [
     refreshed,
   ]);
-  await run.archives.save(run.workspace.id, run.channel.id, run.owner, [later]);
+  await run.archives.save(run.company.id, run.channel.id, run.owner, [later]);
   expect(await run.text(file!.id)).toContain("Newest complete summary");
   expect(await run.text(file!.id)).not.toContain("\n\nComplete summary");
 });
 
 test("a shared review receives only selected messages from a private daily conversation", async () => {
   const run = await setup("whatsapp");
-  const shared = app.app.workspaces.createChannel(
-    run.workspace.id,
-    run.owner,
+  const shared = app.app.companies.addChannel(
+    run.company.id,
     "flat",
-    false
+    run.owner.id,
+    null
   );
   const secret = run.put(
     "private",
@@ -265,16 +258,13 @@ test("a shared review receives only selected messages from a private daily conve
     START + 1000,
     "Repair confirmed"
   );
-  await run.archives.save(run.workspace.id, run.channel.id, run.owner, [
+  await run.archives.save(run.company.id, run.channel.id, run.owner, [
     secret,
     relevant,
   ]);
-  const [file] = await run.archives.save(
-    run.workspace.id,
-    shared.id,
-    run.owner,
-    [relevant]
-  );
+  const [file] = await run.archives.save(run.company.id, shared.id, run.owner, [
+    relevant,
+  ]);
   expect(await run.text(file!.id)).toContain("Repair confirmed");
   expect(await run.text(file!.id)).not.toContain("Private unrelated matter");
 });
@@ -291,7 +281,7 @@ test("attachments are reused across message edits and linked from the conversati
     attachments: [attachment],
   });
   const saved = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [row]
@@ -302,7 +292,7 @@ test("attachments are reused across message edits and linked from the conversati
     attachments: [attachment],
   });
   const updated = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [edited]
@@ -317,7 +307,7 @@ test("an interrupted source write resumes without an extra file", async () => {
   const { threads } = app.app;
   const partial = new IntakeArchives(
     app.app.database,
-    app.app.workspaces,
+    app.app.companies,
     {
       watched: () => [run.credential],
       watch: async () => [],
@@ -337,10 +327,10 @@ test("an interrupted source write resumes without an extra file", async () => {
     new AbortController().signal
   );
   await expect(
-    partial.save(run.workspace.id, run.channel.id, run.owner, [row])
+    partial.save(run.company.id, run.channel.id, run.owner, [row])
   ).rejects.toThrow("Interrupted");
   const [file] = await run.files();
-  await run.archives.maintain(run.workspace.id, run.owner);
+  await run.archives.maintain(run.company.id, run.owner);
   expect((await run.files()).map((each) => each.id)).toEqual([file!.id]);
 });
 
@@ -348,13 +338,13 @@ test("later messages preserve notes added to a generated conversation file", asy
   const run = await setup();
   const first = run.put("one", "thread", START, "Original message");
   const [file] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [first]
   );
   await app.app.threads.writeFile(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     new File(["My own notes"], file!.name),
@@ -362,7 +352,7 @@ test("later messages preserve notes added to a generated conversation file", asy
   );
   const next = run.put("two", "thread", START + 1000, "New message");
   const [updated] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [next]
@@ -372,7 +362,7 @@ test("later messages preserve notes added to a generated conversation file", asy
   expect(await run.text(updated!.id)).toContain("Original message");
   expect(await run.text(updated!.id)).toContain("New message");
   const [repeated] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [next]
@@ -393,7 +383,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
     attachments: [attachment],
   });
   const [spamFile, spamAttachment] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [spam]
@@ -401,7 +391,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
   const first = run.put("first", "repair", START, "The tiler comes Monday");
   const second = run.put("second", "repair", START + 1000, "Buy a prize now");
   const [repair] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [first, second]
@@ -412,7 +402,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
   app.app.database
     .query("UPDATE intake_item SET deleted_at=? WHERE id IN (?,?)")
     .run(now, spam.id, second.id);
-  await run.archives.forget(run.workspace.id, run.owner, [spam.id, second.id]);
+  await run.archives.forget(run.company.id, run.owner, [spam.id, second.id]);
   const left = (await run.files()).map((file) => file.id);
   expect(left).not.toContain(spamFile!.id);
   expect(left).not.toContain(spamAttachment!.id);
@@ -432,7 +422,7 @@ test("deleted observations leave their conversation files: an emptied file goes 
     }
   );
   const [again] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [reply]
@@ -456,7 +446,7 @@ test("an attachment that the source no longer gives is skipped, and the conversa
     ],
   });
   const saved = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [row]
@@ -471,13 +461,13 @@ test("a deleted conversation keeps its file when the person edited it", async ()
   const run = await setup();
   const spam = run.put("spam", "prizes", START, "You won a prize");
   const [file] = await run.archives.save(
-    run.workspace.id,
+    run.company.id,
     run.channel.id,
     run.owner,
     [spam]
   );
   const { path } = await app.app.threads.file(
-    run.workspace.id,
+    run.company.id,
     run.owner,
     file!.id
   );
@@ -488,7 +478,7 @@ test("a deleted conversation keeps its file when the person edited it", async ()
   app.app.database
     .query("UPDATE intake_item SET deleted_at=? WHERE id=?")
     .run(Date.now(), spam.id);
-  await run.archives.forget(run.workspace.id, run.owner, [spam.id]);
+  await run.archives.forget(run.company.id, run.owner, [spam.id]);
   expect((await run.files()).map((each) => each.id)).toContain(file!.id);
   expect(await run.text(file!.id)).toContain("My note: report this sender.");
 });

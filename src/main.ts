@@ -30,6 +30,7 @@ const server = Layer.unwrap(
       app.routines.start();
       app.reminders.start();
       app.intake.start();
+      app.slackBot.start();
       app.pictures.importGoogle();
       return app;
     }),
