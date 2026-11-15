@@ -207,20 +207,23 @@ test("people connect an MCP server by signing in, and agents get its tools", asy
   expect(page.pathname).toBe("/authorize");
   expect(page.searchParams.get("client_id")).toBe("shadow-client");
   expect(page.searchParams.get("redirect_uri")).toBe(
-    "https://localhost/shadow-sign-in"
+    "http://localhost:3000/api/v1/integrations/callback"
   );
   expect(page.searchParams.get("resource")).toBe(`${page.origin}/mcp`);
   expect(page.searchParams.get("code_challenge_method")).toBe("S256");
   const state = page.searchParams.get("state")!;
-  // The sign-in page ends at the loopback address, which the person pastes.
-  const address = `https://localhost/shadow-sign-in?code=code-1&state=${state}`;
+  // The provider returns the browser to Shadow.
+  const address = `http://localhost:3000/api/v1/integrations/callback?code=code-1&state=${state}`;
 
   await expect(
-    integrations.finishConnect(companyId, alice, "shop", "https://localhost/")
+    integrations.finishConnect(
+      companyId,
+      alice,
+      "shop",
+      "http://localhost:3000/"
+    )
   ).rejects.toThrow("This is not the address of your sign-in");
-  expect(
-    await integrations.finishConnect(companyId, alice, "shop", address)
-  ).toMatchObject({ label: "Shop", ownerName: "Alice" });
+  expect(await integrations.finishCallback(alice, address)).toBe("Shop");
   expect(tokenRequests.at(-1)?.get("code")).toBe("code-1");
   expect(tokenRequests.at(-1)?.get("code_verifier")).toBeTruthy();
   expect(changes).toContain(companyId);
@@ -269,7 +272,7 @@ test("a shared sign-in lists an MCP server's tools, else a private one", async (
       companyId,
       alice,
       "shop",
-      `https://localhost/shadow-sign-in?code=${code}&state=${state}`
+      `http://localhost:3000/api/v1/integrations/callback?code=${code}&state=${state}`
     );
   };
   const shared = await signInTo("code-1");
@@ -293,7 +296,7 @@ test("a sign-in that did not finish adds nothing", async () => {
       companyId,
       alice,
       "shop",
-      `https://localhost/shadow-sign-in?error=access_denied&state=${state}`
+      `http://localhost:3000/api/v1/integrations/callback?error=access_denied&state=${state}`
     )
   ).rejects.toThrow("The sign-in did not finish");
   expect(integrations.list(companyId, alice)[0]!.credentials).toEqual([]);
@@ -601,7 +604,7 @@ test("only an admin sets Shadow's own client, and its MCP server hides the tools
     companyId,
     alice,
     "chat",
-    `https://localhost/shadow-sign-in?code=code-2&state=${page.searchParams.get("state")}`
+    `http://localhost:3000/api/v1/integrations/callback?code=code-2&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("anna@work.example");
   expect((await withOwner.tools(companyId)).map((tool) => tool.name)).toEqual([
@@ -653,7 +656,7 @@ test("people sign in to the MCP server at the address of their own machine, and 
     companyId,
     alice,
     "coding",
-    `https://localhost/shadow-sign-in?code=code-5&state=${page.searchParams.get("state")}`
+    `http://localhost:3000/api/v1/integrations/callback?code=code-5&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe(machine.host);
   const tools = await own.tools(companyId);
@@ -714,7 +717,7 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
     companyId,
     alice,
     "google",
-    `https://localhost/shadow-sign-in?code=code-3&state=${page.searchParams.get("state")}`
+    `http://localhost:3000/api/v1/integrations/callback?code=code-3&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("anna@work.example");
 

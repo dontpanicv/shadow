@@ -11,6 +11,20 @@ import type { CredentialSummary } from "./integrations.ts";
 export const integrationApiRoutes: readonly Route[] = [
   [
     "GET",
+    "/api/v1/integrations/callback",
+    api(async ({ app, user, request }) => {
+      const settings = new URL("/settings", app.config.baseUrl);
+      try {
+        const name = await app.integrations.finishCallback(user, request.url);
+        settings.searchParams.set("connected", name);
+      } catch (error) {
+        settings.searchParams.set("connection_error", (error as Error).message);
+      }
+      return Response.redirect(settings.href);
+    }),
+  ],
+  [
+    "GET",
     "/api/v1/companies/:company/slack-bot",
     api(async ({ app, user, params }) =>
       json(app.slackBot.status(params.company!, user))
@@ -85,20 +99,6 @@ export const integrationApiRoutes: readonly Route[] = [
           user,
           params.integration!,
           { address: body.address as string | undefined }
-        )
-      )
-    ),
-  ],
-  [
-    "POST",
-    "/api/v1/companies/:company/integrations/:integration/sign-in",
-    api(async ({ app, user, params, body }) =>
-      json(
-        await app.integrations.finishConnect(
-          params.company!,
-          user,
-          params.integration!,
-          body.address as string | undefined
         )
       )
     ),

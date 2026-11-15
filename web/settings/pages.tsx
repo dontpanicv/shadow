@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { signOut } from "../accounts/login.tsx";
 import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
@@ -92,6 +92,20 @@ export function CompanySettingsPage() {
 
 /** The person's integrations and account. The sidebar keeps the last company, so settings feel like part of the app. */
 export function SettingsPage() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("connected");
+    const error = params.get("connection_error");
+    if (connected) {
+      showToast("success", `${connected} connected`);
+    }
+    if (error) {
+      showToast("error", error);
+    }
+    if (connected || error) {
+      window.history.replaceState(window.history.state, "", "/settings");
+    }
+  }, []);
   const { user, companies } = useMe();
   const last = lastOpened();
   const company =

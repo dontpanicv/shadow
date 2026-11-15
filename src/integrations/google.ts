@@ -16,7 +16,6 @@ import type {
   WatchedItem,
   WatchSource,
 } from "./integrations.ts";
-import { PASTE_ADDRESS, SIGN_IN_ADDRESS } from "./sign-in.ts";
 
 /** What the sign-in asks for: mail to read, draft, and send, events to manage, files to read, and files to create and share. */
 const SCOPES = [
@@ -117,7 +116,8 @@ const NOTIFY = Type.Optional(
  */
 export function googleConnector(
   binary: string,
-  quotaWaits: readonly number[] = QUOTA_WAITS_MS
+  quotaWaits: readonly number[] = QUOTA_WAITS_MS,
+  redirectUrl = "http://localhost:3000/api/v1/integrations/callback"
 ): Connector {
   const gog = new Gog(binary, quotaWaits);
   return {
@@ -133,10 +133,9 @@ export function googleConnector(
       "In the [Google Cloud console](https://console.cloud.google.com), select or create a project. In **APIs & Services › Library**, enable the Gmail, Google Calendar, Google Drive, Google Docs, and Google Sheets APIs.",
       "In **Google Auth Platform › Audience**, select **External** and **In production**. In Testing, Google ends each sign-in after 7 days.",
       `In **Data access**, add the scopes ${SCOPES.map((scope) => `\`${scope.replace("https://www.googleapis.com/auth/", "")}\``).join(", ")}.`,
-      `In **Clients › Create client**, select **Web application**, and add the authorized redirect URI \`${SIGN_IN_ADDRESS}\`.`,
+      `In **Clients › Create client**, select **Web application**, and add the authorized redirect URI \`${redirectUrl}\`.`,
       "Click **Client** here, and paste the client ID and the client secret.",
       "Click **Connect**, and select the account. When Google tells you that it has not verified the app, click **Advanced**, then continue.",
-      PASTE_ADDRESS,
       "Do this again for each account.",
       "A Google Workspace account that cannot sign in needs its administrator to trust the client ID in **Security › Access and data control › API controls**.",
     ],

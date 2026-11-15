@@ -19,8 +19,7 @@ in the `PATH` of the Shadow service; install them, for example with `brew instal
 `brew install shaharia-lab/tap/slackcli`. Then click **Reload** on Configuration in Company settings. Shadow does not show
 these integrations without them.
 
-The sign-in pages of every integration but Slack end at `https://localhost/shadow-sign-in?code=…`. Nothing answers at
-that address, so the browser shows an error page. Copy the address from the address bar and paste it into Shadow.
+The sign-in pages return to Shadow at `base_url/api/v1/integrations/callback`. The person signs in in the same browser session used to start the connection. Google and HubSpot OAuth clients must list that exact redirect URI.
 
 ## Google: Gmail, Calendar, and Drive
 
@@ -115,7 +114,7 @@ removes after it.
 
 Each is the service's own MCP server: Notion at `https://mcp.notion.com/mcp`, Linear at `https://mcp.linear.app/mcp`,
 and Atlassian's Rovo MCP server at `https://mcp.atlassian.com/v1/mcp` for Jira and Confluence. Click **Connect**, sign
-in, and paste the address where the sign-in ends; Shadow registers itself with the server, so nobody makes an app.
+in; Shadow registers itself with the server, so nobody makes an app.
 Agents get the server's tools with what your account may see and do: they search and read, and they create or change
 pages and issues when you ask. Tools that only post a comment for other people are hidden, because an MCP server's tool
 cannot wait for your approval. When the Atlassian sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server
@@ -124,7 +123,7 @@ for the site.
 ## HubSpot
 
 HubSpot's MCP server, `https://mcp.hubspot.com`, registers no clients. An admin of Shadow makes one once: in HubSpot,
-**Development › MCP Auth Apps**, create an app with the redirect URL `https://localhost/shadow-sign-in`, then paste its
+**Development › MCP Auth Apps**, create an app with the redirect URL `base_url/api/v1/integrations/callback`, then paste its
 client ID and client secret with **Client** on HubSpot in Settings. Then each person clicks **Connect** and signs in
 to HubSpot. Agents read the CRM, with what the person may see.
 

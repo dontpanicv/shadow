@@ -1,7 +1,7 @@
 import { googleConnector } from "./google.ts";
 import type { Connector } from "./integrations.ts";
 import { recordingObservations, watchRecordings } from "./plaud.ts";
-import { PASTE_ADDRESS, SIGN_IN_ADDRESS } from "./sign-in.ts";
+import { callbackAddress } from "./sign-in.ts";
 import { slackConnector } from "./slack.ts";
 
 /**
@@ -11,8 +11,10 @@ import { slackConnector } from "./slack.ts";
  */
 export function integrationCatalog(
   gog = Bun.which("gog"),
-  slackcli = Bun.which("slackcli")
+  slackcli = Bun.which("slackcli"),
+  baseUrl = "http://localhost:3000"
 ): readonly Connector[] {
+  const redirectUrl = callbackAddress(baseUrl);
   return [
     {
       id: "notion",
@@ -22,7 +24,6 @@ export function integrationCatalog(
       secretLabel: null,
       guide: [
         "Click **Connect**, sign in to Notion, and select the workspace and the pages that Shadow may use.",
-        PASTE_ADDRESS,
       ],
       tools: [],
       mcp: ["https://mcp.notion.com/mcp"],
@@ -34,7 +35,7 @@ export function integrationCatalog(
       description:
         "The person's Linear: find and read issues, projects, cycles, documents, and teams, and create or change issues when the person asks.",
       secretLabel: null,
-      guide: ["Click **Connect**, and sign in to Linear.", PASTE_ADDRESS],
+      guide: ["Click **Connect**, and sign in to Linear."],
       tools: [],
       mcp: ["https://mcp.linear.app/mcp"],
       hiddenTools: ["create_comment"],
@@ -47,7 +48,6 @@ export function integrationCatalog(
       secretLabel: null,
       guide: [
         "Click **Connect**, sign in to Atlassian, and select the site.",
-        PASTE_ADDRESS,
         "When the sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server for the site in **Atlassian Administration › Apps › AI settings**.",
       ],
       tools: [],
@@ -66,10 +66,9 @@ export function integrationCatalog(
       secretLabel: null,
       guide: [
         "In HubSpot, open **Development › MCP Auth Apps**, and create an app.",
-        `Add the redirect URL \`${SIGN_IN_ADDRESS}\`, and copy the client ID and the client secret.`,
+        `Add the redirect URL \`${redirectUrl}\`, and copy the client ID and the client secret.`,
         "Click **Client** here, and paste them. An admin of Shadow does this once.",
         "Click **Connect**, and sign in to HubSpot.",
-        PASTE_ADDRESS,
       ],
       tools: [],
       mcp: ["https://mcp.hubspot.com/"],
@@ -86,7 +85,6 @@ export function integrationCatalog(
       guide: [
         "Enter the address of your Pipes instance, such as `https://acme.pipes.meiro.io`.",
         "Click **Continue**, sign in to Pipes, and select **Allow**.",
-        PASTE_ADDRESS,
         "Settings › API tokens in Pipes lists Shadow under connected apps, where you disconnect it.",
       ],
       tools: [],
@@ -98,7 +96,7 @@ export function integrationCatalog(
       description:
         "The person's Plaud recordings: find them, and read their transcripts with speakers and times, summaries, and action items.",
       secretLabel: null,
-      guide: ["Click **Connect**, and sign in to Plaud.", PASTE_ADDRESS],
+      guide: ["Click **Connect**, and sign in to Plaud."],
       tools: [],
       mcp: ["https://mcp.plaud.ai/mcp"],
       // Shadow keeps the sign-in; an agent must not revoke it.
@@ -116,7 +114,6 @@ export function integrationCatalog(
       guide: [
         "Enter the address of your T3 Code server, such as `http://my-mac:3774`. Shadow and your browser must both reach it.",
         "Click **Continue**, then **Sign in to T3 Code**. Choose the access of Shadow's threads, and approve with your T3 Code session or with a pairing code from `t3 pair`.",
-        PASTE_ADDRESS,
         "The sign-in lasts 30 days; then connect T3 Code again.",
       ],
       tools: [],
@@ -139,7 +136,7 @@ export function integrationCatalog(
         "list_thread_pull_requests",
       ],
     },
-    ...(gog ? [googleConnector(gog)] : []),
+    ...(gog ? [googleConnector(gog, undefined, redirectUrl)] : []),
     ...(slackcli ? [slackConnector(slackcli)] : []),
   ];
 }

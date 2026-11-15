@@ -112,6 +112,7 @@ export async function createApp(
   const pictures = new ProfilePictures(database);
   const companies = new Companies(database, auth, pictures, reloadTools);
   const integrations = new Integrations(database, resolvedSecrets, companies, {
+    baseUrl: config.baseUrl,
     changed: reloadTools,
     catalog,
   });

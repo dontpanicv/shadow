@@ -21,7 +21,7 @@ import type { OAuthClient } from "../platform/config.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
 import type { Secrets } from "../platform/secrets.ts";
 import { integrationCatalog } from "./catalog.ts";
-import { SIGN_IN_ADDRESS } from "./sign-in.ts";
+import { callbackAddress } from "./sign-in.ts";
 
 export interface CredentialSummary {
   readonly createdAt: number;
@@ -292,6 +292,7 @@ export interface ConnectorNamespace {
 }
 
 export interface IntegrationsOptions {
+  readonly baseUrl?: string;
   /** Called when the connector tools of a company may change: a credential there changed. */
   readonly changed?: (companyId: string) => void;
   readonly catalog?: readonly Connector[];
@@ -347,7 +348,9 @@ export class Integrations {
     private readonly companies: Companies,
     private readonly options: IntegrationsOptions
   ) {
-    this.catalog = options.catalog ?? integrationCatalog();
+    this.catalog =
+      options.catalog ??
+      integrationCatalog(undefined, undefined, options.baseUrl);
   }
 
   /** The integrations, with the credentials that the person sees in the company: the shared ones and their own. */
@@ -526,7 +529,9 @@ export class Integrations {
           : {}),
       },
       connector,
-      state
+      state,
+      () => undefined,
+      callbackAddress(this.options.baseUrl ?? "http://localhost:3000")
     );
     await signIn(connector, provider);
     if (!provider.authorizationUrl) {
@@ -553,10 +558,18 @@ export class Integrations {
     address?: string
   ): Promise<CredentialSummary> {
     this.companies.requireMember(companyId, user);
-    const query = URL.parse(required(address, "Address"))?.searchParams;
+    const callback = URL.parse(required(address, "Address"));
+    const query = callback?.searchParams;
     const state = query?.get("state") ?? "";
     const pending = this.signIns.get(state);
-    if (!(pending && this.isOwn(pending, companyId, user, integrationId))) {
+    if (
+      !(
+        pending &&
+        this.isOwn(pending, companyId, user, integrationId) &&
+        callback?.origin === new URL(pending.provider.redirectUrl).origin &&
+        callback.pathname === new URL(pending.provider.redirectUrl).pathname
+      )
+    ) {
       throw new HttpError(400, "This is not the address of your sign-in");
     }
     this.signIns.delete(state);
@@ -576,6 +589,22 @@ export class Integrations {
           : connector.name),
       JSON.stringify(provider.grant)
     );
+  }
+
+  /** Completes the sign-in that the provider returned to Shadow. */
+  async finishCallback(user: User, address: string): Promise<string> {
+    const state = new URL(address).searchParams.get("state") ?? "";
+    const pending = this.signIns.get(state);
+    if (!pending) {
+      throw new HttpError(400, "This sign-in has expired");
+    }
+    await this.finishConnect(
+      pending.companyId,
+      user,
+      pending.connector.id,
+      address
+    );
+    return pending.connector.name;
   }
 
   private isOwn(
@@ -1393,11 +1422,14 @@ class GrantProvider implements OAuthClientProvider {
     readonly grant: McpGrant,
     private readonly connector: Connector,
     private readonly signInState?: string,
-    private readonly saved: (grant: McpGrant) => void = () => undefined
+    private readonly saved: (grant: McpGrant) => void = () => undefined,
+    private readonly callbackUrl: string = callbackAddress(
+      "http://localhost:3000"
+    )
   ) {}
 
   get redirectUrl() {
-    return SIGN_IN_ADDRESS;
+    return this.callbackUrl;
   }
 
   get clientMetadata() {

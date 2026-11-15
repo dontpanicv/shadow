@@ -34,11 +34,7 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
   const [adding, setAdding] = useState<Integration | null>(null);
   const [settingClient, setSettingClient] = useState<Integration | null>(null);
   const [guiding, setGuiding] = useState<Integration | null>(null);
-  // `url` is null until the person gives the address of their own server, for an integration with `address`.
-  const [signingIn, setSigningIn] = useState<{
-    integration: Integration;
-    url: string | null;
-  } | null>(null);
+  const [signingIn, setSigningIn] = useState<Integration | null>(null);
   const add = useMutation({
     mutationFn: (input: { integrationId: string; form: FormData }) =>
       request(`${base}/integrations/${input.integrationId}/credentials`, {
@@ -56,26 +52,14 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
       return queryClient.invalidateQueries({ queryKey });
     },
   });
-  // People sign in on the integration's own page, which ends at a localhost address that they paste here.
+  // The provider returns to Shadow's callback after sign-in.
   const connect = useMutation({
     mutationFn: (input: { integration: Integration; address?: string }) =>
       request<{ url: string }>(
         `${base}/integrations/${input.integration.id}/connect`,
         { method: "POST", body: { address: input.address } }
       ),
-    onSuccess: ({ url }, { integration }) => setSigningIn({ integration, url }),
-  });
-  const signIn = useMutation({
-    mutationFn: (input: { integration: Integration; form: FormData }) =>
-      request(`${base}/integrations/${input.integration.id}/sign-in`, {
-        method: "POST",
-        body: { address: String(input.form.get("address")) },
-      }),
-    onSuccess: (_, { integration }) => {
-      setSigningIn(null);
-      showToast("success", `${integration.name} connected`);
-      return queryClient.invalidateQueries({ queryKey });
-    },
+    onSuccess: ({ url }) => window.location.assign(url),
   });
   // The server's owner sets the OAuth client that Shadow signs in with; the next sign-in uses it.
   const setClient = useMutation({
@@ -150,7 +134,7 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
                 label="Connect"
                 onClick={() =>
                   integration.address
-                    ? setSigningIn({ integration, url: null })
+                    ? setSigningIn(integration)
                     : connect.mutate({ integration })
                 }
                 size="small"
@@ -337,56 +321,29 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
         />
       </Dialog>
       <Dialog
-        busy={signIn.isPending || connect.isPending}
+        busy={connect.isPending}
         onClose={() => setSigningIn(null)}
-        onSubmit={(form) => {
-          if (!signingIn) {
-            return;
-          }
-          if (signingIn.url === null) {
-            connect.mutate({
-              integration: signingIn.integration,
-              address: String(form.get("server")),
-            });
-          } else {
-            signIn.mutate({ integration: signingIn.integration, form });
-          }
-        }}
+        onSubmit={(form) =>
+          signingIn &&
+          connect.mutate({
+            integration: signingIn,
+            address: String(form.get("server")),
+          })
+        }
         open={signingIn !== null}
-        submit={signingIn?.url === null ? "Continue" : "Connect"}
-        title={`Connect ${signingIn?.integration.name ?? ""}`}
+        submit="Continue"
+        title={`Connect ${signingIn?.name ?? ""}`}
       >
-        {signingIn?.url === null ? (
-          <TextField
-            autoComplete="off"
-            autoFocus
-            key="server"
-            label="Address"
-            name="server"
-            placeholder="http://my-mac:3774"
-            required
-            type="url"
-          />
-        ) : (
-          <>
-            <a
-              className="button primary"
-              href={signingIn?.url}
-              rel="noopener"
-              target="_blank"
-            >
-              Sign in to {signingIn?.integration.name}
-            </a>
-            <TextField
-              autoComplete="off"
-              key="address"
-              label="Address after sign-in"
-              name="address"
-              placeholder="http://localhost/shadow-sign-in?code=…"
-              required
-            />
-          </>
-        )}
+        <TextField
+          autoComplete="off"
+          autoFocus
+          key="server"
+          label="Address"
+          name="server"
+          placeholder="http://my-mac:3774"
+          required
+          type="url"
+        />
       </Dialog>
     </>
   );

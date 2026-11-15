@@ -414,7 +414,7 @@ to put that host on the internet while the rest of Shadow stays private.
 | `GET …/integrations` | | `Integration[]`, with the person's own credentials and the ones other members shared |
 | `POST …/integrations/:integrationId/credentials` | `{ label?, secret, address?, username? }`; `label` when the integration is `labeled`, `address` when it has `address`, `username` when it has `username` | `Credential`, private; `400` unless `connect` is `"secret"`, or when the integration cannot use the secret, such as a Slack cURL whose session Slack refuses |
 | `POST …/integrations/:integrationId/connect` | `{ address }` for `"sign-in"` with `address`: the person's own server | `{ url }`: the integration's sign-in page. `400` when `address` is not http or https |
-| `POST …/integrations/:integrationId/sign-in` | `{ address }` | `Credential`, private; `400` when the address is not of the person's own sign-in in this company, or the sign-in did not finish |
+| `GET /integrations/callback` | OAuth `code` and `state` | Finishes the person's sign-in and returns to Settings; the browser must have the session that started it |
 | `PUT …/credentials/:credentialId` | `{ shared }`, `{ watched }`, or both | `Credential`; `404` unless it is the person's own; `400` for `watched: true` when the integration is not `watchable` |
 | `DELETE …/credentials/:credentialId` | | `204`; `404` unless it is the person's own |
 | `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is an admin, `404` unless the integration has `client` |
@@ -429,10 +429,8 @@ that someone connected there. Secrets never leave the server.
 
 An integration with `connect: "sign-in"` is one or more MCP servers, such as Notion's, Linear's, or Plaud's, or an API that
 Shadow's own tools call, such as Google's. With `address`, such as T3 Code or Pipes, the MCP server runs on the person's
-own machine or instance: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. Some servers let self-registered clients return only to
-loopback addresses, so the sign-in ends on an error page at
-`https://localhost/shadow-sign-in?code=…&state=…`. The person pastes that address, and `sign-in` keeps the tokens as a
-credential, labeled with the account's email when the server gives it. The agents then get the servers' tools as
+own machine or instance: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. The provider returns to `base_url/api/v1/integrations/callback`, where Shadow exchanges the code and saves the credential. A sign-in needs the same browser session that started it.
+The agents then get the servers' tools as
 `<integrationId>_<tool>`, in the codemode namespace of the integration. Shadow lists a server's tools with the newest
 shared sign-in, else with a private one; the list has only tool names and schemas. Google's tools run gog with
 an access token that Shadow renews with the refresh token.
