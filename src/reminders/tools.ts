@@ -2,50 +2,20 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
 import type { Companies } from "../companies/companies.ts";
-import type { Places } from "../places/places.ts";
 import type { Threads } from "../threads/threads.ts";
-import type { Reminder, ReminderInput, Reminders } from "./reminders.ts";
+import type { Reminder, Reminders } from "./reminders.ts";
 
-/** Agent tools for the one-time reminders of a company, at a time or at a place. */
+/** Agent tools for the one-time reminders of a company. */
 export function reminderTools(
   reminders: Reminders,
   companies: Pick<Companies, "agentMember" | "members" | "threadOf">,
   threads: Pick<Threads, "realm" | "requester">,
-  places: Pick<
-    Places,
-    "savePointOfInterest" | "searchPointsOfInterest" | "usable"
-  >,
   companyId: string
 ) {
-  const at = Type.Optional(
-    Type.String({
-      description:
-        "The local date and time with its UTC offset, such as 2026-11-01T09:00:00+01:00; leave it out for a place",
-    })
-  );
-  const place = Type.Optional(
-    Type.String({
-      description:
-        "The name of a place from reminders_places, in place of a time",
-    })
-  );
-  const from = Type.Optional(
-    Type.String({
-      description:
-        "For a place: not before this local date and time with its UTC offset, such as when the person arrives at work on Monday; if they are already there then, it fires at once",
-    })
-  );
-  const until = Type.Optional(
-    Type.String({
-      description:
-        "For a place: the latest local date and time with its UTC offset; if the person has not arrived or left by then, it fires then anyway",
-    })
-  );
-  const event = Type.Optional(
-    Type.Union([Type.Literal("arrive"), Type.Literal("leave")], {
-      description: "For a place: remind when the person arrives or leaves",
-    })
-  );
+  const at = Type.String({
+    description:
+      "The local date and time with its UTC offset, such as 2026-11-01T09:00:00+01:00",
+  });
   const timeZone = Type.String({
     description: "IANA time zone of the recipient, such as Europe/Prague",
   });
@@ -83,74 +53,12 @@ export function reminderTools(
     }
     return matches[0]!.userId;
   };
-  /** The places of a reminder: those that the recipient and the asker both use. */
-  const placesFor = (recipientId: string, askerId: string | null) => {
-    const asker = new Set(
-      places.usable(companyId, askerId ?? recipientId).map(({ id }) => id)
-    );
-    return places
-      .usable(companyId, recipientId)
-      .filter(({ id }) => asker.has(id));
-  };
-  /** A reminder at the place `id`, for its event and within its window. */
-  const atPlace = (
-    id: string,
-    args: { event?: "arrive" | "leave"; from?: string; until?: string }
-  ): Pick<ReminderInput, "place"> => ({
-    place: {
-      id,
-      event: args.event ?? "arrive",
-      ...(args.from ? { from: args.from } : {}),
-      ...(args.until ? { until: args.until } : {}),
-    },
-  });
-  /** The time or the place of a reminder. */
-  const whenOf = (
-    args: {
-      at?: string;
-      place?: string;
-      event?: "arrive" | "leave";
-      from?: string;
-      until?: string;
-    },
-    recipientId: string,
-    askerId: string | null
-  ): Pick<ReminderInput, "at" | "place"> => {
-    if (args.place === undefined) {
-      if (args.from !== undefined || args.until !== undefined) {
-        throw new Error("from and until go with a place; a time is exact.");
-      }
-      return { at: args.at };
-    }
-    const known = placesFor(recipientId, askerId);
-    const found = known.find(
-      ({ name }) => name.toLowerCase() === args.place!.toLowerCase()
-    );
-    if (!found) {
-      throw new Error(
-        known.length
-          ? `Name one of these places: ${known.map(({ name }) => name).join(", ")}.`
-          : "There is no place for this reminder. A person adds places in Settings and shares one, so other members use it."
-      );
-    }
-    return atPlace(found.id, args);
-  };
-
   return [
     defineTool({
       name: "reminders_create",
       description:
-        "Schedule one reminder for one exact future date and time, or for when the recipient arrives at or leaves a place; their iPhone tells Shadow. A place reminder can have a window: from, such as 'when I get to work on Monday', and until, when it fires anyway, such as 'next time I am at the shop this week'. 'At 18:00 if I am home, else when I get home' is arrive home from 18:00. Make one reminder for one request, with no helper reminders or threads. Use a routine for repeated work. Give the recipient's name when it is not the person who asked. For one specific public place that reminders_places does not have, such as one shop, use reminders_search_points_of_interest. Confirm the saved time or place in your answer.",
-      parameters: Type.Object({
-        text,
-        at,
-        place,
-        from,
-        until,
-        event,
-        timeZone,
-        recipient,
-      }),
+        "Schedule one reminder for one exact future date and time. Make one reminder for one request, with no helper reminders or threads. Use a routine for repeated work. Give the recipient's name when it is not the person who asked. Confirm the saved time in your answer.",
+      parameters: Type.Object({ text, at, timeZone, recipient }),
       replay: "safe",
       execute: async (args, api) => {
         const { actor, asker } = await actorFor(api.conversationId);
@@ -170,104 +78,7 @@ export function reminderTools(
           {
             text: args.text,
             timeZone: args.timeZone,
-            ...whenOf(args, recipientId, asker.id),
-            createdBy: asker.id,
-            id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
-          }
-        );
-        return { output: [{ type: "text", text: describe(created) }] };
-      },
-    }),
-    defineTool({
-      name: "reminders_places",
-      description:
-        "The names of the places that a reminder for the recipient can name, from the Settings of the people.",
-      parameters: Type.Object({ recipient }),
-      replay: "safe",
-      execute: async (args, api) => {
-        const { actor, asker } = await actorFor(api.conversationId);
-        const recipientId = recipientOf(
-          actor,
-          asker?.id ?? null,
-          args.recipient
-        );
-        const names = placesFor(recipientId, asker?.id ?? null).map(
-          ({ name }) => name
-        );
-        return {
-          output: [
-            {
-              type: "text",
-              text:
-                names.join("\n") ||
-                "No places. A person adds places in Settings and shares one, so other members use it.",
-            },
-          ],
-        };
-      },
-    }),
-    defineTool({
-      name: "reminders_search_points_of_interest",
-      description:
-        "Find one specific public place, such as IKEA in Brno, for a reminder of the person who asks, with reminders_create_at_point_of_interest. Put the name and its town or street in query, and try other words when nothing comes. Use a result only when it is clearly the one place that the person means. Ask the person when they name a chain or a kind of place, when several results can be it, or when nothing matches; never choose for them.",
-      parameters: Type.Object({
-        query: Type.String({
-          description: "The name of the place, with its town or street",
-        }),
-      }),
-      replay: "safe",
-      execute: async ({ query }) => {
-        const found = await places.searchPointsOfInterest(query);
-        return {
-          output: [
-            {
-              type: "text",
-              text: found.length
-                ? `${found.map(({ osmId, name, kind, address }) => `${osmId}: ${name} (${kind}), ${address}`).join("\n")}\nData © OpenStreetMap contributors`
-                : "No specific place. Try other words, or ask the person which place they mean.",
-            },
-          ],
-        };
-      },
-    }),
-    defineTool({
-      name: "reminders_create_at_point_of_interest",
-      description:
-        "Remind the person who asks when they arrive at or leave one specific public place from reminders_search_points_of_interest; their phone tells Shadow. It is only for their own reminder. Say the place's name and street in your answer.",
-      parameters: Type.Object({
-        text,
-        pointOfInterest: Type.String({
-          description: "The id of a result of the search, such as W258949900",
-        }),
-        from,
-        until,
-        event,
-        timeZone,
-      }),
-      replay: "safe",
-      execute: async (args, api) => {
-        const { asker } = await actorFor(api.conversationId);
-        if (!asker) {
-          throw new Error("Only a person's own request makes this reminder.");
-        }
-        const source = companies.threadOf(companyId, api.conversationId);
-        if (!source) {
-          throw new Error("This tool works only in a thread.");
-        }
-        const { id } = await places.savePointOfInterest(
-          companyId,
-          asker.id,
-          args.pointOfInterest
-        );
-        const created = reminders.create(
-          companyId,
-          asker,
-          source.id,
-          asker.id,
-          {
-            text: args.text,
-            timeZone: args.timeZone,
-            ...atPlace(id, args),
+            at: args.at,
             createdBy: asker.id,
             id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           }
@@ -296,31 +107,11 @@ export function reminderTools(
     }),
     defineTool({
       name: "reminders_update",
-      description:
-        "Change a pending one-time reminder: its text, and its time or place with its window. Leave out at and place to keep its place; give its event, from, and until again. To move it to a point of interest, cancel it and make a new one.",
-      parameters: Type.Object({
-        reminder,
-        text,
-        at,
-        place,
-        event,
-        from,
-        until,
-        timeZone,
-      }),
+      description: "Change a pending one-time reminder: its text and its time.",
+      parameters: Type.Object({ reminder, text, at, timeZone }),
       replay: "safe",
       execute: async ({ reminder: id, ...input }, api) => {
         const { actor, asker, realm } = await actorFor(api.conversationId);
-        const { recipientId, place: current } = reminders.get(
-          companyId,
-          actor,
-          realm,
-          id
-        );
-        const keepsPlace =
-          current !== null &&
-          input.at === undefined &&
-          input.place === undefined;
         return {
           output: [
             {
@@ -329,12 +120,7 @@ export function reminderTools(
                 reminders.update(companyId, actor, realm, id, {
                   text: input.text,
                   timeZone: input.timeZone,
-                  ...(keepsPlace
-                    ? atPlace(current.id, {
-                        ...input,
-                        event: input.event ?? current.event,
-                      })
-                    : whenOf(input, recipientId, asker?.id ?? null)),
+                  at: input.at,
                   createdBy: asker?.id ?? null,
                 })
               ),
@@ -372,12 +158,9 @@ function describe(reminder: Reminder): string {
   } else if (reminder.lastError) {
     status = `retrying: ${reminder.lastError}`;
   }
-  const { place } = reminder;
   return [
     `${reminder.text} (reminder ${reminder.id})`,
-    place
-      ? `When: the recipient ${place.event === "arrive" ? "arrives at" : "leaves"} ${place.name}${reminder.notBefore === null ? "" : `, not before ${local(reminder.notBefore, reminder.timeZone)}`}${reminder.notAfter === null ? "" : `, at ${local(reminder.notAfter, reminder.timeZone)} at the latest`}`
-      : `Due: ${local(reminder.dueAt, reminder.timeZone)} ${reminder.timeZone} (${new Date(reminder.dueAt).toISOString()})`,
+    `Due: ${local(reminder.dueAt, reminder.timeZone)} ${reminder.timeZone} (${new Date(reminder.dueAt).toISOString()})`,
     `Recipient: ${reminder.recipientId}`,
     `Thread: ${reminder.threadId}`,
     `Status: ${status}`,

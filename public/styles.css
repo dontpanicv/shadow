@@ -1258,7 +1258,12 @@ span.avatar.large::after {
 .guide li + li {
   margin-top: var(--space-md);
 }
-.prose a:not(.thread-link) {
+.guide-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+.prose a:not(.thread-link, .button) {
   color: var(--color-accent);
   text-underline-offset: 2px;
 }
@@ -2365,57 +2370,6 @@ button.settings-row:focus-visible {
   color: var(--color-text);
   overflow-wrap: anywhere;
   user-select: all;
-}
-
-/* Place map: the pin of a place and its circle on OpenStreetMap, in Settings. */
-
-.place-map {
-  position: relative;
-  height: var(--size-map);
-  border: 0.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--color-surface);
-}
-.place-map .leaflet-bar {
-  border: 0.5px solid var(--color-border);
-  box-shadow: var(--shadow-low);
-}
-.place-map .leaflet-bar a {
-  border-color: var(--color-border);
-  background: var(--color-surface-raised);
-  color: var(--color-text);
-}
-.place-map .leaflet-control-attribution {
-  background: var(--color-surface-raised);
-  color: var(--color-text-tertiary);
-}
-.place-map .leaflet-control-attribution a {
-  color: inherit;
-}
-.place-map-canvas {
-  height: 100%;
-}
-/* The pin stays in the middle; the map moves under it. Over Leaflet's panes and controls' layer, under no click. */
-.place-pin {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 1000;
-  width: 16px;
-  height: 16px;
-  translate: -50% -50%;
-  border: 2px solid var(--color-on-accent);
-  border-radius: var(--radius-full);
-  background: var(--color-accent);
-  box-shadow: var(--shadow-low);
-  pointer-events: none;
-}
-.place-circle {
-  stroke: var(--color-accent);
-  stroke-width: 1.5;
-  fill: var(--color-accent);
-  fill-opacity: 0.12;
 }
 
 /* Search */

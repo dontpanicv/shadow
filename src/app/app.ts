@@ -14,7 +14,6 @@ import { SlackBot, type SlackBotOptions } from "../integrations/slack-bot.ts";
 import { Llm, type LlmProvider } from "../llm/llm.ts";
 import { transcribeRequirements } from "../llm/transcribe.ts";
 import { Notifications } from "../notifications/notifications.ts";
-import { Places } from "../places/places.ts";
 import { type Auth, createAuth, migrateAuth } from "../platform/auth.ts";
 import type { Config } from "../platform/config.ts";
 import { migrate, openDatabase } from "../platform/database.ts";
@@ -44,7 +43,6 @@ export interface App {
   readonly indexer: Indexer;
   readonly recentSearches: RecentSearches;
   readonly routines: Routines;
-  readonly places: Places;
   readonly reminders: Reminders;
   readonly agenda: Agenda;
   readonly intake: Intake;
@@ -176,14 +174,12 @@ export async function createApp(
     artifacts,
     embedder
   );
-  const places = new Places(database, companies);
   const routines = new Routines(
     database,
     companies,
     integrations,
     threads,
     indexer,
-    places,
     (routine, answer) => {
       slack
         .postRoutine(routine, answer)
@@ -192,15 +188,8 @@ export async function createApp(
         );
     }
   );
-  const reminders = new Reminders(database, companies, threads, places);
-  const agenda = new Agenda(
-    database,
-    companies,
-    threads,
-    routines,
-    reminders,
-    places
-  );
+  const reminders = new Reminders(database, companies, threads);
+  const agenda = new Agenda(database, companies, threads, routines, reminders);
   const intake = new Intake(
     database,
     companies,
@@ -267,7 +256,6 @@ export async function createApp(
     indexer,
     recentSearches: new RecentSearches(database),
     routines,
-    places,
     reminders,
     agenda,
     intake,

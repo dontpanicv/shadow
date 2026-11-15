@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import type {
-  Suggestion,
-  Upcoming,
-  WatchedPlace,
-} from "../src/agenda/agenda.ts";
+import type { Suggestion, Upcoming } from "../src/agenda/agenda.ts";
 import type * as Server from "../src/artifacts/artifacts.ts";
 import type {
   Channel,
@@ -20,7 +16,6 @@ import type {
 import type { Integration } from "../src/integrations/integrations.ts";
 import type { SlackBotStatus } from "../src/integrations/slack-bot.ts";
 import type { LlmStatus, UsageReport } from "../src/llm/llm.ts";
-import type { Place } from "../src/places/places.ts";
 import type { User } from "../src/platform/auth.ts";
 import type { Routine, RoutineRun } from "../src/routines/routines.ts";
 import type { RecentSearch, SearchResponse } from "../src/search/search.ts";
@@ -65,8 +60,6 @@ const checks: true[] = [
   true satisfies Fits<RoutineRun, Web.RoutineRun>,
   true satisfies Fits<Server.Artifact, Web.Artifact>,
   true satisfies Fits<Server.ArtifactRecord, Web.ArtifactRecord>,
-  true satisfies Fits<Place, Web.Place>,
-  true satisfies Fits<WatchedPlace, Web.WatchedPlace>,
   true satisfies Fits<LlmStatus, Web.LlmStatus>,
   true satisfies Fits<Feedback, Web.Feedback>,
   true satisfies Fits<

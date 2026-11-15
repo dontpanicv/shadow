@@ -9,9 +9,10 @@ import { dirname } from "node:path";
  * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `thread`, and `company_facts` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
  * `credential`, `oauth_client`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
- * `places` owns `place` and `place_presence`, `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
+ * `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
  * `routines` owns `routine` and `routine_run`, `reminders` owns `reminder`, `agenda` owns `suggestion`, `feedback` owns `feedback`, and `notifications` owns
- * `notification`. No module reads `machine`, `push_device`, or `live_activity` since the machines and the phone apps went.
+ * `notification`. No module reads `machine`, `push_device`, or `live_activity` since the machines and the phone apps went,
+ * nor `place` and `place_presence` since places went.
  * Start a new migration with a comment that names its owner.
  */
 const migrations = [
@@ -787,6 +788,9 @@ const migrations = [
   // companies: each member's own private channel, which Shadow makes for them, like a DM to oneself in Slack.
   `ALTER TABLE channel ADD COLUMN personal INTEGER NOT NULL DEFAULT 0;
   CREATE UNIQUE INDEX channel_personal ON channel (company_id, owner_id) WHERE personal = 1 AND deleted_at IS NULL;`,
+  // routines and reminders: places went, so the routines and reminders at a place rest, deleted.
+  `UPDATE routine SET deleted_at = strftime('%s', 'now') * 1000 WHERE place_id IS NOT NULL AND deleted_at IS NULL;
+  UPDATE reminder SET deleted_at = strftime('%s', 'now') * 1000 WHERE place_id IS NOT NULL AND deleted_at IS NULL;`,
 ];
 
 export function openDatabase(path: string): Database {

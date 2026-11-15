@@ -7,7 +7,6 @@ import {
 } from "@earendil-works/pi-codemode";
 import type { Companies, Realm } from "../companies/companies.ts";
 import type { Integrations } from "../integrations/integrations.ts";
-import type { Place, PlaceEvent, Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
 import type { Indexer } from "../search/search.ts";
@@ -26,18 +25,13 @@ export interface RoutineRun {
   readonly error: string | null;
 }
 
-/**
- * Work a channel does on a schedule, or each time a person arrives at or leaves a place: an optional script collects
- * what is new, and an agent acts on it.
- */
+/** Work a channel does on a schedule: an optional script collects what is new, and an agent acts on it. */
 export interface Routine {
   readonly id: string;
   readonly channelId: string;
   readonly name: string;
-  /** A cron expression in the server's time zone; null for a routine at a place. */
-  readonly schedule: string | null;
-  /** The place, the event, and the person whose iPhone reports it; null for a routine on a schedule. */
-  readonly place: RoutinePlace | null;
+  /** A cron expression in the server's time zone. */
+  readonly schedule: string;
   readonly instructions: string;
   readonly script: string | null;
   readonly enabled: boolean;
@@ -49,25 +43,9 @@ export interface Routine {
   readonly lastRun: RoutineRun | null;
 }
 
-export interface RoutinePlace
-  extends Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius"> {
-  readonly event: PlaceEvent;
-  /** The member whose iPhone watches the place. */
-  readonly personId: string;
-}
-
-/** Where a routine waits: a place that its person and its writer both use. */
-export interface RoutinePlaceInput {
-  readonly id: string;
-  readonly event: PlaceEvent;
-  readonly personId: string;
-}
-
-/** A routine has a schedule or a place. */
 export interface RoutineInput {
   readonly name: string;
-  readonly schedule?: string;
-  readonly place?: RoutinePlaceInput;
+  readonly schedule: string;
   readonly instructions: string;
   readonly script?: string | null;
   readonly postInSlack?: boolean;
@@ -104,7 +82,6 @@ export type RoutineThreads = Pick<
   | "startAgentThread"
 >;
 export type RoutineSearch = Pick<Indexer, "search">;
-export type RoutinePlaces = Pick<Places, "find" | "usable">;
 
 /** How often the scheduler looks for routines that are due. */
 const TICK = 30_000;
@@ -122,7 +99,6 @@ interface RoutineRow {
   readonly companyId: string;
   readonly channelId: string;
   readonly name: string;
-  /** '' for a routine at a place. */
   readonly schedule: string;
   readonly instructions: string;
   readonly script: string | null;
@@ -132,21 +108,17 @@ interface RoutineRow {
   readonly threadId: string | null;
   /** The member who last wrote its instructions or script, whose turns its runs are; `shadow` when nobody did. */
   readonly createdBy: string;
-  readonly placeId: string | null;
-  readonly placeEvent: PlaceEvent | null;
-  readonly placePersonId: string | null;
   readonly postInSlack: number;
 }
 
 const ROUTINE_COLUMNS =
-  "id, company_id AS companyId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, place_id AS placeId, place_event AS placeEvent, place_person_id AS placePersonId, post_in_slack AS postInSlack";
+  "id, company_id AS companyId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, post_in_slack AS postInSlack";
 const RUN_COLUMNS =
   "r.id, r.routine_id AS routineId, t.name AS routineName, r.started_at AS startedAt, r.finished_at AS finishedAt, r.outcome, r.error";
 
 /**
- * The routines of every channel, and the scheduler that runs them; a routine at a place runs when the iPhone of its
- * person reports the event. A run first runs the routine's script in a
- * code mode sandbox; a script that finds nothing new ends the run without the agent. Otherwise, or without a script,
+ * The routines of every channel, and the scheduler that runs them. A run first runs the routine's script in a code mode
+ * sandbox; a script that finds nothing new ends the run without the agent. Otherwise, or without a script,
  * the agent of the routine's thread gets the instructions and the script's result, and answers there, or stays quiet.
  * A script that fails goes to the agent too, which repairs it.
  */
@@ -161,7 +133,6 @@ export class Routines {
     private readonly integrations: Pick<Integrations, "tools">,
     private readonly threads: RoutineThreads,
     private readonly search: RoutineSearch,
-    private readonly places: RoutinePlaces,
     /** Called with each answer of a routine that posts in Slack. */
     private readonly posted: (
       routine: Pick<Routine, "id" | "name" | "channelId"> & {
@@ -269,7 +240,7 @@ export class Routines {
     const row = this.rowFor(routineId, user);
     this.database
       .query("UPDATE routine SET enabled = ?, next_run_at = ? WHERE id = ?")
-      .run(enabled ? 1 : 0, nextRunOf(row.schedule, Date.now()), row.id);
+      .run(enabled ? 1 : 0, nextRun(row.schedule, Date.now()), row.id);
     return this.get(routineId, user);
   }
 
@@ -304,36 +275,6 @@ export class Routines {
     });
   }
 
-  /**
-   * Runs the enabled routines that wait for the person's arrival at or departure from a place, when their iPhone reports
-   * it. A routine that ran in the last 15 minutes does not run again, as a person at the edge of the circle goes in and
-   * out.
-   */
-  atPlace(
-    companyId: string,
-    personId: string,
-    placeId: string,
-    event: PlaceEvent
-  ): Promise<RoutineRun>[] {
-    const now = Date.now();
-    return this.live(
-      this.database
-        .query(
-          `SELECT ${ROUTINE_COLUMNS} FROM routine WHERE company_id = ? AND place_person_id = ? AND place_id = ? AND place_event = ? AND enabled = 1 AND deleted_at IS NULL`
-        )
-        .all(companyId, personId, placeId, event) as RoutineRow[],
-      personId
-    )
-      .filter((row) => {
-        const last = this.routineOf(row).lastRun;
-        return !(
-          this.running.has(row.id) ||
-          (last && last.startedAt > now - MIN_ROUTINE_GAP)
-        );
-      })
-      .map((row) => this.run(row, now));
-  }
-
   /** The routines of a company in the channels `realm` sees, for its agents. */
   inCompany(companyId: string, realm: Realm): Routine[] {
     return this.live(
@@ -354,24 +295,21 @@ export class Routines {
   ): Routine {
     const name = required(input.name, "Name");
     const now = Date.now();
-    const when = this.when(companyId, channelId, input, input.createdBy);
+    const schedule = required(input.schedule, "Schedule");
     this.database
       .query(
-        "INSERT OR IGNORE INTO routine (id, company_id, channel_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, place_id, place_event, place_person_id, post_in_slack, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO routine (id, company_id, channel_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, post_in_slack, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, ?, ?)"
       )
       .run(
         input.id,
         companyId,
         channelId,
         name,
-        when.schedule,
+        schedule,
         required(input.instructions, "Instructions"),
         input.script?.trim() || null,
-        nextRunOf(when.schedule, now),
+        nextRun(schedule, now),
         input.createdBy,
-        when.placeId,
-        when.placeEvent,
-        when.placePersonId,
         input.postInSlack ? 1 : 0,
         now
       );
@@ -379,8 +317,7 @@ export class Routines {
   }
 
   /**
-   * Changes a routine for an agent of the company. A new schedule moves the next run, and a schedule or a place
-   * takes the place of the other. The person who writes new instructions or a new script, `changedBy`, becomes the
+   * Changes a routine for an agent of the company. A new schedule moves the next run. The person who writes new instructions or a new script, `changedBy`, becomes the
    * person its runs are for.
    */
   update(
@@ -396,25 +333,8 @@ export class Routines {
       changes.script === undefined && changes.instructions === undefined
         ? row.createdBy
         : changedBy;
-    const moved = changes.schedule !== undefined || changes.place !== undefined;
-    // A new writer must use the place too; a pause or a new name keeps it.
-    const when =
-      moved || (row.placeId !== null && createdBy !== row.createdBy)
-        ? this.when(
-            companyId,
-            row.channelId,
-            moved
-              ? changes
-              : {
-                  place: {
-                    id: row.placeId!,
-                    event: row.placeEvent!,
-                    personId: row.placePersonId!,
-                  },
-                },
-            createdBy
-          )
-        : row;
+    const moved = changes.schedule !== undefined;
+    const schedule = changes.schedule ?? row.schedule;
     const enabled = changes.enabled ?? routine.enabled;
     const script =
       changes.script === undefined
@@ -422,21 +342,18 @@ export class Routines {
         : changes.script?.trim() || null;
     this.database
       .query(
-        "UPDATE routine SET name = ?, schedule = ?, instructions = ?, script = ?, enabled = ?, next_run_at = ?, created_by = ?, place_id = ?, place_event = ?, place_person_id = ?, post_in_slack = ? WHERE id = ?"
+        "UPDATE routine SET name = ?, schedule = ?, instructions = ?, script = ?, enabled = ?, next_run_at = ?, created_by = ?, post_in_slack = ? WHERE id = ?"
       )
       .run(
         required(changes.name ?? routine.name, "Name"),
-        when.schedule,
+        schedule,
         required(changes.instructions ?? routine.instructions, "Instructions"),
         script,
         enabled ? 1 : 0,
         moved || changes.enabled !== undefined
-          ? nextRunOf(when.schedule, Date.now())
+          ? nextRun(schedule, Date.now())
           : routine.nextRunAt,
         createdBy,
-        when.placeId,
-        when.placeEvent,
-        when.placePersonId,
         (changes.postInSlack ?? routine.postInSlack) ? 1 : 0,
         routineId
       );
@@ -502,7 +419,6 @@ export class Routines {
       this,
       this.companies,
       this.threads,
-      this.places,
       companyId,
       await this.declarations(companyId)
     );
@@ -518,7 +434,7 @@ export class Routines {
       .run(id, routine.id, startedAt, JSON.stringify(routine));
     this.database
       .query("UPDATE routine SET next_run_at = ? WHERE id = ?")
-      .run(nextRunOf(routine.schedule, now + MIN_ROUTINE_GAP), routine.id);
+      .run(nextRun(routine.schedule, now + MIN_ROUTINE_GAP), routine.id);
     return this.finish(routine, id, startedAt, null);
   }
 
@@ -599,7 +515,7 @@ export class Routines {
       const answer = await this.tell(
         routine,
         runId,
-        runTask(routine, this.placeLine(routine), null, startedAt),
+        runTask(routine, null, startedAt),
         []
       );
       this.post(routine, answer);
@@ -635,7 +551,7 @@ export class Routines {
         : await this.tell(
             routine,
             runId,
-            runTask(routine, this.placeLine(routine), result.text, startedAt),
+            runTask(routine, result.text, startedAt),
             []
           );
     this.database
@@ -864,81 +780,6 @@ export class Routines {
     ];
   }
 
-  /**
-   * The schedule of a routine, or its place, which its person sees in Upcoming and which they and the routine's writer
-   * both use.
-   */
-  private when(
-    companyId: string,
-    channelId: string,
-    input: Pick<RoutineInput, "schedule" | "place">,
-    createdBy: string
-  ): {
-    schedule: string;
-    placeId: string | null;
-    placeEvent: PlaceEvent | null;
-    placePersonId: string | null;
-  } {
-    if ((input.schedule === undefined) === (input.place === undefined)) {
-      throw new HttpError(400, "Give a routine a schedule or a place.");
-    }
-    if (input.schedule !== undefined) {
-      nextRun(input.schedule, Date.now());
-      return {
-        schedule: input.schedule,
-        placeId: null,
-        placeEvent: null,
-        placePersonId: null,
-      };
-    }
-    const { id, event, personId } = input.place!;
-    const people = createdBy === "shadow" ? [personId] : [personId, createdBy];
-    if (
-      !(
-        (event === "arrive" || event === "leave") &&
-        this.companies
-          .channelsIn(companyId, personId)
-          .some((channel) => channel.id === channelId) &&
-        people.every((userId) =>
-          this.places.usable(companyId, userId).some((place) => place.id === id)
-        )
-      )
-    ) {
-      throw new HttpError(
-        400,
-        "Give a place that the person and the writer use, arrive or leave, and a channel that the person sees."
-      );
-    }
-    return {
-      schedule: "",
-      placeId: id,
-      placeEvent: event,
-      placePersonId: personId,
-    };
-  }
-
-  /** What starts a routine at a place, for its agent; null for a routine on a schedule. */
-  private placeLine(routine: RoutineRow): string | null {
-    const { place } = this.routineOf(routine);
-    if (!place) {
-      return null;
-    }
-    let name = `member ${place.personId}`;
-    try {
-      const member = this.companies
-        .members(routine.companyId, {
-          id: place.personId,
-          name: "",
-          email: "",
-        })
-        .find(({ userId }) => userId === place.personId);
-      name = member ? `${member.name} (member ${member.userId})` : name;
-    } catch {
-      // The person left the company; the run says their id.
-    }
-    return `It runs each time ${name} ${place.event === "arrive" ? "arrives at" : "leaves"} ${place.name}, as their iPhone tells Shadow, and when someone runs it by hand.`;
-  }
-
   private routineOf(row: RoutineRow): Routine {
     const lastRun = this.database
       .query(
@@ -949,8 +790,7 @@ export class Routines {
       id: row.id,
       channelId: row.channelId,
       name: row.name,
-      schedule: row.placeId ? null : row.schedule,
-      place: this.placeOf(row),
+      schedule: row.schedule,
       instructions: row.instructions,
       script: row.script,
       enabled: row.enabled === 1,
@@ -959,24 +799,6 @@ export class Routines {
       postInSlack: row.postInSlack === 1,
       lastRun,
     };
-  }
-
-  /** The place of a routine at a place, also a removed one: a routine keeps the place it was made for. */
-  private placeOf(row: RoutineRow): RoutinePlace | null {
-    const place = row.placeId
-      ? this.places.find(row.companyId, row.placeId)
-      : null;
-    return place
-      ? {
-          id: place.id,
-          name: place.name,
-          latitude: place.latitude,
-          longitude: place.longitude,
-          radius: place.radius,
-          event: row.placeEvent!,
-          personId: row.placePersonId!,
-        }
-      : null;
   }
 
   /** Nothing is removed: a deleted routine stays, hidden, and never runs again. */
@@ -1054,20 +876,13 @@ export function nextRun(schedule: string, now: number): number | null {
   }
 }
 
-/** The next run of a routine on a schedule; null for a routine at a place, which waits for its event. */
-function nextRunOf(schedule: string, now: number): number | null {
-  return schedule === "" ? null : nextRun(schedule, now);
-}
-
 function runTask(
   routine: RoutineRow,
-  place: string | null,
   found: string | null,
   startedAt: number
 ): string {
   return [
     `The routine "${routine.name}" (routine ${routine.id}) runs now, at ${localTime(startedAt)}.`,
-    place ?? "",
     `Its instructions: ${routine.instructions}`,
     found === null ? "" : `What its script found:\n${found}`,
     `Do what the instructions say, with your tools. Write your answer for the people in this channel; it stays in this thread and notifies nobody. Call notify only when something is wrong or not usual, such as a source or a connector that fails, or when the instructions ask you to alert people. If nothing needs anyone's attention, answer with only QUIET.`,

@@ -28,7 +28,6 @@ src/
 ├── companies/              Companies, members, channels, and the thread registry
 ├── llm/                     The shared LLM provider, its stored login, and the agents' web search
 ├── integrations/            The connectors, their tools, and the credentials of companies and people
-├── places/                  The places that people mark on a map, each person's last state at them, and the map tiles
 ├── artifacts/               The pages and small apps agents make for a channel, their link pages, and their data
 ├── browser/                 The headless Chrome of each thread and person, which agents visit websites with
 ├── notifications/           Each person's inbox
@@ -65,7 +64,7 @@ module uses only `app/`, `ui/`, and the modules before it, and never the server'
 ## Rules
 
 1. **One direction.** The modules are in this order: `accounts`, `companies`, `llm`, `hands`, `integrations`,
-   `places`, `artifacts`, `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `phone`, `feedback`. A module uses only the modules before it. `platform/` uses no module.
+   `artifacts`, `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `phone`, `feedback`. A module uses only the modules before it. `platform/` uses no module.
 2. **Entry files only.** A service uses another module only through its `<module>.ts`. Routes and pages can also
    use another module's `pages.ts`. Only `app/routes.ts` imports `web.ts` and `api.ts`.
    Biome's `noBarrelFile` stays on, so an entry file holds real code and does not re-export.

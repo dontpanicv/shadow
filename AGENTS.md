@@ -62,8 +62,9 @@ addresses, or code and data from employers or clients.
   configured model provider. Silent filing starts no agent turn and sends no notification.
 - Every company read and write goes through `Companies.requireMember`; answer `404` to non-members.
 - A member is an `admin` or a `member` ("User" in the app). Only an admin opens Company settings: the Slack bot, the
-  members and their roles, the facts, what Shadow learned, and the name; an admin also sets the model, the OAuth
-  clients, reads agent feedback, and restarts Shadow. Check with `Companies.requireAdmin` (`403`), or `isAdmin` for
+  members and their roles, the LLM provider and model, the usage, the facts, what Shadow learned, the name, and the
+  server restart; an admin also sets the OAuth clients and reads agent feedback. A person's own Settings has only
+  their integrations and account. Check with `Companies.requireAdmin` (`403`), or `isAdmin` for
   what all companies share. The first of `allowed_emails` starts the company as its first admin; one admin stays.
 - The channels that every member sees copy the public channels of the company's Slack: only the Slack bot
   (`src/integrations/slack-bot.ts`, through `Companies.syncSlackChannels`) makes, renames, or hides them, by
@@ -99,7 +100,7 @@ addresses, or code and data from employers or clients.
 
 ## Modules
 
-- `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `places`, `artifacts`,
+- `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `artifacts`,
   `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`) holds one domain: its service, routes, and tests. `src/platform/`
   is shared code that knows no domain; `src/app/` composes the services and holds the route helpers.
 - A module uses only the modules before it in that list, through their `<module>.ts` file, or their `pages.ts` from
@@ -109,8 +110,8 @@ addresses, or code and data from employers or clients.
   imports from `src/`: `web/app/types.ts` holds the types of `docs/api.md`, and `test/web-types.test.ts` checks them
   against the server's.
 - Register new route tables in `src/app/routes.ts` and new services in `createApp` in `src/app/app.ts`.
-- A person adds integration credentials and places only in their own Settings, never in Company settings. Like a
-  private channel, each one belongs to one member (`credential.owner_id`, `place.owner_id`) and is private to their
+- A person adds integration credentials only in their own Settings, never in Company settings. Like a
+  private channel, each one belongs to one member (`credential.owner_id`) and is private to their
   turns until they set `shared`, which gives it to the turns of every member; only its owner changes or removes it. A
   tool call uses the credential of its turn's person first, else a shared one (`src/integrations/integrations.ts`). A
   person can connect several accounts of one integration; each tool takes an `account`.

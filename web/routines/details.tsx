@@ -19,7 +19,7 @@ import {
   SettingsRow,
   Switch,
 } from "../ui/components.tsx";
-import { placeWords, weekdayTime } from "../ui/format.ts";
+import { weekdayTime } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
 import { showError, showToast } from "../ui/toast.tsx";
 
@@ -166,7 +166,7 @@ export function ChannelDetails() {
                 description={routineWhen(routine)}
                 key={routine.id}
                 label={routine.name}
-                lead={<Icon name={routine.place ? "place" : "play"} />}
+                lead={<Icon name="play" />}
               >
                 <Switch
                   checked={routine.enabled}
@@ -271,13 +271,10 @@ export function ChannelDetails() {
   );
 }
 
-/** Its next run, its place, or Paused. */
+/** Its next run, or Paused. */
 function routineWhen(routine: Routine): string {
   if (!routine.enabled) {
     return "Paused";
-  }
-  if (routine.place) {
-    return placeWords(routine.place);
   }
   return routine.nextRunAt === null
     ? "Paused"

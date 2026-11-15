@@ -13,13 +13,14 @@ import {
   Avatar,
   Badge,
   Button,
+  Dialog,
   Empty,
   Select,
   SettingsCard,
   SettingsRow,
 } from "../ui/components.tsx";
 import { dayTime } from "../ui/format.ts";
-import { showError, showToast } from "../ui/toast.tsx";
+import { copy, showError, showToast } from "../ui/toast.tsx";
 import {
   factsQuery,
   membersQuery,
@@ -29,6 +30,7 @@ import {
   slackDecisionsQuery,
   slackGoalsQuery,
 } from "./data.ts";
+import slackManifest from "./slack-app-manifest.json" with { type: "json" };
 
 /** The name of the company, for its admins. */
 export function CompanySection({ company }: { company: Company }) {
@@ -250,11 +252,73 @@ export function SlackBotSection({ companyId }: { companyId: string }) {
               required
               type="password"
             />
+            <SlackSetup />
             <Button label="Connect" type="submit" />
           </SettingsRow>
         </form>
       )}
     </SettingsCard>
+  );
+}
+
+/** The shortest way to the two tokens: a Slack app made from Shadow's manifest, with this host for link previews. */
+function SlackSetup() {
+  const [open, setOpen] = useState(false);
+  // Slack previews links only of a real domain, so a local Shadow leaves it out.
+  const unfurlDomains = location.hostname.includes(".")
+    ? [location.hostname]
+    : [];
+  const manifest = JSON.stringify(
+    {
+      ...slackManifest,
+      features: { ...slackManifest.features, unfurl_domains: unfurlDomains },
+    },
+    null,
+    2
+  );
+  return (
+    <>
+      <Button
+        icon="info"
+        label="Set up the Slack app"
+        onClick={() => setOpen(true)}
+        size="icon"
+        variant="ghost"
+      />
+      <Dialog
+        onClose={() => setOpen(false)}
+        open={open}
+        title="Set up the Slack app"
+      >
+        <div className="prose">
+          <ol className="guide">
+            <li>
+              Create the app from Shadow's manifest, in the company's workspace.
+              <div className="guide-actions">
+                <a
+                  className="button primary"
+                  href={`https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(manifest)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  Create app
+                </a>
+                <Button label="Copy manifest" onClick={() => copy(manifest)} />
+              </div>
+            </li>
+            <li>
+              <strong>Install App › Install to Workspace › Allow</strong>. Copy
+              the <strong>Bot User OAuth Token</strong> into Bot token.
+            </li>
+            <li>
+              <strong>Basic Information › App-Level Tokens › Generate</strong>{" "}
+              with the scope <code>connections:write</code>. Copy it into App
+              token.
+            </li>
+          </ol>
+        </div>
+      </Dialog>
+    </>
   );
 }
 

@@ -15,12 +15,7 @@ import {
   SettingsRow,
   Switch,
 } from "../ui/components.tsx";
-import {
-  clockTime,
-  placeWindow,
-  placeWords,
-  weekdayTime,
-} from "../ui/format.ts";
+import { clockTime, weekdayTime } from "../ui/format.ts";
 import { Icon } from "../ui/icon.tsx";
 import {
   type AgendaItem,
@@ -155,15 +150,7 @@ function AgendaRow({
         <ReminderRow
           companyId={companyId}
           reminder={item.reminder}
-          when={
-            item.reminder.place && item.reminder.triggeredAt === null
-              ? placeWindow(
-                  item.reminder.place,
-                  item.reminder.notBefore,
-                  item.reminder.notAfter
-                )
-              : when(item.reminder.dueAt)
-          }
+          when={when(item.reminder.dueAt)}
         />
       );
     default:
@@ -199,16 +186,13 @@ function RoutineRow({
     <SettingsRow
       compact
       description={[
-        when ??
-          (routine.place
-            ? placeWords(routine.place)
-            : scheduleWords(routine.schedule ?? "")),
+        when ?? scheduleWords(routine.schedule),
         channel && `#${channel}`,
       ]
         .filter(Boolean)
         .join(" · ")}
       label={routine.name}
-      lead={<Icon name={routine.place ? "place" : "play"} />}
+      lead={<Icon name="play" />}
     >
       {routine.nextRunAt === null ? null : <DayStrip at={routine.nextRunAt} />}
       {children}
@@ -243,11 +227,9 @@ function ReminderRow({
       compact
       description={when}
       label={reminder.text}
-      lead={<Icon name={reminder.place ? "place" : "clock"} />}
+      lead={<Icon name="clock" />}
     >
-      {reminder.place && reminder.triggeredAt === null ? null : (
-        <DayStrip at={reminder.dueAt} />
-      )}
+      <DayStrip at={reminder.dueAt} />
       <Button
         disabled={cancel.isPending}
         label="Cancel"

@@ -83,8 +83,7 @@ beforeAll(async () => {
     shadow.app.companies,
     integrations,
     shadow.app.threads,
-    shadow.app.indexer,
-    shadow.app.places
+    shadow.app.indexer
   );
   // The memory and the channel briefs ask the model in the background too.
   shadow.faux.setResponses(Array.from({ length: 200 }, () => agent));
@@ -139,13 +138,6 @@ function agent(context: Context) {
       name: "Broken",
       schedule: "every morning",
       instructions: "Nothing.",
-    });
-  }
-  if (text.endsWith("Warm the cabin when I arrive")) {
-    return call("routines_create", {
-      name: "Cabin",
-      place: "cabin",
-      instructions: "Turn on the heating.",
     });
   }
   if (text.endsWith("Test a script")) {
@@ -322,8 +314,7 @@ test("a connector without a credential fails the script", async () => {
     shadow.app.companies,
     other,
     shadow.app.threads,
-    shadow.app.indexer,
-    shadow.app.places
+    shadow.app.indexer
   );
   const result = await scripts.test(companyId, null, SCRIPT, undefined, null);
   expect(result).toMatchObject({ ok: false });
@@ -430,90 +421,6 @@ test("a routine runs at most every 15 minutes, whatever its schedule says", asyn
   routines.delete(routine.id, alice);
 });
 
-test("a routine at a place runs each time its person arrives or leaves, at most every 15 minutes", async () => {
-  const cottage = shadow.app.places.create(companyId, alice, {
-    name: "Cottage",
-    latitude: 49.1,
-    longitude: 16.2,
-    radius: 300,
-    shared: false,
-  });
-  const input = {
-    name: "Heating",
-    instructions: "Turn on the heating.",
-    createdBy: alice.id,
-  };
-  const place = {
-    id: cottage.id,
-    event: "arrive",
-    personId: alice.id,
-  } as const;
-  expect(() =>
-    routines.create(companyId, channelId, {
-      ...input,
-      id: crypto.randomUUID(),
-      schedule: "0 7 * * *",
-      place,
-    })
-  ).toThrow("Give a routine a schedule or a place.");
-  expect(() =>
-    routines.create(companyId, channelId, {
-      ...input,
-      id: crypto.randomUUID(),
-      place: { ...place, id: "elsewhere" },
-    })
-  ).toThrow("Give a place that the person and the writer use");
-  const routine = routines.create(companyId, channelId, {
-    ...input,
-    id: crypto.randomUUID(),
-    place,
-  });
-  expect(routine).toMatchObject({
-    schedule: null,
-    nextRunAt: null,
-    place: { name: "Cottage", event: "arrive", personId: alice.id },
-  });
-  // Only its person's arrival at its place runs it.
-  expect(routines.atPlace(companyId, alice.id, cottage.id, "leave")).toEqual(
-    []
-  );
-  expect(routines.atPlace(companyId, "bob", cottage.id, "arrive")).toEqual([]);
-  const [run] = routines.atPlace(companyId, alice.id, cottage.id, "arrive");
-  expect(await run).toMatchObject({ outcome: "posted" });
-  const ran = routines.get(routine.id, alice);
-  expect(
-    (await shadow.app.threads.messages(threadOf(ran.threadId))).messages.at(-1)
-      ?.text
-  ).toBe("The heating is on.");
-  // A second arrival soon after, as at the edge of the circle, runs nothing.
-  expect(routines.atPlace(companyId, alice.id, cottage.id, "arrive")).toEqual(
-    []
-  );
-  // A pause and a new name keep its place, and a schedule takes its place.
-  expect(
-    shadow.app.routines.update(
-      companyId,
-      null,
-      routine.id,
-      { name: "Warm cottage" },
-      alice.id
-    ).place?.name
-  ).toBe("Cottage");
-  const scheduled = routines.update(
-    companyId,
-    null,
-    routine.id,
-    { schedule: "0 7 * * *" },
-    alice.id
-  );
-  expect(scheduled).toMatchObject({ place: null, schedule: "0 7 * * *" });
-  expect(scheduled.nextRunAt).toBeNumber();
-  expect(routines.atPlace(companyId, alice.id, cottage.id, "arrive")).toEqual(
-    []
-  );
-  routines.delete(routine.id, alice);
-});
-
 test("a run that a stop cuts off goes on at the next start, and the agent does its work once", async () => {
   const { threads } = shadow.app;
   let answered: Promise<string | null> | undefined;
@@ -537,8 +444,7 @@ test("a run that a stop cuts off goes on at the next start, and the agent does i
     shadow.app.companies,
     integrations,
     stopping,
-    shadow.app.indexer,
-    shadow.app.places
+    shadow.app.indexer
   );
   const routine = beforeStop.create(companyId, channelId, {
     id: crypto.randomUUID(),
@@ -640,8 +546,7 @@ function restart(): Routines {
     shadow.app.companies,
     integrations,
     shadow.app.threads,
-    shadow.app.indexer,
-    shadow.app.places
+    shadow.app.indexer
   );
   started.start();
   return started;
@@ -756,8 +661,7 @@ test("a restart before input admission uses the saved instructions, script resul
         return Promise.reject(new Error("Server stopped before admission"));
       },
     },
-    shadow.app.indexer,
-    shadow.app.places
+    shadow.app.indexer
   );
   const routine = beforeStop.create(companyId, channelId, {
     id: crypto.randomUUID(),
@@ -840,25 +744,5 @@ test("agents create routines and test scripts", async () => {
   );
   expect(toolResults.at(-1)).toContain(
     "The agent would get:\nhello\n[\n  1,\n  2\n]"
-  );
-
-  shadow.app.places.create(companyId, alice, {
-    name: "Cabin",
-    latitude: 49.1,
-    longitude: 16.2,
-    radius: 300,
-    shared: false,
-  });
-  await shadow.app.threads.send(
-    thread.id,
-    alice,
-    "Warm the cabin when I arrive"
-  );
-  await until(
-    () => shadow.app.threads.messages(ref()),
-    (state) => !state.running && state.messages.length === 8
-  );
-  expect(toolResults.at(-1)).toContain(
-    "When: each time Alice arrives at Cabin"
   );
 });

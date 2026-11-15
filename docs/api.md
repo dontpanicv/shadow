@@ -119,12 +119,11 @@ type Routine = {
 	id: string;
 	channelId: string;
 	name: string;
-	schedule: string | null; // a cron expression in the server's time zone; null for a routine at a place
-	place: { id: string; name: string; latitude: number; longitude: number; radius: number; event: "arrive" | "leave"; personId: string } | null; // a routine at a place runs each time personId arrives or leaves; null: a routine on a schedule
+	schedule: string; // a cron expression in the server's time zone
 	instructions: string;
 	script: string | null; // code mode JavaScript that collects what is new before the agent sees it
 	enabled: boolean;
-	nextRunAt: number | null; // null while paused, and for a routine at a place
+	nextRunAt: number | null; // null while paused
 	threadId: string | null; // where its agent answers; set at the first run that reaches the agent
 	lastRun: RoutineRun | null;
 };
@@ -146,16 +145,6 @@ type ArtifactRecord = {
 	key: string;
 	value: unknown; // JSON
 	updatedAt: number;
-};
-type Place = {
-	id: string;
-	name: string; // unique among its owner's places
-	latitude: number;
-	longitude: number;
-	radius: number; // meters, 100 to 5000
-	ownerId: string; // the member who added it, who alone changes or removes it
-	ownerName: string;
-	shared: boolean; // false: only its owner's turns use it
 };
 type Feedback = {
 	id: string;
@@ -214,12 +203,8 @@ type Reminder = {
 	recipientId: string;
 	createdBy: string | null; // the person who asked for it
 	text: string;
-	dueAt: number; // for a reminder at a place: when it was made, until the person arrives or leaves
+	dueAt: number;
 	timeZone: string;
-	place: { id: string; name: string; latitude: number; longitude: number; radius: number; event: "arrive" | "leave" } | null; // what a reminder at a place waits for; null: a reminder at a time
-	triggeredAt: number | null; // when the person arrived at or left the place of a reminder at a place, as their iPhone reported
-	notBefore: number | null; // a reminder at a place fires only from this time; if the person is already there for an arrival, it fires then
-	notAfter: number | null; // a reminder at a place fires at this time anyway when its event has not come
 	deliveredAt: number | null;
 	cancelledAt: number | null;
 };
@@ -228,14 +213,6 @@ type Upcoming = {
 	reminders: Reminder[]; // pending, for the person or from them, soonest first
 	suggestions: Suggestion[]; // oldest first; at most 3
 	approvals: { threadId: string; approval: Approval }[]; // what waits for the person to allow it
-};
-type WatchedPlace = {
-	id: string;
-	name: string;
-	latitude: number;
-	longitude: number;
-	radius: number;
-	reminders: { id: string; text: string; event: "arrive" | "leave" }[]; // the pending reminders here, which the iPhone shows itself without a connection
 };
 ```
 
@@ -488,35 +465,13 @@ run commits it for the next scan. Completed run inputs and results stay stored. 
 at 160 KiB of serialized input. A provider guard refuses routine input above 256 KiB; neither limit is an exact token
 count. A reminder keeps its existing conversation context.
 
-A routine at a place has a place, `arrive` or `leave`, and a person in place of a schedule. The place must be one that
-the person and the writer of the routine both use, and the person must see its channel. It runs each time the person
-crosses the circle for its event, at most every 15 minutes, and not for a crossing that Shadow hears of more than 15
-minutes late. A new routine waits for the next crossing. A removed place keeps its routines.
-
 ### One-time reminders (`src/reminders/`)
 
-Agents in every thread of a company, including its orchestrator, have `reminders_create`, `reminders_places`,
-`reminders_search_points_of_interest`, `reminders_create_at_point_of_interest`, `reminders_list`, `reminders_update`,
-and `reminders_cancel`. A reminder belongs to that company and its source thread. It runs once when
+Agents in every thread of a company, including its orchestrator, have `reminders_create`, `reminders_list`,
+`reminders_update`, and `reminders_cancel`. A reminder belongs to that company and its source thread. It runs once when
 its saved UTC time is due, or when Shadow starts again after that time. Its turn is for the person who asked for it or
 last changed it, not for its recipient; a reminder from before this rule uses only the shared credentials.
 Agents make and change reminders; a person sees their pending ones in Upcoming and cancels one there.
-
-A reminder at a place has a place and `arrive` or `leave` in place of a time. The place must be one that its recipient
-and the person who asks both use. It is due once the recipient crosses the circle for its event after it was made, also
-when Shadow hears of it late. A new reminder starts as outside: one for an arrival where the recipient is now is due at
-once. A reminder at a place can have a window: `from` (not before, such as "when I get to work on Monday"; for an
-arrival where the recipient already is then, it fires then) and `until` (when its event has not come by then, it fires
-then anyway, so a reminder is never lost). "At 18:00 if I am home, else when I get home" is arrive home from 18:00.
-
-A reminder can also wait at a point of interest: one specific public place, such as one shop. An agent finds it with
-`reminders_search_points_of_interest` in OpenStreetMap and makes the reminder with
-`reminders_create_at_point_of_interest`; it asks the person when the place is not clear. Such a reminder is only for the
-person who asks. A city or another area is not a specific place. A point of interest is a place of that person that
-Settings, `reminders_places`, and routines do not show, and Upcoming shows its reminder like any other. A person has
-pending reminders at no more than 12 points of interest, because iOS watches at most 20 places for an app. Shadow sends
-OpenStreetMap only the search words and the id, one request each second, as [its
-policy](https://operations.osmfoundation.org/policies/nominatim/) says.
 
 ### Intake (`src/intake/`)
 
@@ -616,34 +571,11 @@ type IntakeFeedback = { id: string; target: string; about: string; quote: string
 | --- | --- | --- |
 | `GET /api/v1/companies/:companyId/upcoming` | | `Upcoming`: what Shadow runs for the person and what waits for them |
 | `POST /api/v1/companies/:companyId/suggestions/:suggestionId` | `{ accept: boolean }` | `204`; `accept` makes the routine in its channel, the reminder in the person's orchestrator, or the person's private channel, all as theirs; else Shadow does not suggest it again. `404` for another person's suggestion; `409` when its channel is gone or its time has passed |
-| `GET /api/v1/companies/:companyId/watched-places` | | `{ places: WatchedPlace[] }`: the places that the person's iPhone watches, those of their pending reminders and enabled routines at a place |
-| `POST /api/v1/companies/:companyId/watched-places/:placeId/reports` | `{ event: "arrive" \| "leave", at, initial }` | `204`; the iPhone saw the person arrive or leave at `at` (Unix milliseconds; a time in the future is now). `initial`: the first state after it started to watch the place, which is no crossing. A report older than the last one, or of the same state, changes nothing. `400` for another body; `404` unless the person's iPhone watches the place |
 | `DELETE /api/v1/companies/:companyId/reminders/:reminderId` | | `204`; cancels a pending reminder for the person or from them; `404` for another one; `409` while it runs or after it was delivered |
-
-The iPhone watches the places of `watched-places` with Core Location, and an Android phone with geofences; each tells
-Shadow only what it sees there, never where the person is. Shadow keeps only each person's last state at each place, and
-only while the phone watches it: a place that `watched-places` leaves out has no state until the phone says again. Shadow
-decides what is due: a crossing makes due the reminders and runs the routines of its event. The first state after the
-iPhone starts to watch a place makes due only the reminders for an arrival, as a reminder starts as outside. The
-iPhone gets a new place when the app opens or goes to the background.
 
 Shadow suggests and never makes an automation or a channel itself: a suggestion waits, with no push, until its person
 accepts or declines it. A person has at most 3 waiting; Shadow drops one with the same name as one they already had, and one whose
 schedule or time cannot run.
-
-### Places (`src/places/`)
-
-| Request | Body | Response |
-| --- | --- | --- |
-| `GET /api/v1/companies/:companyId/places` | | `{ places: Place[] }`: the person's own places, then the ones other members shared, by name |
-| `POST /api/v1/companies/:companyId/places` | `{ name, latitude, longitude, radius, shared }` | `201` `Place`; `400` without a pin, a name, or a radius of 100 to 5000 m; `409` when the person has a place with that name |
-| `PUT /api/v1/companies/:companyId/places/:placeId` | `{ name, latitude, longitude, radius, shared }` | `Place`; `404` unless the person added it |
-| `DELETE /api/v1/companies/:companyId/places/:placeId` | | `204`; `404` unless the person added it. Its pending reminders keep it |
-| `GET /api/v1/map/search?q=<address>` | | `{ latitude, longitude, label }`: the first place that OpenStreetMap's search finds, which the web app's map moves to; `404` when it finds none |
-| `GET /api/v1/map/:zoom/:x/:y` | | An OpenStreetMap tile as PNG, which the web app's map shows; Shadow gets it, because the page loads pictures only from Shadow |
-
-A person adds places in Settings, from a pin in the middle of a map, which an address moves to. A new place is private to its owner's turns until
-they share it.
 
 ### Feedback (`src/feedback/`)
 
@@ -705,7 +637,7 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
   orchestrator that gave it work.
 - Search is one index of the company; each search leaves out what the person may not see before it ranks, so
   neither the scores nor the limit depend on another person's private data.
-- The LLM provider, which an admin connects once in `/settings`, serves
+- The LLM provider, which an admin connects once in Company settings, serves
   every member.
 - A public artifact is the one thing that people outside a company can open: its page, and the data its visitors
   keep. Its name is four words that people can remember, about 1.6e8 names; names from before have two words and can

@@ -373,7 +373,7 @@ Set up Shadow (https://github.com/dontpanicv/shadow) on this Mac as a self-hoste
    path rule, and a 404 for everything else), and to save its token in config/share-tunnel.token.
 8. Run scripts/install-service.sh and scripts/install-share-tunnel.sh. Check that https://<shadow hostname>
    opens Shadow and that data/logs/shadow.log shows no requirement that is missing.
-9. Tell me to sign in, connect ChatGPT in Settings, and connect the Slack bot and add the team in Company settings.
+9. Tell me to sign in, and in Company settings connect ChatGPT and the Slack bot, and add the team.
 
 Never print, commit, or send the secrets in config/. Stop and ask me before any step that you cannot undo.
 ```

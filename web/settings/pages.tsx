@@ -17,7 +17,6 @@ import { FloatingSidebarButton, Shell } from "../companies/shell.tsx";
 import { IntegrationsSection } from "../integrations/section.tsx";
 import { LlmCard, llmQuery } from "../llm/card.tsx";
 import { UsageSection } from "../llm/usage.tsx";
-import { PlacesSection } from "../places/section.tsx";
 import { LearnedSection } from "../threads/learned.tsx";
 import {
   Avatar,
@@ -32,12 +31,16 @@ import { showError, showToast } from "../ui/toast.tsx";
 
 const companyRoute = getRouteApi("/signed-in/c/$companyId/settings");
 
-/** The company's Slack bot, members, facts, what Shadow learned, and name; only its admins open it. */
+/**
+ * The company's Slack bot, members, LLM provider, usage, facts, what Shadow learned, name, and server; only its
+ * admins open it.
+ */
 export function CompanySettingsPage() {
   const { companyId } = companyRoute.useParams();
   const company = useMe().companies.find(
     (candidate) => candidate.id === companyId
   )!;
+  const { data: llm } = useQuery(llmQuery);
   return (
     <section className="conversation">
       <FloatingSidebarButton />
@@ -55,6 +58,12 @@ export function CompanySettingsPage() {
           <PageSection title="Members">
             <MembersSection company={company} />
           </PageSection>
+          <PageSection title="LLM provider">
+            <LlmCard />
+          </PageSection>
+          <PageSection title="Usage">
+            <UsageSection companyId={companyId} />
+          </PageSection>
           <PageSection title="Facts">
             <FactsSection companyId={companyId} />
           </PageSection>
@@ -64,6 +73,15 @@ export function CompanySettingsPage() {
           <PageSection title="Company">
             <CompanySection company={company} />
           </PageSection>
+          {llm?.admin ? (
+            <PageSection title="Server">
+              <SettingsCard>
+                <SettingsRow label="Configuration">
+                  <Button label="Reload" onClick={reload} />
+                </SettingsRow>
+              </SettingsCard>
+            </PageSection>
+          ) : null}
         </PageContent>
       ) : (
         <Empty title="Only an admin opens company settings" />
@@ -72,10 +90,9 @@ export function CompanySettingsPage() {
   );
 }
 
-/** The person's integrations, places, usage, the LLM provider, and the account, most used first. The sidebar keeps the last company, so settings feel like part of the app. */
+/** The person's integrations and account. The sidebar keeps the last company, so settings feel like part of the app. */
 export function SettingsPage() {
   const { user, companies } = useMe();
-  const { data: llm } = useQuery(llmQuery);
   const last = lastOpened();
   const company =
     companies.find((candidate) => candidate.id === last?.companyId) ??
@@ -86,28 +103,8 @@ export function SettingsPage() {
         <FloatingSidebarButton />
         <PageContent title="Settings">
           {company ? (
-            <>
-              <PageSection title="Integrations">
-                <IntegrationsSection companyId={company.id} />
-              </PageSection>
-              <PageSection title="Places">
-                <PlacesSection companyId={company.id} />
-              </PageSection>
-              <PageSection title="Usage">
-                <UsageSection companyId={company.id} />
-              </PageSection>
-            </>
-          ) : null}
-          <PageSection title="LLM provider">
-            <LlmCard />
-          </PageSection>
-          {llm?.admin ? (
-            <PageSection title="Server">
-              <SettingsCard>
-                <SettingsRow label="Configuration">
-                  <Button label="Reload" onClick={reload} />
-                </SettingsRow>
-              </SettingsCard>
+            <PageSection title="Integrations">
+              <IntegrationsSection companyId={company.id} />
             </PageSection>
           ) : null}
           <PageSection title="Account">

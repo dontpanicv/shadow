@@ -532,51 +532,6 @@ test("artifacts of a channel open with their runtime, run calls, and change and 
   expect((await shadow.call(path, { token: alice })).status).toBe(404);
 });
 
-test("a place is its owner's until they share it, and only members see the map", async () => {
-  const base = `/api/v1/companies/${companyId}/places`;
-  const created = await shadow.call(base, {
-    token: alice,
-    body: {
-      name: "Cottage",
-      latitude: 49.1,
-      longitude: 16.2,
-      radius: 300,
-      shared: false,
-    },
-  });
-  expect(created.status).toBe(201);
-  const cottage = await body(created);
-  const eve = await shadow.signIn("Eve", "eve@example.com");
-  expect((await shadow.call(base, { token: eve })).status).toBe(404);
-  const { places } = await body(await shadow.call(base, { token: alice }));
-  expect(places).toContainEqual(cottage);
-  expect(
-    (
-      await shadow.call(`${base}/${cottage.id}`, {
-        token: alice,
-        method: "PUT",
-        body: { name: "Cottage", latitude: 91, longitude: 0, radius: 300 },
-      })
-    ).status
-  ).toBe(400);
-  expect(
-    (
-      await shadow.call(`${base}/${cottage.id}`, {
-        token: alice,
-        method: "DELETE",
-      })
-    ).status
-  ).toBe(204);
-  // A tile outside the map, and a person who is not signed in, get no tile.
-  expect(
-    (await shadow.call("/api/v1/map/2/4/0", { token: alice })).status
-  ).toBe(404);
-  expect((await shadow.call("/api/v1/map/2/1/1")).status).toBe(401);
-  expect(
-    await failure(await shadow.call("/api/v1/map/search?q=", { token: alice }))
-  ).toEqual({ status: 400, error: "Address is required" });
-});
-
 test("a JSON body over 1 MB gets 413 before the route reads it", async () => {
   const large = await shadow.call(`/api/v1/companies/${companyId}/channels`, {
     token: alice,

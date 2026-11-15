@@ -2,10 +2,7 @@ import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
 
-/**
- * Each person's agenda: what Shadow runs for them, what waits for them, and the automations Shadow suggests; and the
- * places that their iPhone watches for it, with its reports that they arrived or left.
- */
+/** Each person's agenda: what Shadow runs for them, what waits for them, and the automations Shadow suggests. */
 export const agendaApiRoutes: readonly Route[] = [
   [
     "GET",
@@ -27,21 +24,6 @@ export const agendaApiRoutes: readonly Route[] = [
         params.suggestion!,
         body.accept
       );
-      return new Response(null, { status: 204 });
-    }),
-  ],
-  [
-    "GET",
-    "/api/v1/companies/:company/watched-places",
-    api(async ({ app, user, params }) =>
-      json({ places: app.agenda.watchPlaces(params.company!, user) })
-    ),
-  ],
-  [
-    "POST",
-    "/api/v1/companies/:company/watched-places/:place/reports",
-    api(async ({ app, user, params, body }) => {
-      app.agenda.reportPlace(params.company!, user, params.place!, body);
       return new Response(null, { status: 204 });
     }),
   ],

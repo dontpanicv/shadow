@@ -1278,7 +1278,7 @@ export class Intake {
         )
         .map((reminder) => ({
           text: reminder.text,
-          due: reminder.place ? null : pragueTime(reminder.dueAt),
+          due: pragueTime(reminder.dueAt),
         })),
       corrections: this.following.corrections(companyId, owner),
       knowledge: this.knowledge(companyId, owner),

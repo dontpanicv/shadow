@@ -16,7 +16,7 @@ company's Slack bot, which an admin connects in Company settings.
 Google and HubSpot need an OAuth client of your own, which an admin sets with **Client** on the integration; the next
 sign-in uses it at once. Until then, only admins see it. Google also needs `gog` on the Shadow machine, and Slack `slackcli`,
 in the `PATH` of the Shadow service; install them, for example with `brew install gogcli` and
-`brew install shaharia-lab/tap/slackcli`. Then click **Reload** on Configuration in Settings. Shadow does not show
+`brew install shaharia-lab/tap/slackcli`. Then click **Reload** on Configuration in Company settings. Shadow does not show
 these integrations without them.
 
 The sign-in pages of every integration but Slack end at `https://localhost/shadow-sign-in?code=…`. Nothing answers at
@@ -46,17 +46,18 @@ sign out of Slack in that browser.
 ### The Slack bot of the company
 
 The channels that every member sees copy the public channels of the company's Slack; nobody makes them by hand. An
-admin connects the bot once in Company settings:
+admin connects the bot once in Company settings, where the info button next to **Connect** shows these steps:
 
-1. At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App › From a manifest**, select the
-   company's Slack workspace, and paste [slack-app-manifest.json](slack-app-manifest.json), with Shadow's own
-   hostname in `unfurl_domains`. The manifest turns on Slack's agent view, Socket Mode, interactivity, the Home tab, and
-   the scopes and events below. Slack cannot switch an app back from the agent view, so turn it on for an existing app
-   only when this version of Shadow runs. Keep it an app of your own workspace: Slack gives such an app the normal limits on reading history.
-2. Under **Basic Information › App-Level Tokens**, make a token with the scope `connections:write` (`xapp-…`).
-   Shadow opens the connection to Slack, so it needs no public address.
-3. Install the app to the Slack workspace, copy the **Bot User OAuth Token** (`xoxb-…`), and paste both tokens under
-   **Slack** in Company settings.
+1. **Create app** opens Slack's app creation with
+   [slack-app-manifest.json](../web/companies/slack-app-manifest.json) and Shadow's own hostname in `unfurl_domains`;
+   **Copy manifest** copies it for **Create New App › From a manifest**. Pick the company's Slack workspace and click
+   **Create**. The manifest turns on Slack's agent view, Socket Mode, interactivity, the Home tab, and the scopes and
+   events below. Slack cannot switch an app back from the agent view, so turn it on for an existing app only when this
+   version of Shadow runs. Keep it an app of your own workspace: Slack gives such an app the normal limits on reading
+   history.
+2. **Install App › Install to Workspace › Allow**, and copy the **Bot User OAuth Token** (`xoxb-…`) into Bot token.
+3. **Basic Information › App-Level Tokens › Generate** with the scope `connections:write`, and copy the token
+   (`xapp-…`) into App token. Shadow opens the connection to Slack, so it needs no public address.
 
 Shadow checks both tokens with Slack, keeps them encrypted, lists the public channels at once, and then listens: Slack
 sends each event over the connection, and nothing reads Slack on a timer. A new Slack channel gets its channel, with

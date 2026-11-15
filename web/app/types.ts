@@ -235,15 +235,8 @@ export interface Routine {
   readonly id: string;
   readonly channelId: string;
   readonly name: string;
-  /** A cron expression in the server's time zone; null for a routine at a place. */
-  readonly schedule: string | null;
-  /** The place, the event, and the member whose iPhone reports it; null for a routine on a schedule. */
-  readonly place:
-    | (Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius"> & {
-        readonly event: "arrive" | "leave";
-        readonly personId: string;
-      })
-    | null;
+  /** A cron expression in the server's time zone. */
+  readonly schedule: string;
   readonly enabled: boolean;
   /** Null while paused. */
   readonly nextRunAt: number | null;
@@ -274,20 +267,6 @@ export interface ArtifactRecord {
   readonly key: string;
   readonly value: unknown;
   readonly updatedAt: number;
-}
-
-export interface Place {
-  readonly id: string;
-  readonly name: string;
-  readonly latitude: number;
-  readonly longitude: number;
-  /** The radius of its circle, in meters. */
-  readonly radius: number;
-  /** The person who added it; only they change or remove it. */
-  readonly ownerId: string;
-  readonly ownerName: string;
-  /** Whether every member's turns use it; else only its owner's. */
-  readonly shared: boolean;
 }
 
 export type Effort =
@@ -420,27 +399,7 @@ export interface Reminder {
   readonly recipientId: string;
   readonly createdBy: string | null;
   readonly text: string;
-  /** When it is due; for a reminder at a place, when it was made, until the iPhone reports the event. */
   readonly dueAt: number;
-  /** The place and the event that a reminder at a place waits for; null for a reminder at a time. */
-  readonly place:
-    | (Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius"> & {
-        readonly event: "arrive" | "leave";
-      })
-    | null;
-  readonly triggeredAt: number | null;
-  readonly notBefore: number | null;
-  readonly notAfter: number | null;
-}
-
-/** A place that the person's iPhone watches; the web app does not watch places. */
-export interface WatchedPlace
-  extends Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius"> {
-  readonly reminders: readonly {
-    readonly id: string;
-    readonly text: string;
-    readonly event: "arrive" | "leave";
-  }[];
 }
 
 export interface Upcoming {

@@ -1,6 +1,5 @@
 import type { Database } from "bun:sqlite";
 import type { Companies } from "../companies/companies.ts";
-import type { Place, PlaceEvent, Places } from "../places/places.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound } from "../platform/errors.ts";
 import {
@@ -34,19 +33,6 @@ export interface Suggestion {
   readonly createdAt: number;
 }
 
-/**
- * A place that a person's iPhone watches, because a pending reminder or an enabled routine waits for them there. It
- * has the texts of the reminders, which the iPhone shows itself when it has no connection.
- */
-export interface WatchedPlace
-  extends Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius"> {
-  readonly reminders: readonly {
-    readonly id: string;
-    readonly text: string;
-    readonly event: PlaceEvent;
-  }[];
-}
-
 /** What Shadow will do for a person, and what waits for them. */
 export interface Upcoming {
   readonly routines: readonly Routine[];
@@ -65,20 +51,17 @@ export type AgendaCompanies = Pick<
   "channelsIn" | "members" | "requireMember"
 >;
 export type AgendaThreads = Pick<Threads, "approvalsFor" | "orchestrator">;
-export type AgendaRoutines = Pick<Routines, "atPlace" | "create" | "inCompany">;
+export type AgendaRoutines = Pick<Routines, "create" | "inCompany">;
 export type AgendaReminders = Pick<
   Reminders,
-  "atPlace" | "cancel" | "create" | "get" | "list"
+  "cancel" | "create" | "get" | "list"
 >;
-export type AgendaPlaces = Pick<Places, "record" | "unwatch">;
 
 /** A person has at most this many suggestions waiting, so Shadow asks little. */
 const MAX_OPEN = 3;
 /** The answered suggestions that a review sees, so that it does not ask again. */
 const ANSWERED = 20;
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-/** A routine does not run for an arrival or a departure that Shadow hears of later than this. */
-const ROUTINE_EVENT_AGE = 15 * 60_000;
 const COLUMNS =
   "id, kind, name, text, schedule, at, channel_id AS channelId, thread_id AS threadId, created_at AS createdAt";
 
@@ -89,8 +72,7 @@ interface SuggestionRow extends Omit<Suggestion, "at"> {
 /**
  * Each person's agenda: the routines and reminders that Shadow runs for them, the approvals that wait for them, and the
  * automations that Shadow suggests. Shadow suggests and never makes an automation itself: a suggestion becomes a
- * routine or a reminder only when its person accepts it. The person's iPhone watches the places of their reminders and
- * routines and reports only what it sees there; Shadow decides what is due.
+ * routine or a reminder only when its person accepts it.
  */
 export class Agenda {
   constructor(
@@ -98,8 +80,7 @@ export class Agenda {
     private readonly companies: AgendaCompanies,
     private readonly threads: AgendaThreads,
     private readonly routines: AgendaRoutines,
-    private readonly reminders: AgendaReminders,
-    private readonly places: AgendaPlaces
+    private readonly reminders: AgendaReminders
   ) {}
 
   /**
@@ -189,11 +170,11 @@ export class Agenda {
       .inCompany(companyId, personId)
       .map(
         (routine) =>
-          `- Routine "${routine.name}" (${routine.place ? `when they ${routine.place.event === "arrive" ? "arrive at" : "leave"} ${routine.place.name}` : routine.schedule})${routine.enabled ? "" : ", paused"}`
+          `- Routine "${routine.name}" (${routine.schedule})${routine.enabled ? "" : ", paused"}`
       );
     const reminders = this.pendingReminders(companyId, user).map(
       (reminder) =>
-        `- Reminder ${reminder.place ? `when they ${reminder.place.event === "arrive" ? "arrive at" : "leave"} ${reminder.place.name}` : `for ${new Date(reminder.dueAt).toISOString()}`}: ${reminder.text}`
+        `- Reminder for ${new Date(reminder.dueAt).toISOString()}: ${reminder.text}`
     );
     const suggested = (
       this.database
@@ -313,104 +294,6 @@ export class Agenda {
     }
   }
 
-  /**
-   * The places that the person's phone watches from now on, as it asks for them. Their last state at the other places
-   * no longer counts: nothing keeps it current, and a new reminder there waits for what the phone says.
-   */
-  watchPlaces(companyId: string, user: User): WatchedPlace[] {
-    const places = this.watchedPlaces(companyId, user);
-    this.places.unwatch(
-      companyId,
-      user.id,
-      places.map((place) => place.id)
-    );
-    return places;
-  }
-
-  /** The places that the person's phone watches: those of their pending reminders and enabled routines at a place. */
-  private watchedPlaces(companyId: string, user: User): WatchedPlace[] {
-    this.companies.requireMember(companyId, user);
-    const places = new Map<string, WatchedPlace>();
-    const add = (
-      place: Pick<Place, "id" | "name" | "latitude" | "longitude" | "radius">
-    ) => {
-      const watched = places.get(place.id) ?? {
-        id: place.id,
-        name: place.name,
-        latitude: place.latitude,
-        longitude: place.longitude,
-        radius: place.radius,
-        reminders: [],
-      };
-      places.set(place.id, watched);
-      return watched.reminders as WatchedPlace["reminders"][number][];
-    };
-    for (const reminder of this.pendingReminders(companyId, user)) {
-      if (
-        reminder.place &&
-        reminder.triggeredAt === null &&
-        reminder.recipientId === user.id
-      ) {
-        add(reminder.place).push({
-          id: reminder.id,
-          text: reminder.text,
-          event: reminder.place.event,
-        });
-      }
-    }
-    for (const routine of this.routines.inCompany(companyId, user.id)) {
-      if (routine.enabled && routine.place?.personId === user.id) {
-        add(routine.place);
-      }
-    }
-    return [...places.values()];
-  }
-
-  /**
-   * Takes what the person's iPhone saw at one of their watched places, and makes due what waits for it. A crossing
-   * makes due the reminders and runs the routines of its event; the first state after the iPhone starts to watch the
-   * place is no crossing, but a reminder starts as outside, so an arrival there is due. A report older than the last
-   * one, or a second one of the same state, changes nothing.
-   */
-  reportPlace(
-    companyId: string,
-    user: User,
-    placeId: string,
-    input: unknown
-  ): void {
-    const report = placeReport(input);
-    if (!this.watchedPlaces(companyId, user).some(({ id }) => id === placeId)) {
-      throw notFound();
-    }
-    const recorded = this.places.record(placeId, user.id, report);
-    if (recorded === "stale") {
-      return;
-    }
-    const inside = report.event === "arrive";
-    const crossed = !report.initial && recorded.before !== inside;
-    if (crossed || (report.initial && inside)) {
-      this.reminders.atPlace(
-        companyId,
-        user.id,
-        placeId,
-        report.event,
-        report.at
-      );
-    }
-    if (crossed && Date.now() - report.at <= ROUTINE_EVENT_AGE) {
-      for (const run of this.routines.atPlace(
-        companyId,
-        user.id,
-        placeId,
-        report.event
-      )) {
-        run.catch(() => {
-          // The run records its own failure; this one is a database closed while it ran.
-        });
-      }
-    }
-  }
-
   private pendingReminders(companyId: string, user: User): Reminder[] {
     return this.reminders
       .list(companyId, user, user.id)
@@ -431,27 +314,6 @@ function answerOf(row: {
     return "waiting";
   }
   return row.accepted ? "accepted" : "declined";
-}
-
-/** A report of the iPhone from a request body; a time in the future, as from a clock that is wrong, is now. */
-function placeReport(input: unknown): {
-  readonly event: PlaceEvent;
-  readonly at: number;
-  readonly initial: boolean;
-} {
-  const { event, at, initial } = (input ?? {}) as Record<string, unknown>;
-  if (
-    !(event === "arrive" || event === "leave") ||
-    typeof at !== "number" ||
-    !Number.isFinite(at) ||
-    typeof initial !== "boolean"
-  ) {
-    throw new HttpError(
-      400,
-      "Send event as arrive or leave, at in Unix milliseconds, and initial"
-    );
-  }
-  return { event, at: Math.min(at, Date.now()), initial };
 }
 
 function suggestionOf(row: SuggestionRow): Suggestion {

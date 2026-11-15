@@ -178,12 +178,8 @@ Used by the company switcher and action menus.
   Add credential), then the info button of its guide. Each credential is a compact row under it. On a narrow page the
   buttons wrap under the name. Under each of the person's own credentials of an integration that Shadow can read for
   them, a compact row with the `check` icon, "Read for me", and its switch.
-- Places: a compact row per place with its name and its radius and Shared or Private, then the Private switch and the
-  change and remove icon buttons. Add place opens a dialog: the Name field; the Address field, where Enter or Return
-  moves the map to the address (it asks OpenStreetMap's search through Shadow); a map `size.map` high with `radius.md`
-  and a 0.5 px `border`; and a Radius select. The pin stays in the middle of the map, which moves under it, so a
-  place always has one: a 16 px `accent` circle with a 2 px `onAccent` ring. The place's circle is `accent`, 1.5 px,
-  filled at 12 %. The map is OpenStreetMap through Shadow, with only "© OpenStreetMap".
+- Slack bot in Company settings: the Bot token and App token fields, then the info button of its guide and Connect.
+  The guide's first step has a primary Create app link, which opens Slack with Shadow's manifest, and Copy manifest.
 - A text field for long text, such as the company's facts, fills the card with 16 px padding, min 160 high, a 1.5
   line height, and its Save button at the bottom right.
 - Text in a section, such as a channel summary: `fontSize.md` `textSecondary` on a 22 px line, with its line breaks.
@@ -219,11 +215,10 @@ Used by the company switcher and action menus.
 ## Upcoming
 
 - The sidebar's Upcoming item, after Inbox, has the `clock` icon. The page is the Settings column; its groups, each
-  only with items, are Needs you, Suggested, Today, Tomorrow, This week (the next 7 days), Later, At a place, Routines at a place, and Paused,
+  only with items, are Needs you, Suggested, Today, Tomorrow, This week (the next 7 days), Later, and Paused,
   each a section title over a card of compact rows. A routine row has the `play` icon, its name, its schedule in words and its
   channel, a failed badge after a failed run, and its switch; a reminder row has the `clock` icon, its text, its time,
-  and a secondary Cancel button; a reminder at a place has the `place` icon and "Arrive at Cottage" or "Leave Office"
-  in place of the time; so does a routine at a place, in place of its schedule, also in a channel's Routines.
+  and a secondary Cancel button.
 - Suggestion: a compact row with its kind's icon, the name, when it runs, and secondary Decline and primary Accept
   buttons. In the person's orchestrator the waiting suggestions sit in one card over the composer, as wide as it.
 
@@ -232,7 +227,7 @@ Used by the company switcher and action menus.
 - What Shadow learned is a Settings section: a sub-heading (`fontSize.sm` `medium` `textTertiary`, 16 px in) per person
   ("About Anna") and per channel, each over a card of compact rows with the text, a 14 px `lock` for a private entry,
   and edit and delete icon buttons at the right. Edit turns the text into a field in place: Enter saves, Escape stops.
-- Usage is a Settings section: rows for tokens, cost at API prices, and cache rate, then a bar for each of the last 30
+- Usage is a Company settings section: rows for tokens, cost at API prices, and cache rate, then a bar for each of the last 30
   days, 80 px high, in `accent`, each with a tooltip; then cards by source, by model, the top threads as links, and,
   for the server's owner, by person with avatars.
 
