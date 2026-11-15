@@ -111,18 +111,18 @@ export class Agenda {
     threadId: string,
     channelId: string,
     suggestion: ReviewSuggestion
-  ): void {
+  ): string | null {
     const routine = suggestion.kind === "routine";
     try {
       if (routine) {
         if (nextRun(suggestion.schedule, Date.now()) === null) {
-          return;
+          return null;
         }
       } else {
         dueTime(suggestion.at, TIME_ZONE, Date.now());
       }
     } catch {
-      return;
+      return null;
     }
     const name = routine ? suggestion.name : suggestion.text;
     const { open, same } = this.database
@@ -134,14 +134,15 @@ export class Agenda {
       same: number;
     };
     if (open >= MAX_OPEN || same > 0) {
-      return;
+      return null;
     }
+    const id = Bun.randomUUIDv7();
     this.database
       .query(
         "INSERT INTO suggestion (id, company_id, person_id, thread_id, channel_id, kind, name, text, schedule, at, time_zone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
-        Bun.randomUUIDv7(),
+        id,
         companyId,
         suggestion.personId,
         threadId,
@@ -154,6 +155,7 @@ export class Agenda {
         routine ? null : TIME_ZONE,
         Date.now()
       );
+    return id;
   }
 
   /** Gives the open suggestions of a thread the channel it moved to, where an accepted routine then runs. */
@@ -223,14 +225,14 @@ export class Agenda {
 
   /**
    * Answers a suggestion of the person: `accept` makes the routine in its channel, or the reminder in their
-   * orchestrator, both as theirs; otherwise reviews do not ask again.
+   * orchestrator, both as theirs, and returns its id; otherwise reviews do not ask again, and it returns null.
    */
   async answer(
     companyId: string,
     user: User,
     id: string,
     accept: boolean
-  ): Promise<void> {
+  ): Promise<string | null> {
     this.companies.requireMember(companyId, user);
     const row = this.database
       .query(
@@ -282,6 +284,7 @@ export class Agenda {
         "UPDATE suggestion SET answered_at = ?, accepted = ?, result_id = ? WHERE id = ?"
       )
       .run(Date.now(), accept ? 1 : 0, resultId, id);
+    return resultId;
   }
 
   /** The person's agenda: the routines they see, their pending reminders, suggestions, and approvals. */

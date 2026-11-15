@@ -76,7 +76,8 @@ for 10 minutes reads each new or changed message once.
 People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
 
 - **Mention it** in a public channel: the Slack thread becomes a Shadow thread of that channel, which starts with what
-  the Slack thread said before. Shadow shows what it does now ("Google mail search…") with a Stop button, and then puts
+  the Slack thread said before. The turn is the asker's, with their realm and accounts, and it leaves out what only
+  they may see, because guests of the Slack channel may read the answer. A routine asked for there can post in Slack. Shadow shows what it does now ("Google mail search…") with a Stop button, and then puts
   its answer in place, with a link to the thread in Shadow and feedback buttons. Shadow follows the thread for 7 days.
 - **DM it**: Shadow is an agent in Slack's agent view. Each conversation there is a thread of the DM, whose agent
   session shows "processing" while Shadow works; Slack's Stop stops it. The DM goes to the person's own thread, which
@@ -91,7 +92,9 @@ People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
   (**Suggest** writes one from the channel's brief). The goal is the consent to listen there. Each new message at the
   top of that channel, and each reply in a thread that Shadow follows, goes through a cheap check with the fast model:
   a message that is clearly not for Shadow costs nothing more. A message that passes starts a turn, which answers only
-  when a reply clearly helps, else stays quiet, or tells one person privately. Shadow posts at most 4 such replies an
+  when a reply clearly helps, else stays quiet, or tells one person privately. When someone asks for recurring work or a
+  reminder there, Shadow offers it to them with **Set it up**: it becomes their own routine, with their accounts and
+  posting in the channel, only when they click it; another person's click does nothing. Shadow posts at most 4 such replies an
   hour in a channel, never acts unasked, and stops in a thread that someone mutes. **Listening decisions** shows each
   decision without the text of messages.
 - **Approvals**: an action that waits for a person's approval, such as sending mail, asks them in a Slack DM with

@@ -159,7 +159,7 @@ export async function createApp(
         ...reminders.tools(companyId),
         ...intake.tools(companyId),
         ...feedback.tools(companyId),
-        ...noticeTools(companies, notifications, companyId),
+        ...noticeTools(companies, notifications, agenda, slack, companyId),
       ],
       automations: (companyId, personId) =>
         agenda.automations(companyId, personId),
@@ -248,6 +248,7 @@ export async function createApp(
     llm,
     notifications,
     agenda,
+    routines,
     artifacts,
     feedback,
     config.baseUrl

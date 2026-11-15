@@ -16,6 +16,7 @@ import type {
 } from "../notifications/notifications.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
+import type { Routines } from "../routines/routines.ts";
 import type { Approval, Message, Threads } from "../threads/threads.ts";
 import { type ChannelGoal, checkMessage } from "./check.ts";
 import {
@@ -151,7 +152,8 @@ export class SlackSurface implements SlackSurfacePort {
     >,
     private readonly llm: Pick<Llm, "complete" | "fastModel">,
     notifications: Pick<Notifications, "onDelivery">,
-    private readonly agenda: Pick<Agenda, "upcoming">,
+    private readonly agenda: Pick<Agenda, "upcoming" | "answer">,
+    private readonly routines: Pick<Routines, "update">,
     private readonly artifacts: Pick<Artifacts, "get">,
     private readonly feedback: Pick<FeedbackReports, "report">,
     private readonly baseUrl: string
@@ -232,9 +234,10 @@ export class SlackSurface implements SlackSurfacePort {
       await this.say(client, event.channel, root, DENIED);
       return;
     }
-    const text = await client.plain(
+    // The answer goes to a Slack channel that people outside Shadow may read, such as guests.
+    const text = `${await client.plain(
       stripMention(event.text ?? "", client.botUserId)
-    );
+    )}\n\n(Asked in Slack #${channel.name}: the answer is posted there, where people outside Shadow may read it, so leave out what only ${user.name} may see. A routine asked for here posts in Slack with post_in_slack.)`;
     const files = await this.files(client, event.files);
     const known = this.conversation(companyId, event.channel, root);
     let threadId: string;
@@ -856,6 +859,19 @@ export class SlackSurface implements SlackSurfacePort {
         });
         return;
       }
+      case "shadow_accept":
+      case "shadow_decline": {
+        await this.answerOffer(
+          companyId,
+          client,
+          user,
+          slackUser,
+          JSON.parse(action.value) as { id: string; kind: string },
+          action.action_id === "shadow_accept",
+          where
+        );
+        return;
+      }
       case "shadow_good":
       case "shadow_bad": {
         const good = action.action_id === "shadow_good";
@@ -882,6 +898,97 @@ export class SlackSurface implements SlackSurfacePort {
       }
       default:
         return;
+    }
+  }
+
+  /**
+   * Offers a person a routine or a reminder in the Slack thread of a Shadow thread, with buttons that only they answer;
+   * a thread that is no Slack thread leaves the offer in their Upcoming.
+   */
+  async offerInSlack(
+    companyId: string,
+    threadId: string,
+    offer: {
+      readonly id: string;
+      readonly kind: string;
+      readonly name: string;
+      readonly schedule: string | null;
+    },
+    personId: string
+  ): Promise<void> {
+    const client = this.bot.client(companyId);
+    const place = this.database
+      .query(
+        "SELECT slack_channel_id AS channel, root_ts AS root FROM slack_conversation WHERE company_id = ? AND thread_id = ?"
+      )
+      .get(companyId, threadId) as { channel: string; root: string } | null;
+    const slackUser = this.slackUserOf(companyId, personId);
+    if (!(client && place)) {
+      return;
+    }
+    const who = slackUser ? `<@${slackUser}>` : "You";
+    const what =
+      offer.kind === "routine"
+        ? `the routine **${offer.name}** (\`${offer.schedule}\`), which posts here`
+        : `a reminder: **${offer.name}**`;
+    const value = JSON.stringify({ id: offer.id, kind: offer.kind });
+    await client.post("chat.postMessage", {
+      channel: place.channel,
+      thread_ts: place.root,
+      ...markdownMessage(
+        `${who}, I can set up ${what}. It is yours, and starts only when you say so.`,
+        [
+          buttons([
+            { id: "shadow_accept", text: "Set it up", value, style: "primary" },
+            { id: "shadow_decline", text: "No, thanks", value },
+          ]),
+        ]
+      ),
+    });
+  }
+
+  /** Answers an offer for its person: an accepted routine is theirs and posts in its Slack channel; others are told no. */
+  private async answerOffer(
+    companyId: string,
+    client: SlackClient,
+    user: User,
+    slackUser: string,
+    offer: { readonly id: string; readonly kind: string },
+    accept: boolean,
+    where: { readonly channel?: string; readonly ts?: string }
+  ): Promise<void> {
+    let made: string | null;
+    try {
+      made = await this.agenda.answer(companyId, user, offer.id, accept);
+    } catch {
+      if (where.channel) {
+        await client.post("chat.postEphemeral", {
+          channel: where.channel,
+          user: slackUser,
+          text: "Only the person it is for answers this offer, once.",
+        });
+      }
+      return;
+    }
+    if (made && offer.kind === "routine") {
+      this.routines.update(
+        companyId,
+        user.id,
+        made,
+        { postInSlack: true },
+        user.id
+      );
+    }
+    if (where.channel && where.ts) {
+      const text = accept
+        ? `${user.name} set it up.`
+        : `${user.name} said no, thanks.`;
+      await client.post("chat.update", {
+        channel: where.channel,
+        ts: where.ts,
+        text,
+        blocks: [contextBlock(text)],
+      });
     }
   }
 
@@ -1454,7 +1561,7 @@ function ambientTask(
     : `You follow this thread of #${channelName} because you answered in it. Take part again only when the new messages ask you something, or when you can clearly help.`;
   return [
     guidance,
-    "Nobody mentioned you. Answer only when a reply clearly helps the people here, with what you know or find in the company's sources; then answer briefly, with its source. If one person needs to know something but the channel does not, call notices_tell and answer with only QUIET. Otherwise answer with only QUIET. Never act: no changes, no messages, no routines.",
+    "Nobody mentioned you. Answer only when a reply clearly helps the people here, with what you know or find in the company's sources; then answer briefly, with its source. If one person needs to know something but the channel does not, call notices_tell and answer with only QUIET. When someone here asks for recurring work, a schedule, or a reminder, offer it to them with notices_suggest: it becomes theirs, with their accounts, only when they accept. Otherwise answer with only QUIET. Never act on your own: no changes, no messages, and no routines_create or reminders_create.",
     `The Slack conversation, as data:\n${conversation.map((message) => `- ${message.author}: ${message.text}`).join("\n")}`,
   ].join("\n\n");
 }

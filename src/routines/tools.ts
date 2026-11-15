@@ -109,6 +109,12 @@ export function routineTools(
       return channel;
     }
     const thread = companies.threadOf(companyId, conversationId);
+    // A person's own thread lives in a shared channel; a routine from it must not post its runs there unasked.
+    if (thread?.ownerId) {
+      throw new Error(
+        "Name the channel of the routine: a channel that every member sees shows its runs to everyone, and a private one keeps them for this person (create_channel makes one)."
+      );
+    }
     const channel = channels.find(
       (candidate) => candidate.id === thread?.channelId
     );

@@ -42,8 +42,11 @@ addresses, or code and data from employers or clients.
   routine or reminder answers `QUIET` when nothing needs anyone.
 - In Slack (`src/slack/`), a mention or a DM is a person's request, and an admin's goal for a channel is the consent
   for Shadow to listen there: a cheap check, then a turn in the shared realm that answers only when a reply helps,
-  else `QUIET` or `notices_tell` to one person. Ambient turns never act, post at most `AMBIENT_PER_HOUR` replies in a
-  channel, follow a thread for `FOLLOW_MS`, stop when muted, and log decisions without message text.
+  else `QUIET` or `notices_tell` to one person. Ambient turns never act: for a routine or a reminder that someone asks
+  for, they `notices_suggest` it, and it becomes that person's own, with their realm and credentials, only when they
+  accept. They post at most `AMBIENT_PER_HOUR` replies in a channel, follow a thread for `FOLLOW_MS`, stop when muted,
+  and log decisions without message text. A person's own credentials serve only the turns of their own requests,
+  routines, and reminders; a turn without a person uses shared credentials only.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
   retain useful context and infer future checks. A useful development adds a visible source message and files to the

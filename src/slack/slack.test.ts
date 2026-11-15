@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { fakeSlack } from "../../test/fake-slack.ts";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import type { User } from "../platform/auth.ts";
+import { noticeTools } from "./tools.ts";
 
 let shadow: TestApp;
 let alice: User;
@@ -340,5 +342,207 @@ test("a routine that posts in Slack posts each answer at the top of its Slack ch
   expect(post.channel).toBe("C2");
   expect(post.thread_ts).toBeUndefined();
   expect(JSON.stringify(post.blocks)).toContain("Weekly support");
+  await close();
+});
+
+test("each turn has its own realm: a mention is the asker's, an ambient turn nobody's, so it has no private data or personal accounts", async () => {
+  const { company, support, root, close } = await setup();
+  model.answer = "Paid.";
+  slack.event({
+    type: "app_mention",
+    channel: "C2",
+    user: "U1",
+    text: "<@B1> did they pay?",
+    ts: (Date.now() / 1000).toFixed(6),
+    thread_ts: root,
+  });
+  const asked = await until(
+    async () =>
+      shadow.app.companies
+        .allThreadsIn(company.id)
+        .find((thread) => thread.channelId === support.id),
+    Boolean
+  );
+  await until(
+    async () => shadow.app.threads.messages(asked!),
+    (state) => !state.running && state.messages.at(-1)?.agent === true
+  );
+  expect(
+    await shadow.app.threads.realm(company.id, asked!.conversationId as never)
+  ).toBe(alice.id);
+
+  shadow.app.slack.setGoal(company.id, alice, support.id, {
+    wakeWhen: "questions about invoices",
+    engagement: "answer briefly",
+  });
+  model.probability = 0.9;
+  model.answer = "Invoice 7 is due Friday.";
+  const ts = (Date.now() / 1000 + 5).toFixed(6);
+  const message = {
+    type: "message",
+    channel: "C2",
+    user: "U2",
+    text: "When is invoice 7 due?",
+    ts,
+  };
+  slack.messages.C2!.unshift(message);
+  slack.event(message);
+  await until(
+    async () => shadow.app.slack.decisions(company.id, alice),
+    (list) => list.some((decision) => decision.outcome === "replied")
+  );
+  const ambient = shadow.app.companies
+    .allThreadsIn(company.id)
+    .find(
+      (thread) => thread.id !== asked!.id && thread.channelId === support.id
+    )!;
+  expect(
+    await shadow.app.threads.realm(company.id, ambient.conversationId as never)
+  ).toBeNull();
+  expect(
+    await shadow.app.threads.requester(
+      company.id,
+      ambient.conversationId as never
+    )
+  ).toBeNull();
+  await close();
+});
+
+test("search finds the Slack history for every member, and a DM only for its person", async () => {
+  const { company, close } = await setup();
+  model.answer = "Noted.";
+  slack.event({
+    type: "message",
+    channel_type: "im",
+    channel: "D1",
+    user: "U1",
+    text: "Remember the flamingo budget",
+    ts: (Date.now() / 1000).toFixed(6),
+  });
+  const own = await shadow.app.threads.orchestrator(company.id, alice);
+  await until(
+    async () => shadow.app.threads.messages(own),
+    (state) => !state.running && state.messages.at(-1)?.agent === true
+  );
+  await shadow.app.indexer.scan(company.id);
+  const found = async (query: string, realm: string | null) =>
+    (await shadow.app.indexer.search(company.id, query, 10, realm)).results;
+  expect(
+    (await found("invoice 42", null)).some((result) =>
+      /-slack-\d{4}-\d{2}-\d{2}\.md$/.test(result.uri)
+    )
+  ).toBe(true);
+  expect(await found("flamingo", alice.id)).not.toEqual([]);
+  expect(await found("flamingo", "someone-else")).toEqual([]);
+  expect(await found("flamingo", null)).toEqual([]);
+  await close();
+});
+
+test("an unasked turn offers a routine, and it becomes the person's own, posting in Slack, only when they accept", async () => {
+  const { company, support, writes, close } = await setup();
+  const thread = await shadow.app.threads.startAgentThread(
+    company.id,
+    support.id,
+    "Weekly numbers"
+  );
+  const root = (Date.now() / 1000).toFixed(6);
+  shadow.app.database
+    .query(
+      "INSERT INTO slack_conversation (company_id, slack_channel_id, root_ts, thread_id) VALUES (?, 'C2', ?, ?)"
+    )
+    .run(company.id, root, thread.id);
+  // Both people write in Slack once, so Shadow knows them.
+  const { companies } = shadow.app;
+  for (const user of ["U1", "U2"]) {
+    shadow.app.database
+      .query(
+        "INSERT INTO slack_member (company_id, slack_user_id, user_id) SELECT ?, ?, id FROM user WHERE email = ?"
+      )
+      .run(company.id, user, slack.emails[user]!);
+  }
+  await companies.memberByEmail(company.id, "bob@example.com", "Bob");
+  const [, suggest] = noticeTools(
+    companies,
+    shadow.app.notifications,
+    shadow.app.agenda,
+    shadow.app.slack,
+    company.id
+  );
+  await suggest!.execute(
+    {
+      text: "",
+      person: "alice@example.com",
+      kind: "routine",
+      name: "Weekly numbers",
+      schedule: "0 9 * * 1",
+      instructions: "Sum up the week's invoices.",
+    },
+    { conversationId: thread.conversationId, taskId: "offer-1" } as never,
+    BACKGROUND_CONTEXT
+  );
+  const offer = writes("chat.postMessage").at(-1)!;
+  expect(offer.body.thread_ts).toBe(root);
+  expect(JSON.stringify(offer.body.blocks)).toContain("<@U1>, I can set up");
+  const value = JSON.parse(
+    JSON.stringify(offer.body.blocks)
+      .match(/"value":"(\{[^}]*\})"/)![1]!
+      .replaceAll('\\"', '"')
+  ) as { id: string };
+  const click = (user: string, action: string) =>
+    slack.send({
+      type: "interactive",
+      payload: {
+        type: "block_actions",
+        user: { id: user },
+        channel: { id: "C2" },
+        message: { ts: offer.ts },
+        actions: [
+          {
+            action_id: action,
+            value: JSON.stringify({ id: value.id, kind: "routine" }),
+          },
+        ],
+      },
+    });
+  click("U2", "shadow_accept");
+  await until(
+    async () => writes("chat.postEphemeral"),
+    (ephemeral) =>
+      ephemeral.some((each) =>
+        String(each.body.text).startsWith("Only the person")
+      )
+  );
+  expect(shadow.app.routines.inCompany(company.id, alice.id)).toEqual([]);
+  click("U1", "shadow_accept");
+  const [routine] = await until(
+    async () => shadow.app.routines.inCompany(company.id, alice.id),
+    (routines) => routines.length === 1
+  );
+  expect(routine).toMatchObject({
+    name: "Weekly numbers",
+    schedule: "0 9 * * 1",
+    channelId: support.id,
+    postInSlack: true,
+  });
+  await close();
+});
+
+test("a routine asked for in a person's own thread names its channel, so its runs do not go to everyone unasked", async () => {
+  const { company, close } = await setup();
+  const own = await shadow.app.threads.orchestrator(company.id, alice);
+  const create = (await shadow.app.routines.tools(company.id)).find(
+    (tool) => tool.name === "routines_create"
+  )!;
+  await expect(
+    create.execute(
+      {
+        name: "Mondays",
+        schedule: "0 9 * * 1",
+        instructions: "Tell me what needs me.",
+      },
+      { conversationId: own.conversationId, taskId: "routine-1" } as never,
+      BACKGROUND_CONTEXT
+    )
+  ).rejects.toThrow("Name the channel of the routine");
   await close();
 });
