@@ -609,10 +609,9 @@ test("an agent lists the channels of its company and cannot reach a thread of an
     "List the channels"
   );
   await idle(home.id, listing.id);
+  // Names only, with whose each channel is; search_channels gives the threads.
   expect(toolResults).toContainEqual(
-    expect.stringContaining(
-      `#general\n- [List the channels](thread:${listing.id}) (`
-    )
+    "#general\n#alice (private, the person's own)"
   );
 
   const tell = await shadow.app.threads.create(
