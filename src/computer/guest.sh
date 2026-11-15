@@ -25,7 +25,12 @@ open -W ~/Applications/"Shadow Address.app"
 echo "Address: $(pbpaste)"
 
 # The tools of the work computer.
-sudo -v
+# Over SSH, a SUDO_ASKPASS program gives the password.
+sudo ${SUDO_ASKPASS:+-A} -v
+# Agents get root in their own VM: the firewall that keeps it off private addresses runs on the server.
+printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$(id -un)" | sudo tee /etc/sudoers.d/shadow >/dev/null
+sudo chmod 440 /etc/sudoers.d/shadow
+sudo visudo -cf /etc/sudoers.d/shadow
 if [ ! -x /opt/homebrew/bin/brew ]; then
 	NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi

@@ -12,16 +12,18 @@ and cloned from one base VM that has the office tools. Agents use it with the `c
 
 The base has Homebrew, pandoc, LibreOffice, poppler, qpdf, ghostscript, ImageMagick, ffmpeg, tesseract, ocrmypdf,
 7z, unar, exiftool, jq, Python 3 with python-docx, openpyxl, python-pptx, pypdf, pdfplumber, and pandas, Node.js,
-and agent-browser. Agents install more with brew or pip; it stays on that person's computer.
+and agent-browser. Agents install more with brew or pip, and have `sudo` without a password; it stays on that
+person's computer.
 
 - Each person has their own computer, also for their routines and reminders; work without a person, such as an
   ambient Slack turn, has the company's own. A computer is made from the base on its first call and keeps its disk.
 - A computer starts on its first call, which takes up to a minute, and stops after 15 idle minutes. macOS runs two
   VMs at once, so a call waits until an idle computer is stopped.
 - Each computer has the company's sources, as `[[sources]]` in `config/shadow.toml` lists them, read-only in
-  `/Volumes/My Shared Files/sources/<source>`, with their git history. Before a computer starts, and between its
-  commands after a pull, Shadow puts an APFS clone of `data/sources/` in the VM's shared folder, so a copy takes no
-  disk until a pull changes a file. Git's token never reaches the VMs.
+  `/Volumes/My Shared Files/sources/<source>`, with the files of the newest commit and `git log`. Older versions of
+  files come only through `sources_history`, because only the server can fetch them. Before a computer starts, and
+  between its commands after a pull, Shadow puts an APFS clone of `data/sources/` in the VM's shared folder, so a copy
+  takes no disk until a pull changes a file. Git's token never reaches the VMs.
 - The VMs reach only the public internet: `scripts/install-computer-firewall.sh` blocks this Mac, the office network,
   and private addresses for them.
 - Shadow reaches a guest with its own SSH key in `data/computer/`. agent-desktop runs only itself in the guest, so the
@@ -46,10 +48,13 @@ Sharing, signed in as the user that runs Shadow.
    ```
 
 2. In the guest window:
-   1. Finish the macOS setup, and turn on automatic login in **System Settings › Users & Groups**.
+   1. Finish the macOS setup with an account of the same short name as the user that runs Shadow, because
+      agent-desktop connects to the guest as that user. Turn on automatic login in **System Settings › Users &
+      Groups**.
    2. Turn on **Remote Login** in **System Settings › General › Sharing**.
-   3. In **Terminal**, run `sh "/Volumes/My Shared Files/guest-setup.sh"`, and switch on **agent-desktop-guest** in
-      **Privacy & Security › Accessibility** and **Screen & System Audio Recording**.
+   3. In **Terminal**, run `sh "/Volumes/My Shared Files/guest-setup.sh"`. agent-desktop 1.3.1 runs its guest
+      commands over SSH, so switch on `/usr/libexec/sshd-keygen-wrapper` under **Accessibility** and **Screen
+      Recording** in **Privacy & Security** (**Device Control and Data Access** on macOS 27).
    4. In **Terminal**, run `sh "/Volumes/My Shared Files/shadow-guest.sh"`. It asks for the guest's password once,
       and installs the tools.
 3. On the server, stop the base, which stays stopped from now on, and block the VMs from the private network:
