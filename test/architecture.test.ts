@@ -134,9 +134,10 @@ test("the web app's modules import only the modules before them, app/, and ui/",
 });
 
 function webAllowed(file: string, target: string): boolean {
-  // The web app never imports the server's code; it knows the server through the JSON API.
+  // The web app never imports the server's code; it knows the server through the JSON API. It bundles the files of
+  // `public/`, as `index.html` does.
   if (target.startsWith("..")) {
-    return false;
+    return target.startsWith("../public/");
   }
   const [area] = file.split("/") as [string];
   const [targetArea] = target.split("/") as [string];

@@ -25,10 +25,9 @@ const LENGTH = 1.3;
 /** The share of the shadow's cells in the accent at its far end; at the feet, all of them. */
 const FAR_SHARE = 0.2;
 
-/** Each SVG logo: the path, and its cells across. Shown at 24, 48, and 96 px, a cell is 1, 2, and 3 px. */
+/** Each SVG logo: the path, and its cells across. Shown at 24 or 48 px, and at 96 px, a cell is 1, 2, and 3 px. */
 const LOGOS: readonly [string, number][] = [
   ["public/logo-24.svg", 24],
-  ["public/logo-48.svg", 24],
   ["public/logo-96.svg", 32],
 ];
 /** Each raster: the path, its size in px, the px of one cell, and its cells across, centered on black. */

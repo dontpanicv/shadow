@@ -12,6 +12,7 @@ import {
   useEffect,
   useRef,
 } from "react";
+import logo from "../../public/logo-24.svg";
 import { Icon, type IconName } from "./icon.tsx";
 import { letters } from "./pixels.ts";
 
@@ -369,7 +370,7 @@ function initial(name: string): string {
   return name.normalize("NFD").slice(0, 1).toUpperCase();
 }
 
-/** Shadow's logo, 1 px a noise cell. */
+/** Shadow's logo. The build gives each file a name with its content's hash, so a new logo is never a cached old one. */
 export function Mark({ size }: { size?: "large" }) {
   const side = size === "large" ? 48 : 24;
   return (
@@ -377,7 +378,7 @@ export function Mark({ size }: { size?: "large" }) {
       alt=""
       className={["avatar", "agent", size].filter(Boolean).join(" ")}
       height={side}
-      src={`/assets/logo-${side}.svg`}
+      src={logo}
       width={side}
     />
   );

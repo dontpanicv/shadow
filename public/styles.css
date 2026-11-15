@@ -293,7 +293,7 @@ img.avatar {
 span.avatar.small::after {
   mask-image: var(--dither-corner-20);
 }
-/* Shadow's logo (Mark). In light, a black tile keeps the white badge apart from the white surface. */
+/* Shadow's logo (Mark). In light, a black tile keeps the white person apart from the white surface. */
 .avatar.agent {
   background: light-dark(#000000, transparent);
 }
