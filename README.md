@@ -299,7 +299,7 @@ Fill in `config/shadow.toml` and start Shadow again:
 
 ```toml
 base_url = "https://shadow.example.com"
-allowed_emails = ["you@example.com", "colleague@example.com"]   # the first one is the first admin
+allowed_emails = ["you@example.com", "@example.com"]   # the first one is the first admin; "@example.com" lets in that domain
 
 [google]
 client_id = "….apps.googleusercontent.com"

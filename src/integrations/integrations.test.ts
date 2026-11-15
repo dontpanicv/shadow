@@ -559,7 +559,7 @@ test("a secret of a connector with an account keeps the account, which names the
   });
 });
 
-test("only an admin sets Shadow's own client, and its MCP server hides the tools that send", async () => {
+test("only an admin sets Shadow's own client, its MCP server hides some tools, and the person allows each call of others", async () => {
   const chat: Connector = {
     id: "chat",
     name: "Chat",
@@ -570,6 +570,7 @@ test("only an admin sets Shadow's own client, and its MCP server hides the tools
     registered: true,
     scope: "search chat:write",
     hiddenTools: ["checkout"],
+    approvedTools: ["cart"],
   };
   const { database, companies } = shadow.app;
   const withOwner = new Integrations(database, Secrets.forTests(), companies, {
@@ -619,6 +620,26 @@ test("only an admin sets Shadow's own client, and its MCP server hides the tools
     "chat_cart",
     "chat_accounts",
   ]);
+  const cart = (await withOwner.tools(companyId)).find(
+    (tool) => tool.name === "chat_cart"
+  )!;
+  // A routine's script has no person to ask.
+  await expect(
+    cart.execute({ note: "for Bob" }, { userId: alice.id })
+  ).rejects.toThrow("after a person allows it");
+  const asked: string[] = [];
+  expect(
+    await cart.execute(
+      { note: "for Bob" },
+      {
+        userId: alice.id,
+        approve: async (text: string) => {
+          asked.push(text);
+        },
+      }
+    )
+  ).toBe("The cart is empty.");
+  expect(asked).toEqual(["Chat cart:\nnote: for Bob"]);
   withOwner.deleteCredential(companyId, alice, credential.id);
   await withOwner.close();
 });

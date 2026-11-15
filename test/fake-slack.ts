@@ -83,10 +83,15 @@ export function fakeSlack() {
             user_id: "B1",
           });
         case "/api/conversations.info":
-          // A group DM's id starts with G here; the others are channels.
+          // A group DM's id starts with G here, a private channel's with P; the others are public channels.
           return Response.json({
             ok: true,
-            channel: { id: channel, is_mpim: channel.startsWith("G") },
+            channel: {
+              id: channel,
+              name: channel.toLowerCase(),
+              is_mpim: channel.startsWith("G"),
+              is_private: channel.startsWith("G") || channel.startsWith("P"),
+            },
           });
         case "/api/conversations.join":
           slack.joined.add(channel);

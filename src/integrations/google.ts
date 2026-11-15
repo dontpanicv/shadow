@@ -59,7 +59,7 @@ export function googleConnectors(redirectUrl: string): readonly Connector[] {
       scopes: [
         "calendar.calendarlist.readonly",
         "calendar.events.freebusy",
-        "calendar.events.readonly",
+        "calendar.events",
       ],
     },
   ] as const;
@@ -91,7 +91,8 @@ export function googleConnectors(redirectUrl: string): readonly Connector[] {
       ...(service.id === "google" ? { watch: watchGmail } : {}),
       ...(service.id === "google_calendar"
         ? {
-            hiddenTools: [
+            // They can email the guests.
+            approvedTools: [
               "create_event",
               "update_event",
               "delete_event",

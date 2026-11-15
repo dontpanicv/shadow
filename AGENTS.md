@@ -120,8 +120,8 @@ addresses, or code and data from employers or clients.
   tool call uses only the credential of its turn's person (`src/integrations/integrations.ts`). A
   person can connect several accounts of one integration; each tool takes an `account`.
 - A connector tool that acts as a person, such as one that sends mail or a message, has an `approval`: the owner of
-  its credential allows each call in the thread, and a routine's script cannot call it. An MCP server's tool cannot
-  have one, so a connector hides such tools with `hiddenTools`.
+  its credential allows each call in the thread, and a routine's script cannot call it. A connector lists such tools
+  of its MCP server in `approvedTools`.
 - The model calls only the core tools of channels, threads, files, and web search directly. Every other tool is
   script-only (`callers: ["tools"]`) and its name starts with its codemode namespace: `NAMESPACES` in
   `src/threads/threads.ts`, or `<integration>_` for a connector, whose MCP server gives its tools.
@@ -129,7 +129,7 @@ addresses, or code and data from employers or clients.
   Durable adds each changed section to the conversation again, so a section that changes often repeats itself.
 - How Shadow talks (voice, length, humor) is only in `SOUL` in `src/threads/threads.ts`, the first section of every
   agent's prompt; `INSTRUCTIONS` and the task texts say how it works and never set a tone.
-- Only connector tools with an `approval` wait for a person. All web traffic of agents goes through `Egress`
+- Only connector tools with an `approval` or in `approvedTools` wait for a person. All web traffic of agents goes through `Egress`
   (`src/platform/egress.ts`), never a plain `fetch`.
 
 ## Design System

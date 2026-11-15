@@ -152,6 +152,11 @@ export interface Connector {
   readonly authorizationParameters?: Readonly<Record<string, string>>;
   /** The tools of its MCP servers that agents never get, such as ones that end its sign-in. */
   readonly hiddenTools?: readonly string[];
+  /**
+   * The tools of its MCP servers that act as the person where other people see it, such as one that posts a comment or
+   * invites guests: the person allows each call, as with a connector tool's `approval`.
+   */
+  readonly approvedTools?: readonly string[];
   /** The only tools of its MCP servers that agents get, when the others serve only the server's own agents. */
   readonly shownTools?: readonly string[];
   /**
@@ -1108,6 +1113,16 @@ export class Integrations {
                 ...(tool.outputSchema
                   ? { outputSchema: tool.outputSchema as TSchema }
                   : {}),
+                ...(connector.approvedTools?.includes(tool.name)
+                  ? {
+                      approval: async (args: unknown) =>
+                        mcpApproval(
+                          connector,
+                          tool.title ?? tool.name,
+                          args as Record<string, unknown>
+                        ),
+                    }
+                  : {}),
                 call: (args, credential, signal) =>
                   this.callMcp(
                     credential,
@@ -1348,6 +1363,24 @@ interface AccountTool {
     allowed?: string,
     save?: SaveFile
   ) => Promise<unknown>;
+}
+
+/** What a person allows for a call of an MCP tool: the tool and every argument, such as `Linear Create comment: body: Done`. */
+export function mcpApproval(
+  connector: Connector,
+  tool: string,
+  args: Record<string, unknown>
+): string {
+  const details = Object.entries(args)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(
+      ([key, value]) =>
+        `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`
+    )
+    .join("\n");
+  const text = `${connector.name} ${tool}${details ? `:\n${details}` : ""}`;
+  // Slack shows at most 3,000 characters in a block; the person sees that the rest is cut.
+  return text.length > 2500 ? `${text.slice(0, 2500)}…` : text;
 }
 
 function connectionOf(connector: Connector): Integration["connect"] {

@@ -23,9 +23,8 @@ export interface User {
  * People sign in only with Google, and only with an allowed email; there is no other way to create an account.
  */
 export function createAuth(options: AuthOptions) {
-  const allowed = new Set(options.allowedEmails);
   const requireAllowed = (email: string | undefined) => {
-    if (!(email && allowed.has(email.toLowerCase()))) {
+    if (!(email && emailAllowed(options.allowedEmails, email))) {
       throw new APIError("FORBIDDEN", {
         code: "EMAIL_NOT_ALLOWED",
         message: "This Google account cannot sign in to Shadow.",
@@ -82,6 +81,17 @@ export function createAuth(options: AuthOptions) {
 
 export type Auth = ReturnType<typeof createAuth>;
 
+/** Whether `allowed_emails` lets an email in: by the email itself, or by an entry `@domain` for every email there. */
+export function emailAllowed(
+  allowedEmails: readonly string[],
+  email: string
+): boolean {
+  const address = email.toLowerCase();
+  return allowedEmails.some((entry) =>
+    entry.startsWith("@") ? address.endsWith(entry) : entry === address
+  );
+}
+
 export async function migrateAuth(auth: Auth): Promise<void> {
   const { runMigrations } = await getMigrations(auth.options);
   await runMigrations();
@@ -97,7 +107,7 @@ export async function currentUser(
   allowedEmails: readonly string[]
 ): Promise<User | undefined> {
   const session = await auth.api.getSession({ headers: request.headers });
-  if (!(session && allowedEmails.includes(session.user.email.toLowerCase()))) {
+  if (!(session && emailAllowed(allowedEmails, session.user.email))) {
     return undefined;
   }
   return {

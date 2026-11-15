@@ -185,7 +185,8 @@ test("a DM goes to the person's own thread, and a notice they did not see comes 
     channelId: general.id,
     threadId: null,
     title: "Reminder",
-    text: "Call Anna about the contract.",
+    // The inbox keeps the start of a long notification; the DM has all of it, such as a whole morning briefing.
+    text: `Call Anna about the contract.\n\n${"- One more matter.\n".repeat(60)}- **The last matter.**`,
   });
   await until(
     async () => writes("chat.postMessage"),
@@ -193,7 +194,8 @@ test("a DM goes to the person's own thread, and a notice they did not see comes 
       posts.some(
         (post) =>
           post.body.channel === "D-U1" &&
-          JSON.stringify(post.body).includes("Call Anna")
+          JSON.stringify(post.body).includes("Call Anna") &&
+          JSON.stringify(post.body).includes("**The last matter.**")
       )
   );
   await close();
@@ -397,6 +399,40 @@ test("a mention in a group DM answers once, from the asker's own thread, with th
     "Alice asks you in a Slack group DM: what do we know about Acme?"
   );
   expect(request).toContain("- Bob Smith: Are we on for the Acme call?");
+  expect(request).toContain("leave out what only Alice may see");
+  await close();
+});
+
+test("a mention in a private channel answers from the asker's own thread, with the channel's conversation as data", async () => {
+  const { company, writes, close } = await setup();
+  model.answer = "Acme renewed in May.";
+  slack.joined.add("P1");
+  slack.messages.P1 = [
+    {
+      ts: (Date.now() / 1000 - 60).toFixed(6),
+      user: "U2",
+      text: "Did Acme sign?",
+    },
+  ];
+  slack.event({
+    type: "app_mention",
+    channel: "P1",
+    user: "U1",
+    text: "<@B1> what do we know about Acme?",
+    ts: (Date.now() / 1000).toFixed(6),
+  });
+  await until(
+    async () => writes("chat.update"),
+    (updates) =>
+      updates.some((each) => JSON.stringify(each.body).includes("renewed"))
+  );
+  const own = await shadow.app.threads.orchestrator(company.id, alice);
+  const { messages } = await shadow.app.threads.messages(own);
+  const request = messages.findLast((message) => !message.agent)!.text;
+  expect(request).toContain(
+    "Alice asks you in a Slack private channel #p1: what do we know about Acme?"
+  );
+  expect(request).toContain("- Bob Smith: Did Acme sign?");
   expect(request).toContain("leave out what only Alice may see");
   await close();
 });

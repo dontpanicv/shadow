@@ -6,7 +6,7 @@ The web app uses this JSON API with its session cookie; a request that names ano
 ## Authentication
 
 Accounts are managed by [better-auth](https://www.better-auth.com). People sign in only with Google, and only with
-an email in `allowed_emails` in `config/shadow.toml`. There is no sign-up and no password. The web app uses better-auth's
+an email in `allowed_emails` in `config/shadow.toml`, or an email of a domain that it lists as `@domain`. There is no sign-up and no password. The web app uses better-auth's
 session cookie. The routes are in `src/accounts/`.
 
 | Request | Response |
@@ -652,7 +652,7 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
   `host = "127.0.0.1"` behind Caddy can trust. An IPv6 client is its /48 network. Keep private things in members
   artifacts.
 - Each thread is one conversation in its company's Pi Durable session, a SQLite file in the company's directory.
-- A connector tool that sends a message as a person, such as `slack_send`, waits for the credential owner's approval before every call. A routine's script cannot call it. MCP tools that can send guest email without Shadow's approval are hidden.
+- A connector tool that sends a message as a person, such as `slack_send`, waits for the credential owner's approval before every call. A routine's script cannot call it. An MCP tool that acts as a person where others see it, such as one that comments or invites guests, waits for the same approval.
 - Agents reach public addresses only: the browser and `save_file` go through Shadow's egress proxy, which refuses
   loopback, private, link-local, and other non-public addresses after each DNS answer and redirect. Each person of a
   thread has a browser of their own, with their own logins.

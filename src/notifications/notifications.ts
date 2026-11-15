@@ -50,7 +50,8 @@ export class Notifications {
   /** Who also delivers a notification that its person has not seen, such as Slack as a DM. */
   private readonly deliveries: ((
     notification: Notification,
-    userId: string
+    userId: string,
+    markdown: string
   ) => void)[] = [];
 
   constructor(
@@ -104,15 +105,22 @@ export class Notifications {
       );
     if (!seen) {
       for (const deliver of this.deliveries) {
-        deliver(notification, input.userId);
+        deliver(notification, input.userId, input.text);
       }
     }
     return notification;
   }
 
-  /** Also delivers each notification that its person has not seen, such as in a Slack DM. */
+  /**
+   * Also delivers each notification that its person has not seen, such as in a Slack DM, with all of its Markdown, which
+   * the inbox keeps only the start of.
+   */
   onDelivery(
-    deliver: (notification: Notification, userId: string) => void
+    deliver: (
+      notification: Notification,
+      userId: string,
+      markdown: string
+    ) => void
   ): void {
     this.deliveries.push(deliver);
   }

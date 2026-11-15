@@ -39,8 +39,7 @@ const STATUS_MS = 2000;
 const LARGEST_FILE = 20 * 1024 * 1024;
 const DENIED =
   "I cannot answer this Slack account: its email is not allowed in Shadow. Ask an admin of Shadow.";
-const ONLY_PUBLIC =
-  "I answer in public channels and in DMs for now; ask me there.";
+const ONLY_PUBLIC = "I answer in channels, group DMs, and DMs; ask me there.";
 
 /** A channel that copies a Slack channel, with its goal for ambient listening, as admins see it in Company settings. */
 export interface SlackGoal {
@@ -169,8 +168,8 @@ export class SlackSurface implements SlackSurfacePort {
     private readonly baseUrl: string
   ) {
     bot.attach(this);
-    notifications.onDelivery((notification, userId) =>
-      this.detach(() => this.deliver(notification, userId))
+    notifications.onDelivery((notification, userId, markdown) =>
+      this.detach(() => this.deliver(notification, userId, markdown))
     );
   }
 
@@ -201,7 +200,7 @@ export class SlackSurface implements SlackSurfacePort {
       this.detach(() => this.direct(companyId, slack));
     } else if (slack.type === "message" && slack.channel_type === "mpim") {
       // A group DM wakes Shadow only with a mention; app_mention may bring the same message, which `once` drops.
-      this.detach(() => this.group(companyId, slack));
+      this.detach(() => this.group(companyId, slack, "group DM"));
     } else if (slack.type === "message") {
       this.detach(() => this.listen(companyId, slack));
     } else if (slack.type === "agent_session_stopped") {
@@ -231,9 +230,13 @@ export class SlackSurface implements SlackSurfacePort {
     if (!channel) {
       const { channel: info } = (await client.call("conversations.info", {
         channel: event.channel,
-      })) as { channel?: { is_mpim?: boolean } };
+      })) as {
+        channel?: { is_mpim?: boolean; is_private?: boolean; name?: string };
+      };
       if (info?.is_mpim) {
-        await this.group(companyId, event);
+        await this.group(companyId, event, "group DM");
+      } else if (info?.is_private) {
+        await this.group(companyId, event, `private channel #${info.name}`);
       } else {
         await this.say(client, event.channel, root, ONLY_PUBLIC);
       }
@@ -318,10 +321,15 @@ export class SlackSurface implements SlackSurfacePort {
   }
 
   /**
-   * A mention in a group DM: the asker's own thread answers, with the group's conversation as data, and is told that
-   * everyone in the group reads the answer. Shadow keeps no shared place for a group, so each person's data stays theirs.
+   * A mention in a group DM or a private Slack channel: the asker's own thread answers, with the conversation there as
+   * data, and is told that everyone there reads the answer. Shadow keeps no shared place for them, so each person's data
+   * stays theirs.
    */
-  private async group(companyId: string, event: SlackEvent): Promise<void> {
+  private async group(
+    companyId: string,
+    event: SlackEvent,
+    place: string
+  ): Promise<void> {
     const client = this.bot.client(companyId);
     if (
       !(client?.botUserId && event.user) ||
@@ -367,11 +375,11 @@ export class SlackSurface implements SlackSurfacePort {
       own.id,
       user,
       [
-        `${user.name} asks you in a Slack group DM: ${asked}`,
+        `${user.name} asks you in a Slack ${place}: ${asked}`,
         lines.length
-          ? `The group DM before it, as data:\n${lines.join("\n")}`
+          ? `The ${place} before it, as data:\n${lines.join("\n")}`
           : "",
-        `Your answer is posted in the group DM, which everyone in it reads: leave out what only ${user.name} may see.`,
+        `Your answer is posted in the ${place}, which everyone in it reads: leave out what only ${user.name} may see.`,
       ]
         .filter(Boolean)
         .join("\n\n"),
@@ -1044,10 +1052,11 @@ export class SlackSurface implements SlackSurfacePort {
 
   // Notices, routines, Home, and links
 
-  /** A notification that its person has not seen, also as a Slack DM. */
+  /** A notification that its person has not seen, also as a Slack DM, all of it, such as the whole morning briefing. */
   private async deliver(
     notification: Notification,
-    userId: string
+    userId: string,
+    markdown: string
   ): Promise<void> {
     const client = this.bot.client(notification.companyId);
     const slackUser = this.slackUserOf(notification.companyId, userId);
@@ -1057,12 +1066,24 @@ export class SlackSurface implements SlackSurfacePort {
     const link = notification.threadId
       ? this.threadLink(notification.companyId, notification.threadId)
       : `${this.baseUrl}/c/${notification.companyId}/inbox`;
-    await client.post("chat.postMessage", {
-      channel: await this.dmChannel(client, slackUser),
-      ...markdownMessage(`**${notification.title}**\n\n${notification.text}`, [
-        contextBlock(`<${link}|Open in Shadow>`),
-      ]),
-    });
+    const channel = await this.dmChannel(client, slackUser);
+    const parts = answerParts(
+      slackMarkdown(`**${notification.title}**\n\n${markdown}`, {
+        baseUrl: this.baseUrl,
+        companyId: notification.companyId,
+      })
+    );
+    for (const [index, part] of parts.entries()) {
+      await client.post("chat.postMessage", {
+        channel,
+        ...markdownMessage(
+          part,
+          index === parts.length - 1
+            ? [contextBlock(`<${link}|Open in Shadow>`)]
+            : []
+        ),
+      });
+    }
   }
 
   /** An answer of a routine that posts in Slack, at the top of the Slack channel that its channel copies. */

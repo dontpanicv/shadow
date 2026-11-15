@@ -19,7 +19,7 @@ The sign-in pages return to Shadow at `base_url/api/v1/integrations/callback`. T
 
 ## Google Workspace MCP
 
-Gmail offers search, thread reading, labels, and drafts. Its MCP server does not send mail or create drafts with attachments. Drive offers file search, read, copy, and create. Docs, Sheets, and Slides expose their official read and edit tools. Calendar read tools are available; event changes and responses are hidden because they can email guests without Shadow's per-call approval. Google MCP does not supply Shadow's automatic mail intake, attachment saving, or the former command tools.
+Gmail offers search, thread reading, labels, and drafts. Its MCP server does not send mail or create drafts with attachments. Drive offers file search, read, copy, and create. Docs, Sheets, and Slides expose their official read and edit tools. Calendar reads events and free/busy, and it creates, changes, deletes, and answers events after the person allows each call, because they can email the guests. A Calendar connected before this needs **Connect** again for the new scope. Google MCP does not supply Shadow's automatic mail intake, attachment saving, or the former command tools.
 
 ## Slack
 
@@ -70,11 +70,12 @@ People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
   session shows "processing" while Shadow works; Slack's Stop stops it. The DM goes to the person's own thread, which
   hands work on to the channels, as on the web, and knows which public channel the person looks at, so "sum up this
   channel" works. The suggested prompts come from the manifest.
-- **Group DMs**: mention Shadow in a group DM. The asker's own thread answers, with the group DM's conversation as
-  data, and it leaves out what only the asker may see, because everyone in the group reads the answer. Shadow keeps no
-  shared place for a group, so the group's conversation stays in Slack.
+- **Group DMs and private channels**: mention Shadow in a group DM, or in a private channel that someone invited
+  Shadow to. The asker's own thread answers, with the conversation there as data, and it leaves out what only the asker
+  may see, because everyone there reads the answer. Shadow keeps no shared place for them, so their conversation stays
+  in Slack.
 - **Who**: a Slack user whose email is in `allowed_emails` becomes a member at their first message; others get one
-  answer that they are not allowed. Private channels come later.
+  answer that they are not allowed.
 - **Listening**: an admin gives a channel a goal in Company settings: when Shadow wakes, and how it takes part
   (**Suggest** writes one from the channel's brief). The goal is the consent to listen there. Each new message at the
   top of that channel, and each reply in a thread that Shadow follows, goes through a cheap check with the fast model:
@@ -87,7 +88,7 @@ People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
 - **Approvals**: an action that waits for a person's approval, such as sending mail, asks them in a Slack DM with
   Allow and Deny.
 - **Notices**: each notification that a person has not seen, such as a reminder or the morning review, comes as a DM
-  too. A routine with `post_in_slack` posts each answer in its channel's Slack channel; a quiet run posts nothing.
+  too, with all of its text, so the whole morning briefing reads in Slack. A routine with `post_in_slack` posts each answer in its channel's Slack channel; a quiet run posts nothing.
 - **Home tab**: what waits for the person, and their routines and reminders.
 - **Links**: a link to an artifact shows its title.
 
@@ -103,8 +104,7 @@ Each is the service's own MCP server: Notion at `https://mcp.notion.com/mcp`, Li
 and Atlassian's Rovo MCP server at `https://mcp.atlassian.com/v1/mcp` for Jira and Confluence. Click **Connect**, sign
 in; Shadow registers itself with the server, so nobody makes an app.
 Agents get the server's tools with what your account may see and do: they search and read, and they create or change
-pages and issues when you ask. Tools that only post a comment for other people are hidden, because an MCP server's tool
-cannot wait for your approval. When the Atlassian sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server
+pages and issues when you ask. A comment, which other people read, waits until you allow that call. When the Atlassian sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server
 for the site.
 
 ## HubSpot
@@ -112,7 +112,9 @@ for the site.
 HubSpot's MCP server, `https://mcp.hubspot.com`, registers no clients. An admin of Shadow makes one once: in HubSpot,
 **Development › MCP Auth Apps**, create an app with the redirect URL `base_url/api/v1/integrations/callback`, then paste its
 client ID and client secret with **Client** on HubSpot in Settings. Then each person clicks **Connect** and signs in
-to HubSpot. Agents read the CRM, with what the person may see.
+to HubSpot. Agents read and change the CRM, with what the person may do there. Landing pages, website pages, blog
+posts, and social posts reach the public, so each such call waits until the person allows it. A HubSpot connected
+before its server had write tools needs **Connect** again for their scopes.
 
 ## Pipes and Engage
 

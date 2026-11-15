@@ -6,8 +6,8 @@ import { slackConnector } from "./slack.ts";
 
 /**
  * The connectors that Shadow has: the MCP servers that people sign in to (Notion, Linear, Jira, HubSpot, Pipes, Plaud,
- * and T3 Code), Google's Workspace MCP servers, and Slack when it has slackcli. A tool that only posts a comment
- * that other people read is hidden: an MCP server's tool cannot wait for the person's approval.
+ * and T3 Code), Google's Workspace MCP servers, and Slack when it has slackcli. A tool that acts as the person where
+ * other people see it, such as one that posts a comment, waits for the person's approval of each call.
  */
 export function integrationCatalog(
   slackcli = Bun.which("slackcli"),
@@ -19,31 +19,31 @@ export function integrationCatalog(
       id: "notion",
       name: "Notion",
       description:
-        "The person's Notion: search and read pages and databases, and create or change pages and databases when the person asks.",
+        "The person's Notion: search and read pages and databases, create or change pages and databases, and comment when the person asks.",
       secretLabel: null,
       guide: [
         "Click **Connect**, sign in to Notion, and select the workspace and the pages that Shadow may use.",
       ],
       tools: [],
       mcp: ["https://mcp.notion.com/mcp"],
-      hiddenTools: ["notion-create-comment"],
+      approvedTools: ["notion-create-comment"],
     },
     {
       id: "linear",
       name: "Linear",
       description:
-        "The person's Linear: find and read issues, projects, cycles, documents, and teams, and create or change issues when the person asks.",
+        "The person's Linear: find and read issues, projects, cycles, documents, and teams, and create or change issues and comment on them when the person asks.",
       secretLabel: null,
       guide: ["Click **Connect**, and sign in to Linear."],
       tools: [],
       mcp: ["https://mcp.linear.app/mcp"],
-      hiddenTools: ["create_comment"],
+      approvedTools: ["create_comment"],
     },
     {
       id: "jira",
       name: "Jira",
       description:
-        "The person's Atlassian Cloud, through Atlassian's own MCP server: search and read Jira issues and Confluence pages with JQL and CQL, and create or change issues and pages when the person asks.",
+        "The person's Atlassian Cloud, through Atlassian's own MCP server: search and read Jira issues and Confluence pages with JQL and CQL, and create or change issues and pages, log work, and comment when the person asks.",
       secretLabel: null,
       guide: [
         "Click **Connect**, sign in to Atlassian, and select the site.",
@@ -51,7 +51,7 @@ export function integrationCatalog(
       ],
       tools: [],
       mcp: ["https://mcp.atlassian.com/v1/mcp"],
-      hiddenTools: [
+      approvedTools: [
         "addCommentToJiraIssue",
         "createConfluenceFooterComment",
         "createConfluenceInlineComment",
@@ -61,7 +61,7 @@ export function integrationCatalog(
       id: "hubspot",
       name: "HubSpot",
       description:
-        "The person's HubSpot CRM: search and read contacts, companies, deals, tickets, and their activity, with what the person may see.",
+        "The person's HubSpot: search and read contacts, companies, deals, tickets, and their activity, and create or change CRM records, segments, properties, pipelines, campaigns, and content when the person asks, with what the person may do there.",
       secretLabel: null,
       guide: [
         "In HubSpot, open **Development › MCP Auth Apps**, and create an app.",
@@ -73,16 +73,23 @@ export function integrationCatalog(
       mcp: ["https://mcp.hubspot.com/"],
       // HubSpot's MCP server registers no clients; an admin sets the MCP auth app's client.
       registered: true,
+      // These publish to the public web or to social accounts.
+      approvedTools: [
+        "manage_landing_page",
+        "manage_website_page",
+        "manage_blog_post",
+        "manage_social_posts",
+      ],
     },
     {
       id: "pipes",
       name: "Pipes",
       description:
-        "The person's Meiro Pipes and Engage instance: read its configuration, profiles, events, dashboard metrics, profile reports, journey and delivery performance, and the product guide. A change is only a proposal, which the person approves in Pipes.",
+        "The person's Meiro Pipes and Engage instances, one account each, named by its address: read its configuration, profiles, events, dashboard metrics, profile reports, journey and delivery performance, and the product guide. A change is only a proposal, which the person approves in Pipes.",
       secretLabel: null,
       address: true,
       guide: [
-        "Enter the address of your Pipes instance, such as `https://acme.pipes.meiro.io`.",
+        "Enter the address of your Pipes instance, such as `https://acme.pipes.meiro.io`. Connect each instance that you use.",
         "Click **Continue**, sign in to Pipes, and select **Allow**.",
         "Settings › API tokens in Pipes lists Shadow under connected apps, where you disconnect it.",
       ],

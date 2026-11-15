@@ -1,4 +1,5 @@
 import type { Route } from "../app/http.ts";
+import { emailAllowed } from "../platform/auth.ts";
 
 /** better-auth itself. */
 export const accountApiRoutes: readonly Route[] = [
@@ -12,7 +13,7 @@ export const accountApiRoutes: readonly Route[] = [
       });
       if (
         session &&
-        !app.config.allowedEmails.includes(session.user.email.toLowerCase()) &&
+        !emailAllowed(app.config.allowedEmails, session.user.email) &&
         new URL(request.url).pathname !== "/api/auth/sign-out"
       ) {
         return Response.json({ error: "Not signed in" }, { status: 401 });
