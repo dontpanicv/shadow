@@ -132,7 +132,7 @@ export async function sendFeedback(
 }
 
 /**
- * Deletes a waiting update and blocks its senders, or its group chat: Golem deletes what it read from them, with its
+ * Deletes a waiting update and blocks its senders, or its group chat: Shadow deletes what it read from them, with its
  * files, and reads nothing more from them.
  */
 export async function deleteUpdate(workspaceId: string, id: string) {
@@ -144,7 +144,7 @@ export async function deleteUpdate(workspaceId: string, id: string) {
   });
 }
 
-/** Lets Golem read a blocked sender or thread again. */
+/** Lets Shadow read a blocked sender or thread again. */
 export async function unblock(workspaceId: string, id: string) {
   await request(`/workspaces/${workspaceId}/following/blocks/${id}`, {
     method: "DELETE",

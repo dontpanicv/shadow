@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { cookies, startTestApp, type TestApp, until } from "./harness.ts";
 
-let golem: TestApp;
+let shadow: TestApp;
 let app: TestApp["app"];
 let call: TestApp["call"];
 let handler: TestApp["handler"];
@@ -10,11 +10,11 @@ let signIn: TestApp["signIn"];
 let signedCookie: TestApp["signedCookie"];
 
 beforeAll(async () => {
-  golem = await startTestApp();
-  ({ app, call, handler, signIn, signedCookie } = golem);
+  shadow = await startTestApp();
+  ({ app, call, handler, signIn, signedCookie } = shadow);
 });
 
-afterAll(() => golem.close());
+afterAll(() => shadow.close());
 
 let alice: string;
 let bob: string;
@@ -84,7 +84,7 @@ test("the first person to sign in starts the workspace, with a general channel",
 });
 
 test("a thread is a Pi Durable session that knows who wrote each message", async () => {
-  golem.faux.setResponses([fauxAssistantMessage("Saturday works.")]);
+  shadow.faux.setResponses([fauxAssistantMessage("Saturday works.")]);
   const { channels } = (await (
     await call(`/api/v1/workspaces/${workspaceId}`, { token: alice })
   ).json()) as any;
@@ -110,7 +110,7 @@ test("a thread is a Pi Durable session that knows who wrote each message", async
     ])
   ).toEqual([
     ["Alice", "Plan the cabin trip"],
-    ["Golem", "Saturday works."],
+    ["Shadow", "Saturday works."],
   ]);
 });
 
@@ -178,7 +178,7 @@ test("a credential is private until its owner shares it, only its owner deletes 
   expect((await remove(alice)).status).toBe(204);
   // The credential stays encrypted, marked deleted, and no tool reads it.
   expect(
-    golem.app.database
+    shadow.app.database
       .query(
         "SELECT deleted_at IS NOT NULL AS deleted FROM credential WHERE id = ?"
       )
@@ -186,7 +186,7 @@ test("a credential is private until its owner shares it, only its owner deletes 
   ).toEqual({ deleted: 1 });
 });
 
-test("only the server's owner restarts Golem", async () => {
+test("only the server's owner restarts Shadow", async () => {
   const refused = await call("/api/v1/server/restart", {
     method: "POST",
     token: bob,
@@ -200,14 +200,16 @@ test("everyone uses the one LLM provider, and only the server's owner changes it
   // The faux model has no reasoning, so the default effort moves to the one level it supports.
   expect(llm).toMatchObject({
     provider: "Test model",
-    model: golem.model.id,
+    model: shadow.model.id,
     effort: "off",
-    models: [{ id: golem.model.id, name: golem.model.name, efforts: ["off"] }],
+    models: [
+      { id: shadow.model.id, name: shadow.model.name, efforts: ["off"] },
+    ],
     login: null,
     owner: false,
   });
   for (const [path, method, body] of [
-    ["/api/v1/llm/model", "PUT", { model: golem.model.id }],
+    ["/api/v1/llm/model", "PUT", { model: shadow.model.id }],
     ["/api/v1/llm/effort", "PUT", { effort: "off" }],
     ["/api/v1/llm/login", "POST", {}],
     ["/api/v1/llm/logout", "POST", {}],
@@ -257,7 +259,7 @@ test("the web app signs in with Google and keeps cross-site posts out", async ()
     new Request("http://127.0.0.1:3000/api/auth/sign-in/social", {
       method: "POST",
       headers: {
-        origin: "http://golem.test",
+        origin: "http://shadow.test",
         "content-type": "application/json",
       },
       body: JSON.stringify({ provider: "google", callbackURL: "/" }),
@@ -267,21 +269,24 @@ test("the web app signs in with Google and keeps cross-site posts out", async ()
   const google = new URL(((await login.json()) as { url: string }).url);
   expect(google.origin).toBe("https://accounts.google.com");
   expect(google.searchParams.get("redirect_uri")).toBe(
-    "http://golem.test/api/auth/callback/google"
+    "http://shadow.test/api/auth/callback/google"
   );
   expect(cookies(login)).toContain("state");
 
   const cookie = `better-auth.session_token=${await signedCookie(alice)}`;
   const crossSite = await handler(
-    new Request(`http://golem.test/api/v1/workspaces/${workspaceId}/channels`, {
-      method: "POST",
-      headers: {
-        cookie,
-        origin: "https://evil.example",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ name: "pwned" }),
-    })
+    new Request(
+      `http://shadow.test/api/v1/workspaces/${workspaceId}/channels`,
+      {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: "https://evil.example",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ name: "pwned" }),
+      }
+    )
   );
   expect(crossSite.status).toBe(403);
   expect(

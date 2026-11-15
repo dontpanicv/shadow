@@ -1,6 +1,6 @@
 #!/bin/sh
-# Keeps Golem running on a Mac: a launchd job that runs `bun start` in this checkout and restarts it if it stops.
-# Logs go to data/logs/golem.log.
+# Keeps Shadow running on a Mac: a launchd job that runs `bun start` in this checkout and restarts it if it stops.
+# Logs go to data/logs/shadow.log.
 #
 #   scripts/install-service.sh            LaunchAgent for the current user. Runs while the user has a session,
 #                                         also without a desktop login (for example over SSH).
@@ -11,7 +11,7 @@ set -eu
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 BUN="$(command -v bun || echo /opt/homebrew/bin/bun)"
-LABEL="dev.golem.server"
+LABEL="dev.shadow.server"
 
 if [ "${1:-}" = "--daemon" ]; then
 	RUN_AS="${SUDO_USER:?Run the daemon install with sudo}"
@@ -43,8 +43,8 @@ cat > "$PLIST" <<EOF
 	<key>EnvironmentVariables</key><dict><key>PATH</key><string>$(dirname "$BUN"):/usr/bin:/bin</string></dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
-	<key>StandardOutPath</key><string>$ROOT/data/logs/golem.log</string>
-	<key>StandardErrorPath</key><string>$ROOT/data/logs/golem.log</string>
+	<key>StandardOutPath</key><string>$ROOT/data/logs/shadow.log</string>
+	<key>StandardErrorPath</key><string>$ROOT/data/logs/shadow.log</string>
 </dict>
 </plist>
 EOF
@@ -52,4 +52,4 @@ EOF
 
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
-echo "Golem runs as $DOMAIN/$LABEL. Restart: launchctl kickstart -k $DOMAIN/$LABEL"
+echo "Shadow runs as $DOMAIN/$LABEL. Restart: launchctl kickstart -k $DOMAIN/$LABEL"

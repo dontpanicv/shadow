@@ -8,21 +8,21 @@ import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import type { User } from "../platform/auth.ts";
 import type { ThreadSummary } from "../workspaces/workspaces.ts";
 
-let golem: TestApp;
+let shadow: TestApp;
 let alice: User;
 let bob: User;
 const toolResults: string[] = [];
 
 beforeAll(async () => {
-  golem = await startTestApp();
-  await golem.signIn("Alice", "alice@example.com");
-  await golem.signIn("Bob", "bob@example.com");
-  const { internalAdapter } = await golem.app.auth.$context;
+  shadow = await startTestApp();
+  await shadow.signIn("Alice", "alice@example.com");
+  await shadow.signIn("Bob", "bob@example.com");
+  const { internalAdapter } = await shadow.app.auth.$context;
   alice = (await internalAdapter.findUserByEmail("alice@example.com"))!.user;
   bob = (await internalAdapter.findUserByEmail("bob@example.com"))!.user;
-  golem.faux.setResponses(Array.from({ length: 200 }, () => agent));
+  shadow.faux.setResponses(Array.from({ length: 200 }, () => agent));
 });
-afterAll(() => golem.close());
+afterAll(() => shadow.close());
 
 function agent(context: Context) {
   const last = context.messages.at(-1)!;
@@ -46,11 +46,11 @@ function agent(context: Context) {
 }
 
 test("thread listing filters last activity, sorts across channels, includes settled threads, and enforces access", async () => {
-  const home = await golem.app.workspaces.create(alice, "Thread lists");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const food = golem.app.workspaces.createChannel(home.id, alice, "food");
-  const privateChannel = golem.app.workspaces.createChannel(
+  const home = await shadow.app.workspaces.create(alice, "Thread lists");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const food = shadow.app.workspaces.createChannel(home.id, alice, "food");
+  const privateChannel = shadow.app.workspaces.createChannel(
     home.id,
     alice,
     "private",
@@ -58,7 +58,7 @@ test("thread listing filters last activity, sorts across channels, includes sett
   );
   const summaries: ThreadSummary[] = [];
   for (const channel of [general, food, food, privateChannel]) {
-    const thread = await golem.app.threads.create(
+    const thread = await shadow.app.threads.create(
       home.id,
       alice,
       channel.id,
@@ -66,8 +66,8 @@ test("thread listing filters last activity, sorts across channels, includes sett
     );
     await until(
       () =>
-        golem.app.threads.messages(
-          golem.app.workspaces.thread(thread.id, alice)
+        shadow.app.threads.messages(
+          shadow.app.workspaces.thread(thread.id, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
@@ -81,21 +81,21 @@ test("thread listing filters last activity, sorts across channels, includes sett
     "2026-11-05T00:00:00Z",
   ];
   for (const [index, thread] of summaries.entries()) {
-    golem.app.database
+    shadow.app.database
       .query("UPDATE thread SET updated_at = ? WHERE id = ?")
       .run(Date.parse(times[index]!), thread.id);
   }
-  golem.app.workspaces.setThreadSettled(home.id, recent!.id, alice, true);
-  await golem.app.threads.orchestrator(home.id, alice);
-  await golem.app.threads.orchestrator(home.id, bob);
+  shadow.app.workspaces.setThreadSettled(home.id, recent!.id, alice, true);
+  await shadow.app.threads.orchestrator(home.id, alice);
+  await shadow.app.threads.orchestrator(home.id, bob);
 
   expect(
-    golem.app.threads.list(home.id, alice).map((thread) => thread.id)
+    shadow.app.threads.list(home.id, alice).map((thread) => thread.id)
   ).toEqual([newest!.id, hidden!.id, recent!.id, old!.id]);
   expect(
-    golem.app.threads.list(home.id, bob).map((thread) => thread.id)
+    shadow.app.threads.list(home.id, bob).map((thread) => thread.id)
   ).toEqual([newest!.id, recent!.id, old!.id]);
-  const filtered = golem.app.threads.list(home.id, alice, {
+  const filtered = shadow.app.threads.list(home.id, alice, {
     channel: "#food",
     since: "2026-11-04",
     before: "2026-11-06",
@@ -110,7 +110,7 @@ test("thread listing filters last activity, sorts across channels, includes sett
     }),
   ]);
   expect(
-    golem.app.threads
+    shadow.app.threads
       .list(home.id, bob, {
         since: "2026-11-04T02:00:00+02:00",
         order: "oldest",
@@ -118,9 +118,9 @@ test("thread listing filters last activity, sorts across channels, includes sett
       .map((thread) => thread.id)
   ).toEqual([recent!.id, newest!.id]);
 
-  const token = await golem.signIn("Bob", bob.email);
+  const token = await shadow.signIn("Bob", bob.email);
   const base = `/api/v1/workspaces/${home.id}/threads`;
-  const response = await golem.call(
+  const response = await shadow.call(
     `${base}?channel=food&since=2026-11-04&order=oldest`,
     { token }
   );
@@ -130,41 +130,41 @@ test("thread listing filters last activity, sorts across channels, includes sett
     recent!.id,
     newest!.id,
   ]);
-  expect((await golem.call(`${base}?channel=private`, { token })).status).toBe(
+  expect((await shadow.call(`${base}?channel=private`, { token })).status).toBe(
     404
   );
-  expect((await golem.call(`${base}?channel=missing`, { token })).status).toBe(
+  expect((await shadow.call(`${base}?channel=missing`, { token })).status).toBe(
     404
   );
-  expect((await golem.call(`${base}?since=invalid`, { token })).status).toBe(
+  expect((await shadow.call(`${base}?since=invalid`, { token })).status).toBe(
     400
   );
   expect(
-    (await golem.call(`${base}?since=2026-11-04T12:00:00`, { token })).status
+    (await shadow.call(`${base}?since=2026-11-04T12:00:00`, { token })).status
   ).toBe(400);
   expect(
-    (await golem.call(`${base}?since=2026-11-06&before=2026-11-04`, { token }))
+    (await shadow.call(`${base}?since=2026-11-06&before=2026-11-04`, { token }))
       .status
   ).toBe(400);
-  expect((await golem.call(`${base}?order=invalid`, { token })).status).toBe(
+  expect((await shadow.call(`${base}?order=invalid`, { token })).status).toBe(
     400
   );
-  expect((await golem.call(base)).status).toBe(401);
-  const outsider = await golem.signIn("Eve", "eve@example.com");
-  expect((await golem.call(base, { token: outsider })).status).toBe(404);
+  expect((await shadow.call(base)).status).toBe(401);
+  const outsider = await shadow.signIn("Eve", "eve@example.com");
+  expect((await shadow.call(base, { token: outsider })).status).toBe(404);
 });
 
 test("list_threads uses the person of the turn, including in a shared channel", async () => {
-  const home = await golem.app.workspaces.create(alice, "Thread tool");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const privateChannel = golem.app.workspaces.createChannel(
+  const home = await shadow.app.workspaces.create(alice, "Thread tool");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const privateChannel = shadow.app.workspaces.createChannel(
     home.id,
     alice,
     "private",
     true
   );
-  const hidden = await golem.app.threads.create(
+  const hidden = await shadow.app.threads.create(
     home.id,
     alice,
     privateChannel.id,
@@ -172,10 +172,12 @@ test("list_threads uses the person of the turn, including in a shared channel", 
   );
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(hidden.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(hidden.id, alice)
+      ),
     (state) => !state.running && state.messages.length === 2
   );
-  const listed = await golem.app.threads.create(
+  const listed = await shadow.app.threads.create(
     home.id,
     bob,
     general.id,
@@ -183,32 +185,38 @@ test("list_threads uses the person of the turn, including in a shared channel", 
   );
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(listed.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(listed.id, alice)
+      ),
     (state) => !state.running && state.messages.at(-1)?.text === "Done."
   );
   const result = toolResults.at(-1)!;
   expect(result).toContain(`(thread:${listed.id}) in #general (`);
   expect(result).toContain(", open)");
   expect(result).not.toContain(hidden.id);
-  await golem.app.threads.send(
+  await shadow.app.threads.send(
     listed.id,
     bob,
     'List threads {"channel":"private"}'
   );
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(listed.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(listed.id, alice)
+      ),
     (state) => !state.running && state.messages.length === 4
   );
   expect(toolResults.at(-1)).toContain("Not found");
-  await golem.app.threads.send(
+  await shadow.app.threads.send(
     listed.id,
     alice,
     'List threads {"channel":"private"}'
   );
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(listed.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(listed.id, alice)
+      ),
     (state) => !state.running && state.messages.length === 6
   );
   expect(toolResults.at(-1)).toContain(`(thread:${hidden.id}) in #private (`);

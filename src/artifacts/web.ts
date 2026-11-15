@@ -11,12 +11,12 @@ import { HttpError, notFound } from "../platform/errors.ts";
 import { CONTENT_POLICY, type Viewer } from "./artifacts.ts";
 import { artifactPage } from "./pages.ts";
 
-const VISITOR_COOKIE = "golem-visitor";
+const VISITOR_COOKIE = "shadow-visitor";
 /** The largest runtime call: a 64 KB value with its key, and room for JSON escapes. */
 const MAX_CALL = 200_000;
 /**
  * The artifact's HTML runs in a sandbox without `allow-same-origin`, so it never runs as this site: it cannot read
- * Golem's cookies or call Golem. The wrapper page's frame asks for the same sandbox.
+ * Shadow's cookies or call Shadow. The wrapper page's frame asks for the same sandbox.
  */
 const SANDBOX =
   "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads";
@@ -43,7 +43,7 @@ const linkPage: Handler = async (input) => {
   }
 };
 
-/** The artifact's HTML with its runtime, which runs without Golem's origin. */
+/** The artifact's HTML with its runtime, which runs without Shadow's origin. */
 const linkContent: Handler = async (input) => {
   try {
     const { artifact } = await openFor(input);
@@ -60,7 +60,7 @@ const linkContent: Handler = async (input) => {
   }
 };
 
-/** A call of the artifact's `golem` runtime, from the link's page on the same host. */
+/** A call of the artifact's `shadow` runtime, from the link's page on the same host. */
 const linkCall: Handler = async (input) => {
   if (onShareHost(input)) {
     const origin = input.request.headers.get("origin");
@@ -81,7 +81,7 @@ const SHARE = { share: true } as const;
 
 /**
  * The link of an artifact, which anyone may open when it is public, and the runtime its page calls: `/a/<name>` on
- * Golem's own address, and `/<name>` on the public host of `share_url`. The web app's Artifacts panel shows the page
+ * Shadow's own address, and `/<name>` on the public host of `share_url`. The web app's Artifacts panel shows the page
  * in a frame, and changes and deletes the artifact through the JSON API.
  */
 export const artifactWebRoutes: readonly Route[] = [
@@ -100,7 +100,7 @@ export const artifactWebRoutes: readonly Route[] = [
 async function openFor(input: RouteInput) {
   const share = onShareHost(input);
   // On the public host the client is the address Cloudflare saw; otherwise the address the proxy (Caddy) adds, which
-  // only a Golem that listens on 127.0.0.1 behind it can trust.
+  // only a Shadow that listens on 127.0.0.1 behind it can trust.
   const client = clientKey(
     (share
       ? input.request.headers.get("cf-connecting-ip")

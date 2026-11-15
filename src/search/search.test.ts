@@ -56,14 +56,14 @@ let dispose: () => Promise<void>;
 let dataDirectory: string;
 
 beforeAll(async () => {
-  dataDirectory = await mkdtemp(join(tmpdir(), "golem-search-"));
+  dataDirectory = await mkdtemp(join(tmpdir(), "shadow-search-"));
   app = await createApp(
     {
       configDirectory: dataDirectory,
       dataDirectory,
       host: "127.0.0.1",
       port: 0,
-      baseUrl: "http://golem.test",
+      baseUrl: "http://shadow.test",
       shareUrl: null,
       allowedEmails: [
         "anna@example.com",
@@ -225,14 +225,14 @@ test("search covers one workspace and never another, also through the agent's re
 
   const response = await handler(
     new Request(
-      `http://golem.test/api/v1/workspaces/${family.id}/search?q=dentist`,
+      `http://shadow.test/api/v1/workspaces/${family.id}/search?q=dentist`,
       { headers: { authorization: `Bearer ${otto.token}` } }
     )
   );
   expect(response.status).toBe(404);
   const own = await handler(
     new Request(
-      `http://golem.test/api/v1/workspaces/${work.id}/search?q=dentist`,
+      `http://shadow.test/api/v1/workspaces/${work.id}/search?q=dentist`,
       { headers: { authorization: `Bearer ${otto.token}` } }
     )
   );
@@ -249,7 +249,7 @@ test("each person sees only their own recent searches, newest first, and a searc
   const home = await app.workspaces.create(eva.user, "Home");
   const searches = (token: string, query?: string) =>
     handler(
-      new Request(`http://golem.test/api/v1/workspaces/${home.id}/searches`, {
+      new Request(`http://shadow.test/api/v1/workspaces/${home.id}/searches`, {
         method: query === undefined ? "GET" : "POST",
         headers: {
           authorization: `Bearer ${token}`,

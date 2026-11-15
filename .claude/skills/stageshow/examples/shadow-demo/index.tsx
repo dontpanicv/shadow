@@ -1,10 +1,10 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Bar, Collapse, Count, Phone, Roll, Stage, States, Stream, Window, useLook, type Act, type Layout } from '../../kit'
-import './golem.css'
+import './shadow.css'
 
-// Golem, the family assistant, in its own desktop look: the sidebar on the
+// Shadow, the family assistant, in its own desktop look: the sidebar on the
 // canvas, the chat in an inset panel, Inter, Ember's one rust accent. Beats: a
-// person types a request into the composer and sends it; Golem starts
+// person types a request into the composer and sends it; Shadow starts
 // to work ("Working for 1s · Set heating", the pixel spinner, a shimmer), its
 // step changes twice; the work folds into "Worked for 3s" with one accent
 // pixel for each tool call; the answer streams in, its three cards drop in
@@ -12,7 +12,7 @@ import './golem.css'
 // holds, then the exchange leaves in one reverse stagger around the earlier
 // thread, which comes back down to where the loop began.
 //
-// Golem's look is taken from its code, not invented: the logo and the glyphs
+// Shadow's look is taken from its code, not invented: the logo and the glyphs
 // are the paths of `bun run tokens` and `scripts/icon.ts`, the card icons are
 // web/chats/cards.tsx, the sizes and colors are public/tokens.css
 // and public/styles.css (.message, .work-summary, .step-strip, .card,
@@ -45,7 +45,7 @@ const PIXELS = {
 
 // web/ui/pixels.ts: the 16 × 16 pixel icons
 const GLYPHS = {
-  golem: 'M0 0H12V1H0ZM0 1H10V2H0ZM11 1H12V2H11ZM0 2H6V3H0ZM10 2H11V3H10ZM0 3H6V4H0ZM10 3H12V4H10ZM13 3H14V4H13ZM0 4H2V5H0ZM6 4H10V5H6ZM14 4H15V5H14ZM0 5H2V6H0ZM6 5H8V6H6ZM9 5H10V6H9ZM0 6H9V7H0ZM10 6H11V7H10ZM13 6H14V7H13ZM0 7H10V8H0ZM11 7H12V8H11ZM0 8H8V9H0ZM9 8H11V9H9ZM12 8H13V9H12ZM0 9H9V10H0ZM10 9H11V10H10ZM13 9H14V10H13ZM0 10H4V11H0ZM0 11H4V12H0ZM12 11H13V12H12ZM0 12H11V13H0ZM0 13H12V14H0ZM2 14H10V15H2ZM2 15H11V16H2Z',
+  shadow: 'M0 0H12V1H0ZM0 1H10V2H0ZM11 1H12V2H11ZM0 2H6V3H0ZM10 2H11V3H10ZM0 3H6V4H0ZM10 3H12V4H10ZM13 3H14V4H13ZM0 4H2V5H0ZM6 4H10V5H6ZM14 4H15V5H14ZM0 5H2V6H0ZM6 5H8V6H6ZM9 5H10V6H9ZM0 6H9V7H0ZM10 6H11V7H10ZM13 6H14V7H13ZM0 7H10V8H0ZM11 7H12V8H11ZM0 8H8V9H0ZM9 8H11V9H9ZM12 8H13V9H12ZM0 9H9V10H0ZM10 9H11V10H10ZM13 9H14V10H13ZM0 10H4V11H0ZM0 11H4V12H0ZM12 11H13V12H12ZM0 12H11V13H0ZM0 13H12V14H0ZM2 14H10V15H2ZM2 15H11V16H2Z',
   bell: 'M7 1H9V2H7ZM6 2H10V3H6ZM5 3H6V4H5ZM10 3H11V4H10ZM4 4H5V5H4ZM11 4H12V5H11ZM4 5H5V6H4ZM11 5H12V6H11ZM4 6H5V7H4ZM11 6H12V7H11ZM4 7H5V8H4ZM11 7H12V8H11ZM4 8H5V9H4ZM11 8H12V9H11ZM4 9H5V10H4ZM11 9H12V10H11ZM3 10H4V11H3ZM12 10H13V11H12ZM2 11H14V12H2ZM6 13H10V14H6Z',
   clock: 'M6 2H11V3H6ZM5 3H6V4H5ZM11 3H12V4H11ZM4 4H5V5H4ZM8 4H9V5H8ZM12 4H13V5H12ZM3 5H4V6H3ZM8 5H9V6H8ZM13 5H14V6H13ZM2 6H3V7H2ZM8 6H9V7H8ZM14 6H15V7H14ZM2 7H3V8H2ZM8 7H9V8H8ZM14 7H15V8H14ZM2 8H3V9H2ZM8 8H9V9H8ZM14 8H15V9H14ZM2 9H3V10H2ZM9 9H11V10H9ZM14 9H15V10H14ZM2 10H3V11H2ZM11 10H12V11H11ZM14 10H15V11H14ZM3 11H4V12H3ZM13 11H14V12H13ZM4 12H5V13H4ZM12 12H13V13H12ZM5 13H6V14H5ZM11 13H12V14H11ZM6 14H11V15H6Z',
   search: 'M4 1H9V2H4ZM3 2H4V3H3ZM9 2H10V3H9ZM2 3H3V4H2ZM10 3H11V4H10ZM1 4H2V5H1ZM11 4H12V5H11ZM1 5H2V6H1ZM11 5H12V6H11ZM1 6H2V7H1ZM11 6H12V7H11ZM1 7H2V8H1ZM11 7H12V8H11ZM1 8H2V9H1ZM11 8H12V9H11ZM2 9H3V10H2ZM10 9H11V10H10ZM3 10H4V11H3ZM9 10H11V11H9ZM4 11H9V12H4ZM11 11H12V12H11ZM12 12H13V13H12ZM13 13H14V14H13ZM14 14H15V15H14Z',
@@ -121,7 +121,7 @@ async function script(a: Act<S>) {
   a.put({ draft: '' })
   await a.wait(450)
 
-  // Golem works: its step changes as each tool call starts
+  // Shadow works: its step changes as each tool call starts
   a.mark('work')
   a.put({ phase: 'working' })
   await a.wait(1000)
@@ -162,7 +162,7 @@ async function script(a: Act<S>) {
   await a.wait(100)
 }
 
-export default function GolemDemo() {
+export default function ShadowDemo() {
   useLayoutEffect(() => document.documentElement.style.setProperty('--gd-selected', selectedEdge()), [])
   // A phone is touched, never pointed at: the phone column gets the touch
   // cursor. The stage switches to compact below 600, so this does too
@@ -193,7 +193,7 @@ export default function GolemDemo() {
 
 function Scene({ s, layout }: { s: S; layout: Layout }) {
   const { theme } = useLook()
-  // The phone column gets Golem's iOS app: the same thread, cropped at the
+  // The phone column gets Shadow's iOS app: the same thread, cropped at the
   // top so the composer and its send button stay whole
   if (layout === 'compact') {
     return (
@@ -221,7 +221,7 @@ function Sidebar() {
   return (
     <nav className="gd-side">
       <div className="gd-nav">
-        <NavItem icon="golem" label="Golem" />
+        <NavItem icon="shadow" label="Shadow" />
         <NavItem icon="bell" label="Inbox" />
         <NavItem icon="clock" label="Upcoming" />
         <NavItem icon="search" label="Search" />
@@ -262,9 +262,9 @@ function Thread({ s, ios }: { s: S; ios?: boolean }) {
         <Message author={<Mark />} name={40} lines={['86%', '70%', '44%']} />
         {/* The turns before are real, so the thread opens on real messages */}
         <Said author="Mia" time="07:36" text="Is the house locked?" />
-        <Said author="Golem" time="07:36" text="Yes, both doors are locked." />
+        <Said author="Shadow" time="07:36" text="Yes, both doors are locked." />
         <Said author="Mia" time="07:40" text="Our flight home leaves at 16:20." />
-        <Said author="Golem" time="07:40" text="Have a safe flight." />
+        <Said author="Shadow" time="07:40" text="Have a safe flight." />
 
         <Collapse open={s.sent} reveal="drop" from="below" className="gd-new" data-leaving={s.leaving || undefined}>
           <div className="gd-message">
@@ -280,7 +280,7 @@ function Thread({ s, ios }: { s: S; ios?: boolean }) {
           <div className="gd-message">
             <Mark />
             <div className="gd-message-body">
-              <Meta author="Golem" time="16:05" />
+              <Meta author="Shadow" time="16:05" />
               <States
                 className="gd-work"
                 align="start"
@@ -384,7 +384,7 @@ function Message({ author, name, lines }: { author: ReactNode; name: number; lin
   )
 }
 
-function Said({ author, time, text }: { author: 'Mia' | 'Golem'; time: string; text: string }) {
+function Said({ author, time, text }: { author: 'Mia' | 'Shadow'; time: string; text: string }) {
   return (
     <div className="gd-message">
       {author === 'Mia' ? <Person /> : <Mark />}

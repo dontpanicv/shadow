@@ -9,12 +9,12 @@ import { readConfig } from "./platform/config.ts";
 import { reportRequirements } from "./platform/requirements.ts";
 import { LlamaEmbedder } from "./search/embedder.ts";
 
-// Every file and folder Golem makes is for its own user only: the database, the uploads, the keys.
+// Every file and folder Shadow makes is for its own user only: the database, the uploads, the keys.
 process.umask(0o077);
 const config = await readConfig();
 if (!reportRequirements(await checkRequirements())) {
   console.error(
-    "Golem does not start until this machine has everything above."
+    "Shadow does not start until this machine has everything above."
   );
   process.exit(1);
 }
@@ -53,7 +53,7 @@ HttpRouter.serve(server).pipe(
       idleTimeout: 0,
       // The largest file a person or an agent sends, as the Cloudflare tunnel allows; Bun's own limit is 128 MB.
       maxRequestBodySize: 100 * 1024 ** 2,
-      // Open event streams never end by themselves; the stop ends them after this, before launchd kills Golem at 20 s.
+      // Open event streams never end by themselves; the stop ends them after this, before launchd kills Shadow at 20 s.
       gracefulShutdownTimeout: "5 seconds",
     })
   ),

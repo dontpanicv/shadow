@@ -72,7 +72,7 @@ export function sendWithFiles(
   );
 }
 
-/** A message the signed-in person writes, as it shows before Golem has it. */
+/** A message the signed-in person writes, as it shows before Shadow has it. */
 export function ownMessage(id: string, text: string): Message {
   const me = queryClient.getQueryData(meQuery.queryKey);
   return {
@@ -153,7 +153,7 @@ export function useThreadStream(
   );
   useEffect(() => {
     let source: EventSource | undefined;
-    // A hidden page closes the stream, so Golem sends this thread's notifications as pushes.
+    // A hidden page closes the stream, so Shadow sends this thread's notifications as pushes.
     const follow = () => {
       source?.close();
       source = document.hidden ? undefined : open();
@@ -262,7 +262,7 @@ export interface Place {
 }
 
 /**
- * Moves a thread to another channel: it shows there at once, and goes back with the reason if Golem refuses. Then both
+ * Moves a thread to another channel: it shows there at once, and goes back with the reason if Shadow refuses. Then both
  * channels show the files and artifacts that moved with it.
  */
 export async function moveThread(
@@ -352,7 +352,7 @@ export function briefQuery(workspaceId: string, channelId: string) {
   });
 }
 
-/** What Golem learned that the person sees, facts first. A correction or a delete shows at once. */
+/** What Shadow learned that the person sees, facts first. A correction or a delete shows at once. */
 export const learnedOf = keyed((workspaceId: string) =>
   createCollection(
     queryCollectionOptions({

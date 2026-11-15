@@ -47,7 +47,7 @@ export interface App {
   readonly feedback: FeedbackReports;
 }
 
-/** Everything the modules need from this machine, checked before Golem starts. */
+/** Everything the modules need from this machine, checked before Shadow starts. */
 export async function checkRequirements(): Promise<Requirement[]> {
   const requirements = await Promise.all([
     extractRequirements(),
@@ -68,7 +68,7 @@ export async function createApp(
   mkdirSync(config.dataDirectory, { recursive: true });
   const resolvedSecrets =
     secrets ?? (await Secrets.load(config.configDirectory));
-  const database = openDatabase(join(config.dataDirectory, "golem.sqlite"));
+  const database = openDatabase(join(config.dataDirectory, "shadow.sqlite"));
   const auth = createAuth({
     database,
     secret: resolvedSecrets.authSecret,

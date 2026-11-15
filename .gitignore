@@ -36,7 +36,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # local Pi Durable storage
 data
 
-# Golem keeps everything it needs and stores in these two folders
+# Shadow keeps everything it needs and stores in these two folders
 config
 
 # archify working folders (the README keeps only the rendered pictures)

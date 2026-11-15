@@ -168,7 +168,7 @@ export const notificationCases: {
           channelId: "work",
           title: "Permit application",
           context:
-            "Alex is waiting for the permit decision and asked Golem to report it.",
+            "Alex is waiting for the permit decision and asked Shadow to report it.",
         },
       ],
       evidence: [
@@ -208,7 +208,7 @@ export const notificationCases: {
           channelId: "work",
           title: "Repair claim",
           context:
-            "Latest messages first: Golem: I sent the approved follow-up email. The remaining defects have no written answer. The first notice and delivery dates are not established.",
+            "Latest messages first: Shadow: I sent the approved follow-up email. The remaining defects have no written answer. The first notice and delivery dates are not established.",
         },
       ],
     },
@@ -257,7 +257,7 @@ export const notificationCases: {
               channelId: "calendar",
               title: "Conference today",
               context:
-                "Golem prepared the ticket, programme, and arrival details silently.",
+                "Shadow prepared the ticket, programme, and arrival details silently.",
             },
           ],
           coverage: [{ source: "Gmail", through: now, error: null }],

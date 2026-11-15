@@ -103,7 +103,7 @@ export const tools = {
   textutil: Bun.which("textutil"),
 };
 
-/** The programs extraction runs; Golem checks them before it starts. */
+/** The programs extraction runs; Shadow checks them before it starts. */
 export function extractRequirements(): Requirement[] {
   return [
     program(
@@ -488,7 +488,7 @@ async function renderPage(
   if (!tools.pdftoppm) {
     return null;
   }
-  const directory = await mkdtemp(join(tmpdir(), "golem-page-"));
+  const directory = await mkdtemp(join(tmpdir(), "shadow-page-"));
   try {
     const output = join(directory, "page");
     await run([
@@ -517,7 +517,7 @@ async function recognize(image: Uint8Array): Promise<string> {
   if (!tools.tesseract) {
     return "";
   }
-  const directory = await mkdtemp(join(tmpdir(), "golem-ocr-"));
+  const directory = await mkdtemp(join(tmpdir(), "shadow-ocr-"));
   try {
     const input = join(directory, "image.jpg");
     await Bun.write(input, image);
@@ -608,7 +608,7 @@ export async function jpeg(path: string): Promise<Uint8Array | null> {
     }
   }
   if (tools.sips) {
-    const directory = await mkdtemp(join(tmpdir(), "golem-image-"));
+    const directory = await mkdtemp(join(tmpdir(), "shadow-image-"));
     try {
       const output = join(directory, "image.jpg");
       await run([

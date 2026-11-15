@@ -19,8 +19,8 @@ import {
 import { learnedOf } from "./data.ts";
 
 /**
- * What Golem learned from the threads: facts about each person, then the how-tos of each channel and of the person's
- * own Golem. Each person corrects or deletes what they see.
+ * What Shadow learned from the threads: facts about each person, then the how-tos of each channel and of the person's
+ * own Shadow. Each person corrects or deletes what they see.
  */
 export function LearnedSection({ workspaceId }: { workspaceId: string }) {
   const { data: entries = [], isReady } = useLiveQuery({
@@ -56,7 +56,7 @@ export function LearnedSection({ workspaceId }: { workspaceId: string }) {
       ),
     },
     {
-      title: orchestrator?.title ?? "Golem",
+      title: orchestrator?.title ?? "Shadow",
       entries: entries.filter(
         (entry) => entry.kind === "howto" && entry.channelId === null
       ),

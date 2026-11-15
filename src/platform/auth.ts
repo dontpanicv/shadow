@@ -19,7 +19,7 @@ export interface User {
 }
 
 /**
- * Accounts and the workspace. The workspace is a better-auth organization; Golem has one, the family's.
+ * Accounts and the workspace. The workspace is a better-auth organization; Shadow has one, the family's.
  * People sign in only with Google, and only with an allowed email; there is no other way to create an account.
  */
 export function createAuth(options: AuthOptions) {
@@ -28,7 +28,7 @@ export function createAuth(options: AuthOptions) {
     if (!(email && allowed.has(email.toLowerCase()))) {
       throw new APIError("FORBIDDEN", {
         code: "EMAIL_NOT_ALLOWED",
-        message: "This Google account cannot sign in to Golem.",
+        message: "This Google account cannot sign in to Shadow.",
       });
     }
   };
@@ -48,7 +48,7 @@ export function createAuth(options: AuthOptions) {
     onAPIError: { errorURL: `${options.baseUrl}/login` },
     plugins: [
       organization({
-        // Golem has one workspace, which only the server makes; deletes are soft, and better-auth's would remove rows.
+        // Shadow has one workspace, which only the server makes; deletes are soft, and better-auth's would remove rows.
         allowUserToCreateOrganization: false,
         disableOrganizationDeletion: true,
         schema: {

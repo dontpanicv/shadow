@@ -18,7 +18,7 @@ import {
 } from "./integrations.ts";
 import { whatsAppConnector } from "./whatsapp.ts";
 
-let golem: TestApp;
+let shadow: TestApp;
 let alice: User;
 /** A member who is not the server's owner. */
 let notOwner: User;
@@ -33,18 +33,18 @@ const changes: string[] = [];
 let integrations: Integrations;
 
 beforeAll(async () => {
-  golem = await startTestApp();
-  await golem.signIn("Alice", "alice@example.com");
-  const { internalAdapter } = await golem.app.auth.$context;
+  shadow = await startTestApp();
+  await shadow.signIn("Alice", "alice@example.com");
+  const { internalAdapter } = await shadow.app.auth.$context;
   const { user } = (await internalAdapter.findUserByEmail(
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  workspaceId = (await golem.app.workspaces.create(alice, "Family")).id;
-  await golem.signIn("Eve", "eve@example.com");
+  workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
+  await shadow.signIn("Eve", "eve@example.com");
   const eve = (await internalAdapter.findUserByEmail("eve@example.com"))!;
   notOwner = { id: eve.user.id, name: eve.user.name, email: eve.user.email };
-  await golem.app.workspaces.addMember(workspaceId, alice, notOwner.email);
+  await shadow.app.workspaces.addMember(workspaceId, alice, notOwner.email);
   signInServer = Bun.serve({ port: 0, fetch: signIn });
   const shop: Connector = {
     id: "shop",
@@ -55,11 +55,11 @@ beforeAll(async () => {
     mcp: [new URL("/mcp", signInServer.url).href],
   };
   integrations = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [shop],
       changed: (id) => changes.push(id),
       transport: (_url, provider) => {
@@ -77,7 +77,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await integrations.close();
   signInServer.stop();
-  await golem.close();
+  await shadow.close();
 });
 
 /** The OAuth metadata, client registration, and tokens of a sign-in server. */
@@ -101,7 +101,7 @@ async function signIn(request: Request): Promise<Response> {
   }
   if (pathname === "/register") {
     return Response.json(
-      { ...((await request.json()) as object), client_id: "golem-client" },
+      { ...((await request.json()) as object), client_id: "shadow-client" },
       { status: 201 }
     );
   }
@@ -119,7 +119,7 @@ async function signIn(request: Request): Promise<Response> {
   if (pathname === "/token") {
     const parameters = new URLSearchParams(await request.text());
     tokenRequests.push(parameters);
-    // Golem's own client signs in to Google, whose token names the account.
+    // Shadow's own client signs in to Google, whose token names the account.
     const owned =
       parameters.has("client_secret") || request.headers.has("authorization");
     if (parameters.get("grant_type") === "refresh_token") {
@@ -210,15 +210,15 @@ test("people connect an MCP server by signing in, and agents get its tools", asy
   };
   const page = new URL(url);
   expect(page.pathname).toBe("/authorize");
-  expect(page.searchParams.get("client_id")).toBe("golem-client");
+  expect(page.searchParams.get("client_id")).toBe("shadow-client");
   expect(page.searchParams.get("redirect_uri")).toBe(
-    "https://localhost/golem-sign-in"
+    "https://localhost/shadow-sign-in"
   );
   expect(page.searchParams.get("resource")).toBe(`${page.origin}/mcp`);
   expect(page.searchParams.get("code_challenge_method")).toBe("S256");
   const state = page.searchParams.get("state")!;
   // The sign-in page ends at the loopback address, which the person pastes.
-  const address = `https://localhost/golem-sign-in?code=code-1&state=${state}`;
+  const address = `https://localhost/shadow-sign-in?code=code-1&state=${state}`;
 
   await expect(
     integrations.finishConnect(workspaceId, alice, "shop", "https://localhost/")
@@ -278,7 +278,7 @@ test("a shared sign-in lists an MCP server's tools, else a private one", async (
       workspaceId,
       alice,
       "shop",
-      `https://localhost/golem-sign-in?code=${code}&state=${state}`
+      `https://localhost/shadow-sign-in?code=${code}&state=${state}`
     );
   };
   const shared = await signInTo("code-1");
@@ -302,29 +302,29 @@ test("a sign-in that did not finish adds nothing", async () => {
       workspaceId,
       alice,
       "shop",
-      `https://localhost/golem-sign-in?error=access_denied&state=${state}`
+      `https://localhost/shadow-sign-in?error=access_denied&state=${state}`
     )
   ).rejects.toThrow("The sign-in did not finish");
   expect(integrations.list(workspaceId, alice)[0]!.credentials).toEqual([]);
 });
 
 test("a turn uses its person's own credential, else a shared one, and only its owner shares or deletes it", async () => {
-  await golem.signIn("Bob", "bob@example.com");
-  const { internalAdapter } = await golem.app.auth.$context;
+  await shadow.signIn("Bob", "bob@example.com");
+  const { internalAdapter } = await shadow.app.auth.$context;
   const found = (await internalAdapter.findUserByEmail("bob@example.com"))!;
   const bob = {
     id: found.user.id,
     name: found.user.name,
     email: found.user.email,
   };
-  await golem.app.workspaces.addMember(workspaceId, alice, bob.email);
+  await shadow.app.workspaces.addMember(workspaceId, alice, bob.email);
   const reached: string[] = [];
   const notes = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "notes",
@@ -395,16 +395,16 @@ test("a turn uses its person's own credential, else a shared one, and only its o
 });
 
 test("a tool that acts as a person asks its credential's owner every time, and only an agent in a thread can ask", async () => {
-  const { internalAdapter } = await golem.app.auth.$context;
+  const { internalAdapter } = await shadow.app.auth.$context;
   const bobId = (await internalAdapter.findUserByEmail("bob@example.com"))!.user
     .id;
   const sent: string[] = [];
   const messenger = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "messenger",
@@ -477,11 +477,11 @@ test("a tool that acts as a person asks its credential's owner every time, and o
 
 test("a secret of a connector with an address keeps its server's address", async () => {
   const home = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "home",
@@ -520,11 +520,11 @@ test("a secret of a connector with an address keeps its server's address", async
 
 test("a secret of a connector with an account keeps the account, which names the credential", async () => {
   const thermostat = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "thermostat",
@@ -575,15 +575,15 @@ test("a sign-in server that does not publish its endpoints signs in at the conne
       token: `${origin}/oauth2/token`,
     },
     registered: true,
-    redirectUrl: "https://golem.example.com/golem-sign-in",
+    redirectUrl: "https://shadow.example.com/shadow-sign-in",
     tools: [],
   };
   const withOwner = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [station],
       owner: "alice@example.com",
     }
@@ -598,24 +598,24 @@ test("a sign-in server that does not publish its endpoints signs in at the conne
   const page = new URL(url);
   expect(page.pathname).toBe("/oauth2/authorize");
   expect(page.searchParams.get("redirect_uri")).toBe(
-    "https://golem.example.com/golem-sign-in"
+    "https://shadow.example.com/shadow-sign-in"
   );
   const credential = await withOwner.finishConnect(
     workspaceId,
     alice,
     "station",
-    `https://golem.example.com/golem-sign-in?code=code-4&state=${page.searchParams.get("state")}`
+    `https://shadow.example.com/shadow-sign-in?code=code-4&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("Station");
   expect(tokenRequests.at(-1)?.get("client_secret")).toBe("shh");
   expect(tokenRequests.at(-1)?.get("redirect_uri")).toBe(
-    "https://golem.example.com/golem-sign-in"
+    "https://shadow.example.com/shadow-sign-in"
   );
   withOwner.deleteCredential(workspaceId, alice, credential.id);
   await withOwner.close();
 });
 
-test("only the server's owner sets Golem's own client, and its MCP server hides the tools that send", async () => {
+test("only the server's owner sets Shadow's own client, and its MCP server hides the tools that send", async () => {
   const chat: Connector = {
     id: "chat",
     name: "Chat",
@@ -627,9 +627,9 @@ test("only the server's owner sets Golem's own client, and its MCP server hides 
     scope: "search chat:write",
     hiddenTools: ["checkout"],
   };
-  const { database, workspaces } = golem.app;
+  const { database, workspaces } = shadow.app;
   const withOwner = new Integrations(database, Secrets.forTests(), workspaces, {
-    directory: join(golem.app.config.dataDirectory, "integrations"),
+    directory: join(shadow.app.config.dataDirectory, "integrations"),
     catalog: [chat],
     owner: "Alice@example.com",
     transport: () => {
@@ -669,7 +669,7 @@ test("only the server's owner sets Golem's own client, and its MCP server hides 
     workspaceId,
     alice,
     "chat",
-    `https://localhost/golem-sign-in?code=code-2&state=${page.searchParams.get("state")}`
+    `https://localhost/shadow-sign-in?code=code-2&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("anna@work.example");
   expect((await withOwner.tools(workspaceId)).map((tool) => tool.name)).toEqual(
@@ -692,11 +692,11 @@ test("people sign in to the MCP server at the address of their own machine, and 
   };
   const connectedTo: string[] = [];
   const own = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [coding],
       transport: (server) => {
         connectedTo.push(server.href);
@@ -720,7 +720,7 @@ test("people sign in to the MCP server at the address of their own machine, and 
     workspaceId,
     alice,
     "coding",
-    `https://localhost/golem-sign-in?code=code-5&state=${page.searchParams.get("state")}`
+    `https://localhost/shadow-sign-in?code=code-5&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe(machine.host);
   const tools = await own.tools(workspaceId);
@@ -756,11 +756,11 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
     ],
   };
   const withOwner = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [google],
       owner: "alice@example.com",
     }
@@ -783,7 +783,7 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
     workspaceId,
     alice,
     "google",
-    `https://localhost/golem-sign-in?code=code-3&state=${page.searchParams.get("state")}`
+    `https://localhost/shadow-sign-in?code=code-3&state=${page.searchParams.get("state")}`
   );
   expect(credential.label).toBe("anna@work.example");
 
@@ -804,7 +804,7 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
   await withOwner.close();
 });
 
-test("a keeper keeps the store of each credential while Golem runs, and Golem keeps a client that its API took", async () => {
+test("a keeper keeps the store of each credential while Shadow runs, and Shadow keeps a client that its API took", async () => {
   const kept: string[] = [];
   const stopped: string[] = [];
   const secrets: string[] = [];
@@ -842,11 +842,11 @@ test("a keeper keeps the store of each credential while Golem runs, and Golem ke
     ],
   };
   const options = {
-    directory: join(golem.app.config.dataDirectory, "integrations"),
+    directory: join(shadow.app.config.dataDirectory, "integrations"),
     catalog: [car],
     owner: "alice@example.com",
   };
-  const { database, workspaces } = golem.app;
+  const { database, workspaces } = shadow.app;
   const secretsOfServer = Secrets.forTests();
   const withOwner = new Integrations(
     database,
@@ -873,7 +873,7 @@ test("a keeper keeps the store of each credential while Golem runs, and Golem ke
     workspaceId,
     alice,
     "car",
-    `https://localhost/golem-sign-in?code=code-5&state=${new URL(url).searchParams.get("state")}`
+    `https://localhost/shadow-sign-in?code=code-5&state=${new URL(url).searchParams.get("state")}`
   );
   const credentialStore = join(options.directory, credential.id);
   expect(kept).toEqual([credentialStore]);
@@ -882,7 +882,7 @@ test("a keeper keeps the store of each credential while Golem runs, and Golem ke
     store: credentialStore,
     secret: "access-refreshed",
   });
-  // After a restart, Golem keeps the store again.
+  // After a restart, Shadow keeps the store again.
   const restarted = new Integrations(
     database,
     secretsOfServer,
@@ -899,11 +899,11 @@ test("a keeper keeps the store of each credential while Golem runs, and Golem ke
 
 test("a turn picks one of its person's accounts by name, and lists them", async () => {
   const notes = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "mail",
@@ -958,9 +958,9 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
 });
 
 test("people link their WhatsApp number with a code, and agents read it through wacli", async () => {
-  const directory = join(golem.app.config.dataDirectory, "whatsapp-test");
-  const wacli = join(golem.app.config.dataDirectory, "wacli");
-  // wacli as Golem runs it: linking gives a code, then links; a read answers with its arguments.
+  const directory = join(shadow.app.config.dataDirectory, "whatsapp-test");
+  const wacli = join(shadow.app.config.dataDirectory, "wacli");
+  // wacli as Shadow runs it: linking gives a code, then links; a read answers with its arguments.
   await Bun.write(
     wacli,
     `#!/bin/sh
@@ -987,9 +987,9 @@ esac
   );
   await chmod(wacli, 0o755);
   const whatsApp = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     { directory, catalog: [whatsAppConnector(wacli)] }
   );
   expect(whatsApp.list(workspaceId, alice)[0]).toMatchObject({
@@ -1132,9 +1132,9 @@ esac
   }
 });
 
-test("only a credential's owner lets Golem read it for them, and only a watched one is read", async () => {
-  await golem.signIn("Bob", "bob@example.com");
-  const { internalAdapter } = await golem.app.auth.$context;
+test("only a credential's owner lets Shadow read it for them, and only a watched one is read", async () => {
+  await shadow.signIn("Bob", "bob@example.com");
+  const { internalAdapter } = await shadow.app.auth.$context;
   const found = (await internalAdapter.findUserByEmail("bob@example.com"))!;
   const bob = {
     id: found.user.id,
@@ -1142,19 +1142,19 @@ test("only a credential's owner lets Golem read it for them, and only a watched 
     email: found.user.email,
   };
   if (
-    !golem.app.workspaces
+    !shadow.app.workspaces
       .members(workspaceId, alice)
       .some((member) => member.userId === bob.id)
   ) {
-    await golem.app.workspaces.addMember(workspaceId, alice, bob.email);
+    await shadow.app.workspaces.addMember(workspaceId, alice, bob.email);
   }
   const sinces: number[] = [];
   const watching = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "integrations"),
+      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "mail",
@@ -1205,14 +1205,14 @@ test("only a credential's owner lets Golem read it for them, and only a watched 
   );
   expect(watching.watched()).toEqual([]);
   await expect(watching.watch(mail.id, 1, () => false)).rejects.toThrow(
-    "Golem does not watch this credential"
+    "Shadow does not watch this credential"
   );
   watching.setShared(workspaceId, bob, mail.id, true);
   expect(() => watching.setWatched(workspaceId, alice, mail.id, true)).toThrow(
     "Not found"
   );
   expect(() => watching.setWatched(workspaceId, bob, lights.id, true)).toThrow(
-    "Golem cannot read this integration for you"
+    "Shadow cannot read this integration for you"
   );
   expect(watching.setWatched(workspaceId, bob, mail.id, true)).toMatchObject({
     shared: true,
@@ -1237,7 +1237,7 @@ test("only a credential's owner lets Golem read it for them, and only a watched 
   ).toBe("m1 a1 token");
   watching.setWatched(workspaceId, bob, mail.id, false);
   await expect(watching.attachment(mail.id, "m1", "a1")).rejects.toThrow(
-    "Golem does not watch this credential"
+    "Shadow does not watch this credential"
   );
   expect(watching.watched()).toEqual([]);
 });
@@ -1276,11 +1276,11 @@ test("only an opted-in account owner's chat receives verified read observations"
     })),
   };
   const observed = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: join(golem.app.config.dataDirectory, "observations"),
+      directory: join(shadow.app.config.dataDirectory, "observations"),
       catalog: [connector],
     }
   );
@@ -1326,7 +1326,7 @@ test("only an opted-in account owner's chat receives verified read observations"
 });
 
 test("a WhatsApp mention by internal id shows the person's name, @me for the owner, and stays a number when unknown", async () => {
-  const wacli = join(golem.app.config.dataDirectory, "wacli-mentions");
+  const wacli = join(shadow.app.config.dataDirectory, "wacli-mentions");
   await Bun.write(
     wacli,
     `#!/bin/sh

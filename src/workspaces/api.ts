@@ -7,9 +7,9 @@ export const workspaceApiRoutes: readonly Route[] = [
     "GET",
     "/api/v1/me",
     api(async ({ app, user }) => {
-      // Golem has one workspace; the first person to sign in starts it.
+      // Shadow has one workspace; the first person to sign in starts it.
       if (app.workspaces.ids().length === 0) {
-        await app.workspaces.create(user, "Golem");
+        await app.workspaces.create(user, "Shadow");
       }
       await app.pictures.importGoogle(user.id);
       return json({

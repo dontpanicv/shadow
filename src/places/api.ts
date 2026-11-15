@@ -3,7 +3,7 @@ import { json, type Route } from "../app/http.ts";
 import { HttpError, required } from "../platform/errors.ts";
 import { USER_AGENT } from "./places.ts";
 
-/** The OpenStreetMap tiles, which the web app's map shows through Golem, because its page loads pictures only from Golem. */
+/** The OpenStreetMap tiles, which the web app's map shows through Shadow, because its page loads pictures only from Shadow. */
 const TILES = "https://tile.openstreetmap.org";
 const MAX_ZOOM = 19;
 
@@ -50,7 +50,7 @@ export const placeApiRoutes: readonly Route[] = [
         request.headers.get("accept-language") ?? "en"
       );
       if (!first) {
-        throw new HttpError(404, "Golem did not find this address");
+        throw new HttpError(404, "Shadow did not find this address");
       }
       return json({
         latitude: first.latitude,

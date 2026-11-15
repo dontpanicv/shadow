@@ -65,7 +65,7 @@ function saveSearch(workspaceId: string, query: string): void {
     .catch(() => undefined);
 }
 
-/** Search across one workspace: results update as you type. Before a query, the person's recent searches show, then Golem. */
+/** Search across one workspace: results update as you type. Before a query, the person's recent searches show, then Shadow. */
 export function SearchPage() {
   const { workspaceId } = route.useParams();
   const { q = "" } = route.useSearch();
@@ -174,8 +174,8 @@ export function SearchPage() {
                 params={{ workspaceId }}
                 to="/w/$workspaceId/orchestrator"
               >
-                <Icon name="golem" />
-                <span className="name">Golem</span>
+                <Icon name="shadow" />
+                <span className="name">Shadow</span>
               </Link>
             </div>
           )}
@@ -259,7 +259,7 @@ function ResultRow({
   return <div className="search-row list-row">{body}</div>;
 }
 
-/** What a result opens: an artifact, a file that Golem saved, a thread, or nothing. */
+/** What a result opens: an artifact, a file that Shadow saved, a thread, or nothing. */
 export function resultTarget(
   result: Pick<SearchResult, "kind" | "uri" | "channelId" | "threadId">
 ):

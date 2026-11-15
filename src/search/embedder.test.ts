@@ -7,7 +7,7 @@ import { fromBlob, LlamaEmbedder, toBlob } from "./embedder.ts";
 
 let directory: string;
 beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), "golem-embedder-"));
+  directory = await mkdtemp(join(tmpdir(), "shadow-embedder-"));
 });
 afterAll(() => rm(directory, { recursive: true, force: true }));
 

@@ -54,7 +54,7 @@ export function WorkspaceSettingsPage() {
   );
 }
 
-/** The person's integrations, places, what Golem learned, usage, the LLM provider, and the account, most used first. The sidebar keeps the last workspace, so settings feel like part of the app. */
+/** The person's integrations, places, what Shadow learned, usage, the LLM provider, and the account, most used first. The sidebar keeps the last workspace, so settings feel like part of the app. */
 export function SettingsPage() {
   const { user, workspaces } = useMe();
   const { data: llm } = useQuery(llmQuery);
@@ -75,7 +75,7 @@ export function SettingsPage() {
               <PageSection title="Places">
                 <PlacesSection workspaceId={workspace.id} />
               </PageSection>
-              <PageSection title="What Golem learned">
+              <PageSection title="What Shadow learned">
                 <LearnedSection workspaceId={workspace.id} />
               </PageSection>
               <PageSection title="Usage">
@@ -105,7 +105,7 @@ export function SettingsPage() {
                 <PictureButtons picture={user.picture} />
               </SettingsRow>
               <SettingsRow
-                description="Sign out of Golem on this device."
+                description="Sign out of Shadow on this device."
                 label="Sign out"
               >
                 <Button label="Sign out" onClick={() => signOut()} />
@@ -177,7 +177,7 @@ function PictureButtons({ picture }: { picture: string | null }) {
 /** The middle square of a picture as a small JPEG, so every app shows it round and the upload stays small. */
 async function squarePicture(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file).catch(() => {
-    throw new Error("Golem cannot read this picture");
+    throw new Error("Shadow cannot read this picture");
   });
   const side = Math.min(bitmap.width, bitmap.height);
   const size = Math.min(side, PICTURE_SIZE);
@@ -199,11 +199,11 @@ async function squarePicture(file: File): Promise<Blob> {
   return canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
 }
 
-/** Restarts Golem, which then reads config/golem.toml again. */
+/** Restarts Shadow, which then reads config/shadow.toml again. */
 async function reload() {
   try {
     await request("/server/restart", { method: "POST" });
-    showToast("success", "Golem restarts");
+    showToast("success", "Shadow restarts");
   } catch (error) {
     showError(error);
   }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Settling } from "./settling.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "golem-settling-"));
+const directory = await mkdtemp(join(tmpdir(), "shadow-settling-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
 const DAY_MS = 24 * 60 * 60_000;
 

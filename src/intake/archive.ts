@@ -133,7 +133,7 @@ export class IntakeArchives {
     }
   }
 
-  /** Whether the conversation file changed since Golem wrote it, as when the person added notes. */
+  /** Whether the conversation file changed since Shadow wrote it, as when the person added notes. */
   private async edited(group: ArchiveRow, owner: User): Promise<boolean> {
     if (group.file_id === null || group.content_hash === null) {
       return false;

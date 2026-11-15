@@ -225,7 +225,7 @@ export class Workspaces {
   }
 
   /**
-   * Adds a channel to a workspace; `createdBy` is a person's id, or `golem` for a channel an agent made, and `ownerId`
+   * Adds a channel to a workspace; `createdBy` is a person's id, or `shadow` for a channel an agent made, and `ownerId`
    * the person of a private channel. Names are unique in the workspace, private ones too.
    */
   addChannel(
@@ -267,7 +267,7 @@ export class Workspaces {
   }
 
   /**
-   * A channel name as Golem keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words.
+   * A channel name as Shadow keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words.
    * `409` when another channel of the workspace has it.
    */
   private freeChannelName(
@@ -384,7 +384,7 @@ export class Workspaces {
 
   /**
    * Adds a thread to a channel of the workspace. `Threads` checks who asks, names the thread, and creates its
-   * conversation; `createdBy` is a person's id, or `golem` for a thread an agent started. Each person has at most one
+   * conversation; `createdBy` is a person's id, or `shadow` for a thread an agent started. Each person has at most one
    * `orchestrator` thread in a workspace, their own.
    */
   registerThread(

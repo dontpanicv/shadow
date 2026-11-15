@@ -26,7 +26,7 @@
       "performance": {
         // React compares props by identity only for memoized components; inline handlers are React's own idiom
         "noJsxPropsBind": "off",
-        // Golem runs on one machine: loops await on purpose so one model, one ffmpeg, and one sync run at a time
+        // Shadow runs on one machine: loops await on purpose so one model, one ffmpeg, and one sync run at a time
         "noAwaitInLoops": "off",
         // JavaScriptCore caches regex literals, and parsers read best with the pattern where it is used
         "useTopLevelRegex": "off"

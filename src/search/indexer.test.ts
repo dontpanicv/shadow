@@ -17,7 +17,7 @@ import {
 
 let dataDirectory: string;
 beforeAll(async () => {
-  dataDirectory = await mkdtemp(join(tmpdir(), "golem-indexer-"));
+  dataDirectory = await mkdtemp(join(tmpdir(), "shadow-indexer-"));
 });
 afterAll(() => rm(dataDirectory, { recursive: true, force: true }));
 
@@ -261,7 +261,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
           threadId: "t1",
           title: "Island trip",
           visibility: "members",
-          url: "http://golem.test/a/amber-fox",
+          url: "http://shadow.test/a/amber-fox",
           visitors: 0,
           createdAt: 1,
           updatedAt: 1,
@@ -304,7 +304,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
         (result) => result.uri
       )
     ).toEqual(["thread:t1"]);
-    // A file Golem cannot read is still found by its name, with no snippet of its stored path.
+    // A file Shadow cannot read is still found by its name, with no snippet of its stored path.
     expect(
       (await indexer.search("family", "broken report", 20, null)).results.map(
         (result) => [result.uri, result.snippet]
@@ -336,7 +336,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
     threadId: "t1",
     title: "Island trip",
     visibility: "members" as const,
-    url: "http://golem.test/a/amber-fox",
+    url: "http://shadow.test/a/amber-fox",
     visitors: 0,
     createdAt: 1,
     updatedAt: 1,

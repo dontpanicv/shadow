@@ -10,13 +10,13 @@ import { delivery, ownMessage, sendWithFiles } from "./data.ts";
 export type Outgoing = Message & { readonly threadId: string };
 
 /**
- * The text messages written in this browser that Golem does not have yet. They stay in localStorage through a reload,
+ * The text messages written in this browser that Shadow does not have yet. They stay in localStorage through a reload,
  * every tab sees them, and each shows in its thread until the thread's stream brings the stored message.
  */
 export const outbox = createCollection(
   localStorageCollectionOptions<Outgoing, string>({
     id: "outbox",
-    storageKey: "golem-outbox",
+    storageKey: "shadow-outbox",
     getKey: (message) => message.id,
   })
 );
@@ -36,7 +36,7 @@ export function sendMessage(
   if (files.length > 0) {
     return sendWithFiles(threadId, text, files).isPersisted.promise;
   }
-  // The id is the request id too: a retry of a message that reached Golem does not send it again.
+  // The id is the request id too: a retry of a message that reached Shadow does not send it again.
   outbox.insert({ ...ownMessage(crypto.randomUUID(), text), threadId });
   flush();
   return Promise.resolve();
@@ -75,7 +75,7 @@ function flush(): void {
   sending = true;
   clearTimeout(retry);
   navigator.locks
-    .request("golem-outbox", { ifAvailable: true }, async (lock) => {
+    .request("shadow-outbox", { ifAvailable: true }, async (lock) => {
       if (lock) {
         await sendAll();
       }

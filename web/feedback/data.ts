@@ -5,7 +5,7 @@ import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
 import type { Feedback } from "../app/types.ts";
 
-/** What the agents of a workspace reported about Golem, for the server's owner; a dismiss shows at once. */
+/** What the agents of a workspace reported about Shadow, for the server's owner; a dismiss shows at once. */
 export const feedbackOf = keyed((workspaceId: string) =>
   createCollection(
     queryCollectionOptions({

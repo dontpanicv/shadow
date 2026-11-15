@@ -10,7 +10,7 @@ export interface Pin {
 const STREETS = 15;
 
 /**
- * An OpenStreetMap map, whose tiles come through Golem, with the place's pin in the middle and its circle: the map
+ * An OpenStreetMap map, whose tiles come through Shadow, with the place's pin in the middle and its circle: the map
  * moves under the pin, so a place always has one. Without a pin, it opens on the browser's location, when the person
  * allows it.
  */

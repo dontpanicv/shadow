@@ -39,7 +39,7 @@ export function AgentText({
 export const MessageView = memo(MessageCard);
 
 /**
- * `pending`: a message in the outbox, which Golem does not have yet; it says so in place of its time. `continued`: the
+ * `pending`: a message in the outbox, which Shadow does not have yet; it says so in place of its time. `continued`: the
  * message continues the one before it (`continues`), so it shows no avatar, author, or time.
  */
 function MessageCard({

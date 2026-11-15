@@ -2,12 +2,12 @@
   "schema_version": 1,
   "diagram_type": "dataflow",
   "meta": {
-    "title": "How a conversation flows through Golem",
+    "title": "How a conversation flows through Shadow",
     "output": ".archify/conversation-flow/conversation-flow.html",
     "locale": "en",
     "quality_profile": "showcase",
     "repository": {
-      "url": "https://github.com/dontpanicv/golem.git",
+      "url": "https://github.com/dontpanicv/shadow.git",
       "revision": "485ca721b29b0c40251c61a9361fccbb84a4fa7d"
     }
   },
@@ -36,9 +36,9 @@
       "icon": "person"
     },
     {
-      "id": "golem",
+      "id": "shadow",
       "type": "frontend",
-      "label": "Golem",
+      "label": "Shadow",
       "sublabel": "own endless chat",
       "tag": "memory tree",
       "stage": 1,
@@ -198,10 +198,10 @@
   ],
   "flows": [
     {
-      "id": "ask-golem",
+      "id": "ask-shadow",
       "from": "person",
-      "to": "golem",
-      "label": "asks Golem",
+      "to": "shadow",
+      "label": "asks Shadow",
       "variant": "emphasis"
     },
     {
@@ -212,7 +212,7 @@
     },
     {
       "id": "delegate",
-      "from": "golem",
+      "from": "shadow",
       "to": "chats",
       "label": "send_to_chat",
       "variant": "emphasis"
@@ -220,7 +220,7 @@
     {
       "id": "relay-back",
       "from": "chats",
-      "to": "golem",
+      "to": "shadow",
       "label": "answer relayed",
       "variant": "dashed"
     },
@@ -270,9 +270,9 @@
       "label": "facts"
     },
     {
-      "id": "prompt-golem",
+      "id": "prompt-shadow",
       "from": "sections",
-      "to": "golem",
+      "to": "shadow",
       "label": "every turn",
       "variant": "emphasis"
     },
@@ -287,7 +287,7 @@
   "cards": [
     {
       "dot": "emerald",
-      "title": "Golem, the endless chat",
+      "title": "Shadow, the endless chat",
       "items": [
         "Each person has one chat that never ends",
         "It answers simple things and hands the rest to a topic chat",
@@ -299,7 +299,7 @@
       "title": "Topics and chats",
       "items": [
         "A chat is one Pi Durable conversation",
-        "Answers come back to Golem at most two hops away",
+        "Answers come back to Shadow at most two hops away",
         "Code mode scripts call machines, services, the browser and artifacts"
       ]
     },

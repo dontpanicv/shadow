@@ -55,7 +55,7 @@ export const allRoutes: readonly Route[] = [
       if (
         user.email.toLowerCase() !== app.config.allowedEmails[0]?.toLowerCase()
       ) {
-        throw new HttpError(403, "Only the server's owner restarts Golem");
+        throw new HttpError(403, "Only the server's owner restarts Shadow");
       }
       restart();
       return new Response(null, { status: 202 });
@@ -64,7 +64,7 @@ export const allRoutes: readonly Route[] = [
 ];
 
 /**
- * Stops Golem cleanly after the response goes out; its service starts it again, so it reads `config/golem.toml`
+ * Stops Shadow cleanly after the response goes out; its service starts it again, so it reads `config/shadow.toml`
  * again. Turns continue after the restart, because they are durable.
  */
 function restart(): void {

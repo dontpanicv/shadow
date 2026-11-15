@@ -15,7 +15,7 @@ import type {
 } from "../threads/threads.ts";
 import type { Workspaces } from "../workspaces/workspaces.ts";
 
-/** An automation that Golem suggests to a person; nothing runs until they accept it. */
+/** An automation that Shadow suggests to a person; nothing runs until they accept it. */
 export interface Suggestion {
   readonly id: string;
   readonly kind: "routine" | "reminder";
@@ -47,7 +47,7 @@ export interface WatchedPlace
   }[];
 }
 
-/** What Golem will do for a person, and what waits for them. */
+/** What Shadow will do for a person, and what waits for them. */
 export interface Upcoming {
   readonly routines: readonly Routine[];
   /** The pending reminders for the person or from them. */
@@ -75,12 +75,12 @@ export type AgendaReminders = Pick<
 >;
 export type AgendaPlaces = Pick<Places, "record" | "unwatch">;
 
-/** A person has at most this many suggestions waiting, so Golem asks little. */
+/** A person has at most this many suggestions waiting, so Shadow asks little. */
 const MAX_OPEN = 3;
 /** The answered suggestions that a review sees, so that it does not ask again. */
 const ANSWERED = 20;
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-/** A routine does not run for an arrival or a departure that Golem hears of later than this. */
+/** A routine does not run for an arrival or a departure that Shadow hears of later than this. */
 const ROUTINE_EVENT_AGE = 15 * 60_000;
 const COLUMNS =
   "id, kind, name, text, schedule, at, channel_id AS channelId, thread_id AS threadId, created_at AS createdAt";
@@ -90,10 +90,10 @@ interface SuggestionRow extends Omit<Suggestion, "at"> {
 }
 
 /**
- * Each person's agenda: the routines and reminders that Golem runs for them, the approvals that wait for them, and the
- * automations that Golem suggests. Golem suggests and never makes an automation itself: a suggestion becomes a
+ * Each person's agenda: the routines and reminders that Shadow runs for them, the approvals that wait for them, and the
+ * automations that Shadow suggests. Shadow suggests and never makes an automation itself: a suggestion becomes a
  * routine or a reminder only when its person accepts it. The person's iPhone watches the places of their reminders and
- * routines and reports only what it sees there; Golem decides what is due.
+ * routines and reports only what it sees there; Shadow decides what is due.
  */
 export class Agenda {
   constructor(

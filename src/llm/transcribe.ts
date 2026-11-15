@@ -40,7 +40,7 @@ export async function transcribe(
     .catch(() => undefined)
     .then(() => download(MODEL.url, MODEL.sha256, model));
   await downloading;
-  const directory = await mkdtemp(join(tmpdir(), "golem-transcribe-"));
+  const directory = await mkdtemp(join(tmpdir(), "shadow-transcribe-"));
   const audio = join(directory, "audio.wav");
   try {
     await run(

@@ -4,7 +4,7 @@ import { json, type Route } from "../app/http.ts";
 /**
  * The artifacts of a channel, and the workspace's own, for the web app. Agents make and change them; people open them,
  * change who sees them, and delete them or their data. The app shows an artifact in a frame of its link page, whose
- * `golem` calls go to `/a/:artifact/rpc`.
+ * `shadow` calls go to `/a/:artifact/rpc`.
  */
 export const artifactApiRoutes: readonly Route[] = [
   [

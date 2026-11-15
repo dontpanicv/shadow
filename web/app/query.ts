@@ -23,7 +23,7 @@ export const queryClient = new QueryClient({
 
 const persister = createAsyncStoragePersister({
   storage: { getItem: get, setItem: set, removeItem: del },
-  key: "golem",
+  key: "shadow",
 });
 
 /** Loads the saved copy, then saves every change to it. */
@@ -42,10 +42,10 @@ export async function restoreCache(): Promise<void> {
 }
 
 /** The id of the person whose copy and outbox this browser keeps. */
-const PERSON = "golem-person";
+const PERSON = "shadow-person";
 
 /**
- * After a session ended or a sign-in started, asks Golem whose session this is. The same person keeps the copy and the
+ * After a session ended or a sign-in started, asks Shadow whose session this is. The same person keeps the copy and the
  * outbox, which sends again; for another person, the browser forgets both first. Signed out or offline, it waits.
  */
 export async function confirmPerson(): Promise<void> {

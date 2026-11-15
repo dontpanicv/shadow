@@ -9,7 +9,7 @@ const TIMEOUT_MS = 20 * 1000;
 /** Salus answers an expired security token with HTTP 500 and this fault. */
 const TOKEN_EXPIRED = "<errorCode>106</errorCode>";
 
-/** What Golem keeps of a Salus account: its email and the MD5 of the password that Salus took. */
+/** What Shadow keeps of a Salus account: its email and the MD5 of the password that Salus took. */
 interface Account {
   readonly email: string;
   readonly hash: string;
@@ -25,7 +25,7 @@ interface Session {
  * (https://github.com/Peterka35/salus-it500-cloud). It is not a public API: Salus can change it.
  */
 export function salusConnector(request: typeof fetch = fetch): Connector {
-  /** One session for each account while Golem runs; Salus ends it after a while, and Golem signs in again. */
+  /** One session for each account while Shadow runs; Salus ends it after a while, and Shadow signs in again. */
   const sessions = new Map<string, Promise<Session>>();
 
   /** Calls the API as Salus's apps do: a call that reads sends a form, and a change sends a query. */

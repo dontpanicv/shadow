@@ -32,9 +32,9 @@ const SCOPES = [
 ];
 /** How long one gog command may take. */
 const RUN_MS = 60 * 1000;
-/** How long Golem waits before it tries a command again that Google's quota per minute refused. */
+/** How long Shadow waits before it tries a command again that Google's quota per minute refused. */
 const QUOTA_WAITS_MS = [5000, 20_000];
-/** The gog commands that Golem runs; gog refuses every other one. */
+/** The gog commands that Shadow runs; gog refuses every other one. */
 const COMMANDS = [
   "gmail.search",
   "gmail.messages.search",
@@ -149,7 +149,7 @@ export function googleConnector(
     observations: async (tool, _args, result, source) =>
       tool === "google_mail_thread" ? readMail(result, source.account) : [],
     attachment: async ({ secret, signal }, message, attachment) => {
-      const directory = mkdtempSync(join(tmpdir(), "golem-attachment-"));
+      const directory = mkdtempSync(join(tmpdir(), "shadow-attachment-"));
       try {
         const path = join(directory, "file");
         await gog.run(
@@ -632,7 +632,7 @@ export function googleConnector(
       gogTool(gog, {
         name: "google_drive_share",
         description:
-          "Shares a Drive file that Golem uploaded or created: with anyone who has its link, a person, or a domain. Google sends no email; give the link in your answer or in a draft.",
+          "Shares a Drive file that Shadow uploaded or created: with anyone who has its link, a person, or a domain. Google sends no email; give the link in your answer or in a draft.",
         parameters: Type.Object({
           file: Type.String({ description: "The Drive file's ID." }),
           to: Type.Union(
@@ -732,7 +732,7 @@ export function googleConnector(
       gogTool(gog, {
         name: "google_docs_write",
         description:
-          "Replaces the text of a Google Doc with Markdown, or adds it at the end. Only for Docs that Golem created.",
+          "Replaces the text of a Google Doc with Markdown, or adds it at the end. Only for Docs that Shadow created.",
         parameters: Type.Object({
           document: Type.String({ description: "The Doc's ID." }),
           markdown: Type.String(),
@@ -756,7 +756,7 @@ export function googleConnector(
 
 /** Runs gog with a person's access token, in a home of its own, so it never uses the tokens of this machine's user. */
 class Gog {
-  private readonly home = join(tmpdir(), "golem-gog");
+  private readonly home = join(tmpdir(), "shadow-gog");
 
   constructor(
     private readonly binary: string,

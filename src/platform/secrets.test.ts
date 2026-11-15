@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Secrets } from "./secrets.ts";
 
 test("first start creates a private key file; later starts read the same key", async () => {
-  const config = await mkdtemp(join(tmpdir(), "golem-secrets-"));
+  const config = await mkdtemp(join(tmpdir(), "shadow-secrets-"));
   try {
     const first = await Secrets.load(config);
     const key = join(config, "secret.key");
@@ -22,7 +22,7 @@ test("first start creates a private key file; later starts read the same key", a
 });
 
 test("a key that an older version left readable to others is made private", async () => {
-  const config = await mkdtemp(join(tmpdir(), "golem-secrets-"));
+  const config = await mkdtemp(join(tmpdir(), "shadow-secrets-"));
   try {
     const key = join(config, "secret.key");
     await Bun.write(key, Buffer.alloc(32, 1));

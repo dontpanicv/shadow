@@ -1,6 +1,6 @@
 /**
- * Generates Golem's logo, "Half Badge": an employee badge whose right half is its shadow. `bun scripts/icon.ts` writes
- * the web app's icons, and `logo` gives `bun run tokens` the path that the web app draws. In the drawing (`icon.golem`
+ * Generates Shadow's logo, "Half Badge": an employee badge whose right half is its shadow. `bun scripts/icon.ts` writes
+ * the web app's icons, and `logo` gives `bun run tokens` the path that the web app draws. In the drawing (`icon.shadow`
  * in `design/tokens.json`), `#` is white, `o` is the accent, and `+` is the shadow: the accent in noise. One cell of the
  * noise is 1 point at the size where the logo shows, as in the UI's dither, so the grain stays visible: a finer one
  * blurs into a gradient on a phone's home screen.
@@ -17,7 +17,7 @@ const BLACK = [0, 0, 0, 0xff];
 
 const TILE_PADDING = 0.14;
 const MARK_PADDING = 0.1;
-const ART = tokens.icon.golem.split("|");
+const ART = tokens.icon.shadow.split("|");
 const COLUMNS = Math.max(...ART.map((row) => row.length));
 /** The share of the shadow's noise cells in the accent. */
 const SHADOW = 0.55;
@@ -51,7 +51,7 @@ export function svg(
   const tile = background
     ? `<rect width="${side}" height="${side}" fill="${background}"/>`
     : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" shape-rendering="crispEdges"><title>Golem</title>${tile}<path fill="#ffffff" d="${ink}"/><path fill="${ACCENT_COLOR}" d="${accent}"/></svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" shape-rendering="crispEdges"><title>Shadow</title>${tile}<path fill="#ffffff" d="${ink}"/><path fill="${ACCENT_COLOR}" d="${accent}"/></svg>\n`;
 }
 
 /** The paths of the white cells and the accent cells, for the same absolute commands as the pixel icons. */

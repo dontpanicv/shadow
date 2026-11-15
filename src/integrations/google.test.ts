@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { googleConnector } from "./google.ts";
 import type { FileOf } from "./integrations.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "golem-google-test-"));
+const directory = await mkdtemp(join(tmpdir(), "shadow-google-test-"));
 const gog = join(directory, "gog");
-// gog as Golem runs it: it answers with its arguments, its token, and the content of a file it reads; `fail` fails.
+// gog as Shadow runs it: it answers with its arguments, its token, and the content of a file it reads; `fail` fails.
 await Bun.write(
   gog,
   `#!/bin/sh

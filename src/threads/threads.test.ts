@@ -39,7 +39,7 @@ import {
   threadMessages,
 } from "./threads.ts";
 
-let golem: TestApp;
+let shadow: TestApp;
 let alice: User;
 let bob: User;
 /** What each tool returned to the agent, in order. */
@@ -61,18 +61,18 @@ const held = {
 };
 
 beforeAll(async () => {
-  golem = await startTestApp();
+  shadow = await startTestApp();
   alice = await person("Alice", "alice@example.com");
   bob = await person("Bob", "bob@example.com");
   // Threads run at the same time, so the model answers from what its conversation shows, not from a fixed order.
   // The memory and the channel briefs ask the model in the background too.
-  golem.faux.setResponses(Array.from({ length: 300 }, () => agent));
+  shadow.faux.setResponses(Array.from({ length: 300 }, () => agent));
 });
-afterAll(() => golem.close());
+afterAll(() => shadow.close());
 
 async function person(name: string, email: string): Promise<User> {
-  await golem.signIn(name, email);
-  const { internalAdapter } = await golem.app.auth.$context;
+  await shadow.signIn(name, email);
+  const { internalAdapter } = await shadow.app.auth.$context;
   const { user } = (await internalAdapter.findUserByEmail(email))!;
   return { id: user.id, name: user.name, email: user.email };
 }
@@ -190,7 +190,7 @@ function agent(context: Context, options?: SimpleStreamOptions) {
       });
     }
     if (last.role === "toolResult") {
-      return golem.app.threads
+      return shadow.app.threads
         .requester(held.workspaceId, held.conversationId!)
         .then((requester) => {
           held.requesters.push(requester?.id);
@@ -334,23 +334,23 @@ function agent(context: Context, options?: SimpleStreamOptions) {
 }
 
 async function idle(workspaceId: string, threadId: string) {
-  const thread = golem.app.workspaces
+  const thread = shadow.app.workspaces
     .allThreadsIn(workspaceId)
     .find((candidate) => candidate.id === threadId)!;
   return until(
-    () => golem.app.threads.messages(thread),
+    () => shadow.app.threads.messages(thread),
     (state) => !state.running && state.messages.at(-1)?.text === "Done."
   );
 }
 
 test("an agent starts a thread in another channel, gets the answer back, and cannot keep the exchange going", async () => {
   const inputCount = agentInputs.length;
-  const family = await golem.app.workspaces.create(alice, "Family");
-  const food = golem.app.workspaces.createChannel(family.id, alice, "food");
-  const general = golem.app.workspaces
+  const family = await shadow.app.workspaces.create(alice, "Family");
+  const food = shadow.app.workspaces.createChannel(family.id, alice, "food");
+  const general = shadow.app.workspaces
     .channels(family.id, alice)
     .find((channel) => channel.name === "general")!;
-  const asked = await golem.app.threads.create(
+  const asked = await shadow.app.threads.create(
     family.id,
     alice,
     general.id,
@@ -358,7 +358,7 @@ test("an agent starts a thread in another channel, gets the answer back, and can
   );
 
   const started = await until(
-    async () => golem.app.workspaces.channels(family.id, alice),
+    async () => shadow.app.workspaces.channels(family.id, alice),
     (channels) =>
       channels.find((channel) => channel.id === food.id)!.threads.length === 1
   );
@@ -412,39 +412,39 @@ test("an agent starts a thread in another channel, gets the answer back, and can
   );
   expect(agentInputs.slice(inputCount)).toContainEqual(
     expect.stringMatching(
-      /^\d{4}-\d\d-\d\d \d\d:\d\d UTC Golem from \[Ask #food what's for dinner\]\(thread:[\w-]+\): What's for dinner\?$/
+      /^\d{4}-\d\d-\d\d \d\d:\d\d UTC Shadow from \[Ask #food what's for dinner\]\(thread:[\w-]+\): What's for dinner\?$/
     )
   );
   // Alice hears back once in her thread, with the answer to the report: the first answer waited while #food worked.
   const report = (await idle(family.id, asked.id)).messages.at(-1)!;
   await until(
-    async () => golem.app.notifications.inbox(family.id, alice),
+    async () => shadow.app.notifications.inbox(family.id, alice),
     (inbox) =>
       inbox.notifications.some(
         (notification) => notification.createdAt >= report.time
       )
   );
   await Bun.sleep(100);
-  expect(golem.app.notifications.inbox(family.id, alice).notifications).toEqual(
-    [expect.objectContaining({ threadId: asked.id, text: "Done." })]
-  );
+  expect(
+    shadow.app.notifications.inbox(family.id, alice).notifications
+  ).toEqual([expect.objectContaining({ threadId: asked.id, text: "Done." })]);
 });
 
 test("a thread that reports back leaves the notice to the asker, also for a person who writes in both", async () => {
-  const family = await golem.app.workspaces.create(alice, "Reporting");
-  const food = golem.app.workspaces.createChannel(family.id, alice, "food");
-  const [general] = golem.app.workspaces.channels(family.id, alice);
-  const list = await golem.app.threads.create(
+  const family = await shadow.app.workspaces.create(alice, "Reporting");
+  const food = shadow.app.workspaces.createChannel(family.id, alice, "food");
+  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const list = await shadow.app.threads.create(
     family.id,
     alice,
     food.id,
     "Hello"
   );
   const listed = () =>
-    golem.app.threads.messages(golem.app.workspaces.thread(list.id, alice));
+    shadow.app.threads.messages(shadow.app.workspaces.thread(list.id, alice));
   await until(listed, (state) => !state.running && state.messages.length === 2);
-  const before = golem.app.notifications.inbox(family.id, alice).notifications;
-  const asking = await golem.app.threads.create(
+  const before = shadow.app.notifications.inbox(family.id, alice).notifications;
+  const asking = await shadow.app.threads.create(
     family.id,
     alice,
     general!.id,
@@ -457,43 +457,45 @@ test("a thread that reports back leaves the notice to the asker, also for a pers
     (state) => state.messages.length === 3
   );
   await until(
-    async () => golem.app.notifications.inbox(family.id, alice),
+    async () => shadow.app.notifications.inbox(family.id, alice),
     (inbox) => inbox.notifications.length > before.length
   );
   await Bun.sleep(100);
-  const { notifications } = golem.app.notifications.inbox(family.id, alice);
+  const { notifications } = shadow.app.notifications.inbox(family.id, alice);
   expect(notifications.slice(0, -before.length || undefined)).toEqual([
     expect.objectContaining({ threadId: asking.id, text: "Done." }),
   ]);
 });
 
 test("an answer waits while the thread it asked works, and notifies when that thread stops without a report", async () => {
-  const family = await golem.app.workspaces.create(alice, "Waiting");
-  const [general] = golem.app.workspaces.channels(family.id, alice);
-  const asking = await golem.app.threads.create(
+  const family = await shadow.app.workspaces.create(alice, "Waiting");
+  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const asking = await shadow.app.threads.create(
     family.id,
     alice,
     general!.id,
     "Delegate and answer"
   );
   const working = await until(
-    async () => golem.app.workspaces.channels(family.id, alice)[0]!.threads,
+    async () => shadow.app.workspaces.channels(family.id, alice)[0]!.threads,
     (threads) => threads.some((thread) => thread.title === "Take your time")
   );
   const asked = working.find((thread) => thread.title === "Take your time")!;
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(asking.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(asking.id, alice)
+      ),
     (state) => !state.running && state.messages.length === 2
   );
   await Bun.sleep(100);
-  expect(golem.app.notifications.inbox(family.id, alice).notifications).toEqual(
-    []
-  );
+  expect(
+    shadow.app.notifications.inbox(family.id, alice).notifications
+  ).toEqual([]);
 
-  await golem.app.threads.stop(asked.id, alice);
+  await shadow.app.threads.stop(asked.id, alice);
   const { notifications } = await until(
-    async () => golem.app.notifications.inbox(family.id, alice),
+    async () => shadow.app.notifications.inbox(family.id, alice),
     (inbox) => inbox.notifications.length > 0
   );
   expect(notifications).toEqual([
@@ -502,12 +504,12 @@ test("an answer waits while the thread it asked works, and notifies when that th
 });
 
 test("an answer notifies the person who asked unless a screen of theirs shows the thread, and agents and background work notify too", async () => {
-  const home = await golem.app.workspaces.create(alice, "Notified");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const [general] = golem.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.workspaces.create(alice, "Notified");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const [general] = shadow.app.workspaces.channels(home.id, alice);
   const inboxOf = (member: User) =>
-    golem.app.notifications.inbox(home.id, member);
-  const asked = await golem.app.threads.create(
+    shadow.app.notifications.inbox(home.id, member);
+  const asked = await shadow.app.threads.create(
     home.id,
     alice,
     general!.id,
@@ -527,9 +529,9 @@ test("an answer notifies the person who asked unless a screen of theirs shows th
     readAt: null,
   });
 
-  const unwatch = golem.app.notifications.watch(alice, asked.id);
+  const unwatch = shadow.app.notifications.watch(alice, asked.id);
   expect(inboxOf(alice).unread).toBe(0);
-  await golem.app.threads.send(
+  await shadow.app.threads.send(
     asked.id,
     alice,
     "Notify Bob: The groceries came"
@@ -549,10 +551,10 @@ test("an answer notifies the person who asked unless a screen of theirs shows th
     }),
   ]);
 
-  const thread = golem.app.workspaces
+  const thread = shadow.app.workspaces
     .allThreadsIn(home.id)
     .find((candidate) => candidate.id === asked.id)!;
-  await golem.app.threads.instruct(
+  await shadow.app.threads.instruct(
     thread,
     "Check the mail",
     "mail",
@@ -564,7 +566,7 @@ test("an answer notifies the person who asked unless a screen of theirs shows th
   expect(inboxOf(alice).notifications).toHaveLength(2);
   // The task's turn is Bob's, so it uses his own integrations.
   expect(
-    await golem.app.threads.requester(
+    await shadow.app.threads.requester(
       home.id,
       thread.conversationId as ConversationId
     )
@@ -572,17 +574,17 @@ test("an answer notifies the person who asked unless a screen of theirs shows th
 });
 
 test("an agent lists the channels of its workspace and cannot reach a thread of another workspace", async () => {
-  const home = await golem.app.workspaces.create(alice, "Home");
-  const work = await golem.app.workspaces.create(bob, "Work");
-  const payroll = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Home");
+  const work = await shadow.app.workspaces.create(bob, "Work");
+  const payroll = await shadow.app.threads.create(
     work.id,
     bob,
-    golem.app.workspaces.channels(work.id, bob)[0]!.id,
+    shadow.app.workspaces.channels(work.id, bob)[0]!.id,
     "Payroll"
   );
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
 
-  const listing = await golem.app.threads.create(
+  const listing = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -595,7 +597,7 @@ test("an agent lists the channels of its workspace and cannot reach a thread of 
     )
   );
 
-  const tell = await golem.app.threads.create(
+  const tell = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -607,9 +609,9 @@ test("an agent lists the channels of its workspace and cannot reach a thread of 
       `There is no thread ${payroll.id} in this workspace.`
     )
   );
-  const untouched = golem.app.workspaces.thread(payroll.id, bob);
+  const untouched = shadow.app.workspaces.thread(payroll.id, bob);
   expect(
-    (await golem.app.threads.messages(untouched)).messages.map(
+    (await shadow.app.threads.messages(untouched)).messages.map(
       (message) => message.text
     )
   ).toEqual(["Payroll", "Ok."]);
@@ -621,8 +623,8 @@ function postForm(
   form: FormData,
   headers: Record<string, string>
 ) {
-  return golem.handler(
-    new Request(`http://golem.test${path}`, {
+  return shadow.handler(
+    new Request(`http://shadow.test${path}`, {
       method: "POST",
       headers,
       body: form,
@@ -631,11 +633,11 @@ function postForm(
 }
 
 test("an agent runs a script that calls its tools, and only the script's output reaches it", async () => {
-  const garden = await golem.app.workspaces.create(alice, "Garden");
-  golem.app.workspaces.createChannel(garden.id, alice, "seeds");
-  const general = golem.app.workspaces.channels(garden.id, alice)[0]!;
+  const garden = await shadow.app.workspaces.create(alice, "Garden");
+  shadow.app.workspaces.createChannel(garden.id, alice, "seeds");
+  const general = shadow.app.workspaces.channels(garden.id, alice)[0]!;
 
-  const run = await golem.app.threads.create(
+  const run = await shadow.app.threads.create(
     garden.id,
     alice,
     general.id,
@@ -648,10 +650,10 @@ test("an agent runs a script that calls its tools, and only the script's output 
 });
 
 test("files attach to a new thread, a message, and the channel; every thread of the channel sees them; others cannot reach them", async () => {
-  const token = await golem.signIn("Alice", "alice@example.com");
-  const outsider = await golem.signIn("Bob", "bob@example.com");
-  const home = await golem.app.workspaces.create(alice, "Files");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
+  const token = await shadow.signIn("Alice", "alice@example.com");
+  const outsider = await shadow.signIn("Bob", "bob@example.com");
+  const home = await shadow.app.workspaces.create(alice, "Files");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
 
   const start = new FormData();
   start.set("channelId", general.id);
@@ -680,10 +682,10 @@ test("files attach to a new thread, a message, and the channel; every thread of 
   const message = new FormData();
   message.set("text", "");
   message.append("files", new File(["a photo"], "beach.png"));
-  // The web app sends a message with its session cookie, from Golem's own origin.
+  // The web app sends a message with its session cookie, from Shadow's own origin.
   const sent = await postForm(`/api/v1/threads/${id}/messages`, message, {
-    cookie: await golem.sessionCookie(token),
-    origin: "http://golem.test",
+    cookie: await shadow.sessionCookie(token),
+    origin: "http://shadow.test",
   });
   expect(sent.status).toBe(204);
 
@@ -691,14 +693,14 @@ test("files attach to a new thread, a message, and the channel; every thread of 
     files: { id: string; name: string }[];
   };
   expect(files.map((file) => file.name)).toEqual(["shopping.txt", "page.html"]);
-  const listed = await golem.call(filesPath, { token });
+  const listed = await shadow.call(filesPath, { token });
   expect(
     ((await listed.json()) as { files: { name: string }[] }).files.map(
       (file) => file.name
     )
   ).toEqual(["shopping.txt", "page.html", "beach.png"]);
-  const thread = golem.app.workspaces.thread(id, alice);
-  const { messages } = await golem.app.threads.messages(thread);
+  const thread = shadow.app.workspaces.thread(id, alice);
+  const { messages } = await shadow.app.threads.messages(thread);
   // The agent may answer the last message meanwhile.
   expect(
     messages.slice(0, 3).map((m) => [m.text, m.files.map((f) => f.name)])
@@ -708,20 +710,20 @@ test("files attach to a new thread, a message, and the channel; every thread of 
     ["", ["beach.png"]],
   ]);
 
-  const shopping = await golem.call(filePath(files[0]!.id), {
+  const shopping = await shadow.call(filePath(files[0]!.id), {
     token,
   });
   expect(await shopping.text()).toBe("Milk, eggs, bread");
   expect(shopping.headers.get("content-disposition")).toBe(
     "inline; filename*=UTF-8''shopping.txt"
   );
-  const html = await golem.call(filePath(files[1]!.id), { token });
+  const html = await shadow.call(filePath(files[1]!.id), { token });
   expect(html.headers.get("content-type")).toBe("application/octet-stream");
   expect(html.headers.get("content-disposition")).toStartWith("attachment");
 
   // Only a picture has a JPEG for its thumbnail.
   expect(
-    (await golem.call(`${filePath(files[0]!.id)}/picture`, { token })).status
+    (await shadow.call(`${filePath(files[0]!.id)}/picture`, { token })).status
   ).toBe(404);
 
   for (const path of [
@@ -729,66 +731,66 @@ test("files attach to a new thread, a message, and the channel; every thread of 
     filePath(files[0]!.id),
     `${filePath(files[0]!.id)}/picture`,
   ]) {
-    expect((await golem.call(path, { token: outsider })).status).toBe(404);
+    expect((await shadow.call(path, { token: outsider })).status).toBe(404);
   }
 
   const pagePath = filePath(files[1]!.id);
-  const refused = await golem.call(pagePath, {
+  const refused = await shadow.call(pagePath, {
     token: outsider,
     method: "DELETE",
   });
   expect(refused.status).toBe(404);
-  const deleted = await golem.call(pagePath, { token, method: "DELETE" });
+  const deleted = await shadow.call(pagePath, { token, method: "DELETE" });
   expect(
     ((await deleted.json()) as { files: { name: string }[] }).files.map(
       (file) => file.name
     )
   ).toEqual(["shopping.txt", "beach.png"]);
-  expect((await golem.call(pagePath, { token })).status).toBe(404);
+  expect((await shadow.call(pagePath, { token })).status).toBe(404);
   // The file moved next to `files/`, where no listing or search looks.
   expect(
     await Array.fromAsync(
       new Bun.Glob(`${files[1]!.id}-*`).scan(
-        `${golem.app.config.dataDirectory}/workspaces/${thread.workspaceId}/channels/${general.id}/deleted`
+        `${shadow.app.config.dataDirectory}/workspaces/${thread.workspaceId}/channels/${general.id}/deleted`
       )
     )
   ).toHaveLength(1);
 
   // A settled thread leaves its files to the channel, where a new thread reads them.
-  golem.app.workspaces.setThreadSettled(home.id, id, alice, true);
-  await golem.app.threads.create(home.id, alice, general.id, "Use the list");
+  shadow.app.workspaces.setThreadSettled(home.id, id, alice, true);
+  await shadow.app.threads.create(home.id, alice, general.id, "Use the list");
   expect(
     (
-      await golem.app.threads.files(
-        golem.app.threads.place(home.id, general.id, alice)
+      await shadow.app.threads.files(
+        shadow.app.threads.place(home.id, general.id, alice)
       )
     ).map((file) => file.name)
   ).toEqual(["shopping.txt", "beach.png"]);
 });
 
 test("the orchestrator keeps its files in the workspace, and an agent of any channel reads a file by its id", async () => {
-  const home = await golem.app.workspaces.create(alice, "Budget");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const orchestrator = await golem.app.threads.orchestrator(home.id, alice);
-  await golem.app.threads.send(orchestrator.id, alice, "Keep this", [
+  const home = await shadow.app.workspaces.create(alice, "Budget");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
+  await shadow.app.threads.send(orchestrator.id, alice, "Keep this", [
     new File(["Rent 900"], "budget.txt"),
   ]);
-  const [budget] = await golem.app.threads.files(
-    golem.app.threads.place(home.id, null, alice)
+  const [budget] = await shadow.app.threads.files(
+    shadow.app.threads.place(home.id, null, alice)
   );
   expect(budget!.name).toBe("budget.txt");
   expect(
-    await golem.app.threads.files(
-      golem.app.threads.place(home.id, general.id, alice)
+    await shadow.app.threads.files(
+      shadow.app.threads.place(home.id, general.id, alice)
     )
   ).toEqual([]);
   expect(
     await Bun.file(
-      `${golem.app.config.dataDirectory}/workspaces/${home.id}/files/${budget!.id}-budget.txt`
+      `${shadow.app.config.dataDirectory}/workspaces/${home.id}/files/${budget!.id}-budget.txt`
     ).text()
   ).toBe("Rent 900");
 
-  const reader = await golem.app.threads.create(
+  const reader = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -798,26 +800,26 @@ test("the orchestrator keeps its files in the workspace, and an agent of any cha
   expect(toolResults).toContain("Rent 900");
   await until(
     () =>
-      golem.app.threads.messages(
-        golem.app.workspaces.thread(orchestrator.id, alice)
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(orchestrator.id, alice)
       ),
     (state) => !state.running
   );
 });
 
 test("a composer with no file chosen starts a thread and sends a message", async () => {
-  const token = await golem.signIn("Alice", "alice@example.com");
-  const home = await golem.app.workspaces.create(alice, "No files");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const cookie = await golem.sessionCookie(token);
+  const token = await shadow.signIn("Alice", "alice@example.com");
+  const home = await shadow.app.workspaces.create(alice, "No files");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const cookie = await shadow.sessionCookie(token);
   // What a browser posts for the composer: its empty file field is a part with `filename=""`.
   const post = (path: string, text: string, channelId?: string) =>
-    golem.handler(
-      new Request(`http://golem.test${path}`, {
+    shadow.handler(
+      new Request(`http://shadow.test${path}`, {
         method: "POST",
         headers: {
           cookie,
-          origin: "http://golem.test",
+          origin: "http://shadow.test",
           "content-type": "multipart/form-data; boundary=X",
         },
         body: `${channelId ? `--X\r\nContent-Disposition: form-data; name="channelId"\r\n\r\n${channelId}\r\n` : ""}--X\r\nContent-Disposition: form-data; name="text"\r\n\r\n${text}\r\n--X\r\nContent-Disposition: form-data; name="files"; filename=""\r\nContent-Type: application/octet-stream\r\n\r\n\r\n--X--\r\n`,
@@ -832,14 +834,14 @@ test("a composer with no file chosen starts a thread and sends a message", async
   expect(created.status).toBe(200);
   const { id } = (await created.json()) as { id: string };
   await until(
-    () => golem.app.threads.messages(golem.app.workspaces.thread(id, alice)),
+    () => shadow.app.threads.messages(shadow.app.workspaces.thread(id, alice)),
     (state) => !state.running && state.messages.length === 2
   );
   const sent = await post(`/api/v1/threads/${id}/messages`, "Thanks");
   expect(sent.status).toBe(204);
 
-  const { messages } = await golem.app.threads.messages(
-    golem.app.workspaces.thread(id, alice)
+  const { messages } = await shadow.app.threads.messages(
+    shadow.app.workspaces.thread(id, alice)
   );
   expect(messages.slice(0, 3).map((m) => [m.text, m.files.length])).toEqual([
     ["Hello", 0],
@@ -849,16 +851,16 @@ test("a composer with no file chosen starts a thread and sends a message", async
 });
 
 test("each run counts its usage once for its person, and the owner alone sees everyone's", async () => {
-  const home = await golem.app.workspaces.create(alice, "Usage");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const thread = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Usage");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const thread = await shadow.app.threads.create(
     home.id,
     bob,
     general.id,
     "Hello"
   );
-  const usageOf = (user: User) => golem.app.llm.usage(home.id, user, 30);
+  const usageOf = (user: User) => shadow.app.llm.usage(home.id, user, 30);
   const counted = await until(
     () => Promise.resolve(usageOf(bob)),
     (report) => report.threads.some((row) => row.threadId === thread.id)
@@ -870,14 +872,14 @@ test("each run counts its usage once for its person, and the owner alone sees ev
 
   // Counting again without a new run adds nothing.
   const before = usageOf(bob).total;
-  await golem.app.threads.send(thread.id, bob, "Again");
+  await shadow.app.threads.send(thread.id, bob, "Again");
   await until(
     () => Promise.resolve(usageOf(bob).total),
     (total) => total.output > before.output
   );
   const after = usageOf(bob).total;
   (
-    golem.app.threads as unknown as {
+    shadow.app.threads as unknown as {
       countUsage: (workspaceId: string, threadId: string) => Promise<void>;
     }
   ).countUsage(home.id, thread.id);
@@ -888,10 +890,10 @@ test("each run counts its usage once for its person, and the owner alone sees ev
   expect(owner.people!.map((row) => row.userId)).toContain(bob.id);
   expect(usageOf(alice).threads.length).toBeGreaterThan(0);
 
-  const response = await golem.call(
+  const response = await shadow.call(
     `/api/v1/workspaces/${home.id}/usage?days=7`,
     {
-      token: await golem.signIn("Bob", "bob@example.com"),
+      token: await shadow.signIn("Bob", "bob@example.com"),
     }
   );
   const body = (await response.json()) as {
@@ -905,9 +907,9 @@ test("each run counts its usage once for its person, and the owner alone sees ev
 });
 
 test("a text message steers its author's running turn", async () => {
-  const home = await golem.app.workspaces.create(alice, "Steer");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const thread = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Steer");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const thread = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -915,14 +917,16 @@ test("a text message steers its author's running turn", async () => {
   );
   held.release = undefined;
   held.workspaceId = home.id;
-  held.conversationId = golem.app.workspaces.thread(thread.id, alice)
+  held.conversationId = shadow.app.workspaces.thread(thread.id, alice)
     .conversationId as ConversationId;
   await until(async () => held.release, Boolean);
-  await golem.app.threads.send(thread.id, alice, "Only the kitchen");
+  await shadow.app.threads.send(thread.id, alice, "Only the kitchen");
   held.release!();
   const answered = await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(thread.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(thread.id, alice)
+      ),
     (state) => !state.running && state.messages.length >= 4
   );
   held.release = undefined;
@@ -936,32 +940,34 @@ test("a text message steers its author's running turn", async () => {
 });
 
 test("a message steers only its author's running turn; another member's waits for the answer", async () => {
-  const home = await golem.app.workspaces.create(alice, "Shared voice");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const thread = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Shared voice");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const thread = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
     "Hold for a voice"
   );
   held.workspaceId = home.id;
-  held.conversationId = golem.app.workspaces.thread(thread.id, alice)
+  held.conversationId = shadow.app.workspaces.thread(thread.id, alice)
     .conversationId as ConversationId;
   await until(async () => held.release, Boolean);
-  await golem.app.threads.send(thread.id, bob, "Read my mail");
+  await shadow.app.threads.send(thread.id, bob, "Read my mail");
   held.release!();
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(thread.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(thread.id, alice)
+      ),
     (state) => !state.running && state.messages.length === 4
   );
   // Alice's turn stays hers to its end, and Bob's message gets its own turn.
   expect(held.requesters).toEqual([alice.id]);
   expect(
     (
-      await golem.app.threads.messages(
-        golem.app.workspaces.thread(thread.id, alice)
+      await shadow.app.threads.messages(
+        shadow.app.workspaces.thread(thread.id, alice)
       )
     ).messages.map((message) => message.text)
   ).toEqual(["Hold for a voice", "Done.", "Read my mail", "Ok."]);
@@ -971,7 +977,7 @@ test("an answer carries the work before it: open while the agent works, folded o
   const entries = [
     {
       id: 1,
-      kind: "golem.message",
+      kind: "shadow.message",
       data: { author: "Alice", authorId: "a", text: "Weather?", files: [] },
       model: [{ role: "user", content: "Weather?", timestamp: 1000 }],
     },
@@ -1089,7 +1095,7 @@ test("a stopped turn says so, calls of one tool in a row fold into one row, and 
     entries: [
       {
         id: 1,
-        kind: "golem.message",
+        kind: "shadow.message",
         data: { author: "Alice", authorId: "a", text: "Plan it", files: [] },
         model: [{ role: "user", content: "Plan it", timestamp: 1000 }],
       },
@@ -1137,10 +1143,10 @@ test("a stopped turn says so, calls of one tool in a row fold into one row, and 
 });
 
 test("the workspace's working stream shows a thread while its agent works, and people stop it", async () => {
-  const token = await golem.signIn("Alice", "alice@example.com");
-  const family = await golem.app.workspaces.create(alice, "Busy");
-  const [general] = golem.app.workspaces.channels(family.id, alice);
-  const stream = await golem.call(`/api/v1/workspaces/${family.id}/working`, {
+  const token = await shadow.signIn("Alice", "alice@example.com");
+  const family = await shadow.app.workspaces.create(alice, "Busy");
+  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const stream = await shadow.call(`/api/v1/workspaces/${family.id}/working`, {
     token,
   });
 
@@ -1154,14 +1160,14 @@ test("the workspace's working stream shows a thread while its agent works, and p
   };
   expect(await working()).toEqual([]);
 
-  const thread = await golem.app.threads.create(
+  const thread = await shadow.app.threads.create(
     family.id,
     alice,
     general!.id,
     "Take your time"
   );
   expect(await working()).toEqual([thread.id]);
-  const stopped = await golem.call(`/api/v1/threads/${thread.id}/stop`, {
+  const stopped = await shadow.call(`/api/v1/threads/${thread.id}/stop`, {
     token,
     method: "POST",
   });
@@ -1169,8 +1175,8 @@ test("the workspace's working stream shows a thread while its agent works, and p
   expect(await working()).toEqual([]);
   await reader.cancel();
   expect(
-    await golem.app.threads.messages(
-      golem.app.workspaces.thread(thread.id, alice)
+    await shadow.app.threads.messages(
+      shadow.app.workspaces.thread(thread.id, alice)
     )
   ).toMatchObject({
     running: false,
@@ -1180,17 +1186,17 @@ test("the workspace's working stream shows a thread while its agent works, and p
     ],
   });
 
-  const outsider = await golem.signIn("Eve", "eve@example.com");
+  const outsider = await shadow.signIn("Eve", "eve@example.com");
   expect(
     (
-      await golem.call(`/api/v1/workspaces/${family.id}/working`, {
+      await shadow.call(`/api/v1/workspaces/${family.id}/working`, {
         token: outsider,
       })
     ).status
   ).toBe(404);
   expect(
     (
-      await golem.call(`/api/v1/threads/${thread.id}/stop`, {
+      await shadow.call(`/api/v1/threads/${thread.id}/stop`, {
         token: outsider,
         method: "POST",
       })
@@ -1199,15 +1205,15 @@ test("the workspace's working stream shows a thread while its agent works, and p
 });
 
 test("stopping a thread also stops the threads it asked, which still work on its message", async () => {
-  const family = await golem.app.workspaces.create(alice, "Delegating");
-  const [general] = golem.app.workspaces.channels(family.id, alice);
+  const family = await shadow.app.workspaces.create(alice, "Delegating");
+  const [general] = shadow.app.workspaces.channels(family.id, alice);
   const seen: (readonly string[])[] = [];
-  const stopWatching = await golem.app.threads.watchWorking(
+  const stopWatching = await shadow.app.threads.watchWorking(
     family.id,
     alice,
     (threadIds) => seen.push(threadIds)
   );
-  const asking = await golem.app.threads.create(
+  const asking = await shadow.app.threads.create(
     family.id,
     alice,
     general!.id,
@@ -1219,75 +1225,77 @@ test("stopping a thread also stops the threads it asked, which still work on its
   );
   const asked = seen.at(-1)!.find((id) => id !== asking.id)!;
 
-  await golem.app.threads.stop(asking.id, alice);
+  await shadow.app.threads.stop(asking.id, alice);
   await until(
     async () => seen.at(-1) ?? [],
     (threadIds) => threadIds.length === 0
   );
   await stopWatching();
   const answer = (
-    await golem.app.threads.messages(golem.app.workspaces.thread(asked, alice))
+    await shadow.app.threads.messages(
+      shadow.app.workspaces.thread(asked, alice)
+    )
   ).messages.at(-1);
   expect(answer).toMatchObject({ agent: true, work: { stopped: true } });
 });
 
 test("each member has an own orchestrator thread, which stays open, out of the channel lists, and private", async () => {
-  const family = await golem.app.workspaces.create(alice, "Orchestrated");
+  const family = await shadow.app.workspaces.create(alice, "Orchestrated");
   const [first, again] = await Promise.all([
-    golem.app.threads.orchestrator(family.id, alice),
-    golem.app.threads.orchestrator(family.id, alice),
+    shadow.app.threads.orchestrator(family.id, alice),
+    shadow.app.threads.orchestrator(family.id, alice),
   ]);
   expect(again.id).toBe(first.id);
-  expect((await golem.app.threads.orchestrator(family.id, alice)).id).toBe(
+  expect((await shadow.app.threads.orchestrator(family.id, alice)).id).toBe(
     first.id
   );
   expect(
-    golem.app.workspaces.channels(family.id, alice).flatMap((c) => c.threads)
+    shadow.app.workspaces.channels(family.id, alice).flatMap((c) => c.threads)
   ).toEqual([]);
 
-  const token = await golem.signIn("Alice", "alice@example.com");
+  const token = await shadow.signIn("Alice", "alice@example.com");
   const base = `/api/v1/workspaces/${family.id}`;
   expect(
-    await (await golem.call(`${base}/orchestrator`, { token })).json()
+    await (await shadow.call(`${base}/orchestrator`, { token })).json()
   ).toEqual({
     id: first.id,
     channelId: first.channelId,
-    title: "Golem",
+    title: "Shadow",
     updatedAt: first.updatedAt,
     settledAt: null,
   });
-  const settle = await golem.call(`${base}/threads/${first.id}/settled`, {
+  const settle = await shadow.call(`${base}/threads/${first.id}/settled`, {
     token,
     body: { settled: true },
   });
   expect(settle.status).toBe(400);
   expect(await settle.json()).toEqual({ error: "This thread stays open" });
-  const outsider = await golem.signIn("Bob", "bob@example.com");
+  const outsider = await shadow.signIn("Bob", "bob@example.com");
   expect(
-    (await golem.call(`${base}/orchestrator`, { token: outsider })).status
+    (await shadow.call(`${base}/orchestrator`, { token: outsider })).status
   ).toBe(404);
-  await golem.app.workspaces.addMember(family.id, alice, bob.email);
-  const bobs = await golem.app.threads.orchestrator(family.id, bob);
+  await shadow.app.workspaces.addMember(family.id, alice, bob.email);
+  const bobs = await shadow.app.threads.orchestrator(family.id, bob);
   expect(bobs.id).not.toBe(first.id);
-  expect(() => golem.app.workspaces.thread(first.id, bob)).toThrow();
+  expect(() => shadow.app.workspaces.thread(first.id, bob)).toThrow();
   await expect(
-    golem.app.threads.send(first.id, bob, "Read Alice's thread")
+    shadow.app.threads.send(first.id, bob, "Read Alice's thread")
   ).rejects.toThrow();
   expect(
-    (await golem.call(`/api/v1/threads/${first.id}`, { token: outsider }))
+    (await shadow.call(`/api/v1/threads/${first.id}`, { token: outsider }))
       .status
   ).toBe(404);
 });
 
 test("a person's memory has only their own conversation, and search shows nobody else's own thread", async () => {
-  const home = await golem.app.workspaces.create(alice, "Private");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const [general] = golem.app.workspaces.channels(home.id, alice);
-  const alices = await golem.app.threads.orchestrator(home.id, alice);
-  const bobs = await golem.app.threads.orchestrator(home.id, bob);
-  await golem.app.threads.send(alices.id, alice, "My diary code is 4711");
-  await golem.app.threads.send(bobs.id, bob, "My diary code is 8123");
-  const shared = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Private");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const alices = await shadow.app.threads.orchestrator(home.id, alice);
+  const bobs = await shadow.app.threads.orchestrator(home.id, bob);
+  await shadow.app.threads.send(alices.id, alice, "My diary code is 4711");
+  await shadow.app.threads.send(bobs.id, bob, "My diary code is 8123");
+  const shared = await shadow.app.threads.create(
     home.id,
     alice,
     general!.id,
@@ -1295,14 +1303,14 @@ test("a person's memory has only their own conversation, and search shows nobody
   );
   for (const thread of [
     alices,
-    golem.app.workspaces.thread(shared.id, alice),
+    shadow.app.workspaces.thread(shared.id, alice),
   ]) {
     await until(
-      () => golem.app.threads.messages(thread),
+      () => shadow.app.threads.messages(thread),
       (state) => !state.running && state.messages.length === 2
     );
   }
-  const { memories } = golem.app.threads as unknown as {
+  const { memories } = shadow.app.threads as unknown as {
     memories: Map<
       string,
       { view: (end: number) => string; count: () => number }
@@ -1320,9 +1328,9 @@ test("a person's memory has only their own conversation, and search shows nobody
   expect(await viewOf(alices)).not.toContain("Dinner at seven");
   expect(await viewOf(alices)).not.toContain("8123");
 
-  await golem.app.indexer.scan(home.id);
+  await shadow.app.indexer.scan(home.id);
   const found = (searcher: User) =>
-    golem.app.indexer
+    shadow.app.indexer
       .search(home.id, "diary", 20, searcher.id)
       .then(({ results }) => results.map((result) => result.uri));
   expect(await found(alice)).toContain(`thread:${alices.id}`);
@@ -1330,9 +1338,11 @@ test("a person's memory has only their own conversation, and search shows nobody
 });
 
 test("memory keeps full worker results across rebuilds without copying worker work or old channel memory", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "golem-conversation-memory-"));
-  const home = await golem.app.workspaces.create(alice, "Reports");
-  const [general] = golem.app.workspaces.channels(home.id, alice);
+  const directory = await mkdtemp(
+    join(tmpdir(), "shadow-conversation-memory-")
+  );
+  const home = await shadow.app.workspaces.create(alice, "Reports");
+  const [general] = shadow.app.workspaces.channels(home.id, alice);
   const first = savingThreads(directory, async () => null);
   let reopened: Threads | undefined;
   try {
@@ -1380,7 +1390,7 @@ test("memory keeps full worker results across rebuilds without copying worker wo
     const original = await memory!.zoom(2, 1);
     expect(original).toContain(result);
     expect(original).toContain(`thread:${worker.id}`);
-    expect(original).toContain("Golem: Ok.");
+    expect(original).toContain("Shadow: Ok.");
     expect(original).not.toContain("Run code:");
     expect(memory!.view(3)).not.toContain("Unrelated channel history");
     expect(await memory!.zoom(0, 1)).toContain("Alice: Keep the result");
@@ -1455,27 +1465,32 @@ test("memory keeps full worker results across rebuilds without copying worker wo
 }, 10_000);
 
 test("a thread moves with its artifacts, its own files, and a note; into a private channel only by its starter, and the others lose it at once", async () => {
-  const token = await golem.signIn("Alice", "alice@example.com");
-  const bobToken = await golem.signIn("Bob", "bob@example.com");
-  const home = await golem.app.workspaces.create(alice, "Moves");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const [general] = golem.app.workspaces.channels(home.id, alice);
-  const work = golem.app.workspaces.createChannel(home.id, alice, "work");
-  const mine = golem.app.workspaces.createChannel(home.id, alice, "mine", true);
-  const bobs = await golem.app.threads.orchestrator(home.id, bob);
+  const token = await shadow.signIn("Alice", "alice@example.com");
+  const bobToken = await shadow.signIn("Bob", "bob@example.com");
+  const home = await shadow.app.workspaces.create(alice, "Moves");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const work = shadow.app.workspaces.createChannel(home.id, alice, "work");
+  const mine = shadow.app.workspaces.createChannel(
+    home.id,
+    alice,
+    "mine",
+    true
+  );
+  const bobs = await shadow.app.threads.orchestrator(home.id, bob);
   const shared = (
-    await golem.app.threads.upload(home.id, general!.id, alice, [
+    await shadow.app.threads.upload(home.id, general!.id, alice, [
       new File(["Shared list"], "shared.txt"),
     ])
   )[0]!;
-  const trip = await golem.app.threads.create(
+  const trip = await shadow.app.threads.create(
     home.id,
     alice,
     general!.id,
     `Plan the Rome trip with file ${shared.id}`,
     [new File(["Flights at nine"], "flights.txt")]
   );
-  const other = await golem.app.threads.create(
+  const other = await shadow.app.threads.create(
     home.id,
     bob,
     general!.id,
@@ -1483,25 +1498,26 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   );
   for (const id of [trip.id, other.id]) {
     await until(
-      () => golem.app.threads.messages(golem.app.workspaces.thread(id, alice)),
+      () =>
+        shadow.app.threads.messages(shadow.app.workspaces.thread(id, alice)),
       (state) => !state.running && state.messages.length === 2
     );
   }
-  golem.app.artifacts.create(
-    golem.app.workspaces.thread(trip.id, alice),
+  shadow.app.artifacts.create(
+    shadow.app.workspaces.thread(trip.id, alice),
     general!.id,
     { title: "Rome", html: "<p>Rome</p>", requestKey: `rome:${trip.id}` }
   );
   const move = (threadId: string, channelId: string, as = token) =>
-    golem.call(`/api/v1/workspaces/${home.id}/threads/${threadId}/channel`, {
+    shadow.call(`/api/v1/workspaces/${home.id}/threads/${threadId}/channel`, {
       token: as,
       method: "POST",
       body: { channelId },
     });
   const names = async (channelId: string) =>
     (
-      await golem.app.threads.files(
-        golem.app.threads.place(home.id, channelId, alice)
+      await shadow.app.threads.files(
+        shadow.app.threads.place(home.id, channelId, alice)
       )
     ).map((file) => file.name);
 
@@ -1514,12 +1530,12 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   expect(await names(general!.id)).toEqual(["shared.txt"]);
   expect(await names(work.id)).toEqual(["flights.txt"]);
   expect(
-    golem.app.artifacts
+    shadow.app.artifacts
       .inPlace(home.id, work.id, alice)
       .map((artifact) => artifact.title)
   ).toEqual(["Rome"]);
-  const { messages } = await golem.app.threads.messages(
-    golem.app.workspaces.thread(trip.id, alice)
+  const { messages } = await shadow.app.threads.messages(
+    shadow.app.workspaces.thread(trip.id, alice)
   );
   expect([messages.at(-1)?.author, messages.at(-1)?.text]).toEqual([
     "Alice",
@@ -1532,9 +1548,9 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   expect((await move(trip.id, "nowhere")).status).toBe(404);
   expect((await move(trip.id, general!.id, bobToken)).status).toBe(200);
 
-  await golem.app.indexer.scan(home.id);
+  await shadow.app.indexer.scan(home.id);
   const found = (searcher: User) =>
-    golem.app.indexer
+    shadow.app.indexer
       .search(home.id, "Rome", 20, searcher.id)
       .then(({ results }) => results.map((result) => result.uri));
   expect(await found(bob)).toContain(`thread:${trip.id}`);
@@ -1544,10 +1560,11 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   expect(await found(bob)).not.toContain(`thread:${trip.id}`);
   expect(await found(alice)).toContain(`thread:${trip.id}`);
   expect(
-    (await golem.call(`/api/v1/threads/${trip.id}`, { token: bobToken })).status
+    (await shadow.call(`/api/v1/threads/${trip.id}`, { token: bobToken }))
+      .status
   ).toBe(404);
 
-  const busy = await golem.app.threads.create(
+  const busy = await shadow.app.threads.create(
     home.id,
     alice,
     general!.id,
@@ -1555,17 +1572,17 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   );
   await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(busy.id, alice)),
+      shadow.app.threads.messages(shadow.app.workspaces.thread(busy.id, alice)),
     (state) => state.running
   );
   expect((await move(busy.id, work.id)).status).toBe(409);
-  await golem.call(`/api/v1/threads/${busy.id}/stop`, {
+  await shadow.call(`/api/v1/threads/${busy.id}/stop`, {
     token,
     method: "POST",
   });
 
   // A person asks the agent to move its own thread.
-  const asked = await golem.app.threads.create(
+  const asked = await shadow.app.threads.create(
     home.id,
     alice,
     general!.id,
@@ -1573,7 +1590,9 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
   );
   const answered = await until(
     () =>
-      golem.app.threads.messages(golem.app.workspaces.thread(asked.id, alice)),
+      shadow.app.threads.messages(
+        shadow.app.workspaces.thread(asked.id, alice)
+      ),
     (state) => !state.running && state.messages.length === 3
   );
   // The note comes before the answer of the turn that moved the thread.
@@ -1582,17 +1601,17 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
     "_Moved this thread from #general to #work._",
     "Done.",
   ]);
-  expect(golem.app.workspaces.thread(asked.id, alice).channelId).toBe(work.id);
+  expect(shadow.app.workspaces.thread(asked.id, alice).channelId).toBe(work.id);
   expect(
     answered.messages[2]?.work?.steps.map((step) => [step.tool, step.output])
   ).toEqual([["move_thread", expect.stringContaining("to #work.")]]);
 });
 
 test("the orchestrator gets its own instructions, also after they change, and a channel thread gets none of them", async () => {
-  const home = await golem.app.workspaces.create(alice, "Delegating");
-  const orchestrator = await golem.app.threads.orchestrator(home.id, alice);
-  // An older version of Golem stored other orchestrator instructions.
-  const threads = golem.app.threads as unknown as {
+  const home = await shadow.app.workspaces.create(alice, "Delegating");
+  const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
+  // An older version of Shadow stored other orchestrator instructions.
+  const threads = shadow.app.threads as unknown as {
     conversation: (thread: ThreadRef) => Promise<Conversation>;
   };
   await (await threads.conversation(orchestrator)).configure(
@@ -1601,10 +1620,10 @@ test("the orchestrator gets its own instructions, also after they change, and a 
   );
   const promptOf = async (thread: ThreadRef, text: string) => {
     const before = systemPrompts.length;
-    const { messages } = await golem.app.threads.messages(thread);
-    await golem.app.threads.send(thread.id, alice, text);
+    const { messages } = await shadow.app.threads.messages(thread);
+    await shadow.app.threads.send(thread.id, alice, text);
     await until(
-      () => golem.app.threads.messages(thread),
+      () => shadow.app.threads.messages(thread),
       (state) => !state.running && state.messages.length === messages.length + 2
     );
     return systemPrompts.slice(before).join("\n");
@@ -1613,18 +1632,18 @@ test("the orchestrator gets its own instructions, also after they change, and a 
     "This thread is an orchestrator: the own thread of one person"
   );
 
-  const [channel] = golem.app.workspaces.channels(home.id, alice);
-  const created = await golem.app.threads.create(
+  const [channel] = shadow.app.workspaces.channels(home.id, alice);
+  const created = await shadow.app.threads.create(
     home.id,
     alice,
     channel!.id,
     "Hi"
   );
-  const channelThread = golem.app.workspaces
+  const channelThread = shadow.app.workspaces
     .allThreadsIn(home.id)
     .find((candidate) => candidate.id === created.id)!;
   await until(
-    () => golem.app.threads.messages(channelThread),
+    () => shadow.app.threads.messages(channelThread),
     (state) => !state.running && state.messages.length === 2
   );
   expect(await promptOf(channelThread, "Plan our trip")).not.toContain(
@@ -1633,40 +1652,40 @@ test("the orchestrator gets its own instructions, also after they change, and a 
 });
 
 test("the soul comes first in an agent's instructions, and the instructions hold only the work", async () => {
-  const home = await golem.app.workspaces.create(alice, "Souled");
-  const [channel] = golem.app.workspaces.channels(home.id, alice);
+  const home = await shadow.app.workspaces.create(alice, "Souled");
+  const [channel] = shadow.app.workspaces.channels(home.id, alice);
   const before = systemPrompts.length;
-  const created = await golem.app.threads.create(
+  const created = await shadow.app.threads.create(
     home.id,
     alice,
     channel!.id,
     "Hi"
   );
-  const thread = golem.app.workspaces
+  const thread = shadow.app.workspaces
     .allThreadsIn(home.id)
     .find((candidate) => candidate.id === created.id)!;
   await until(
-    () => golem.app.threads.messages(thread),
+    () => shadow.app.threads.messages(thread),
     (state) => !state.running && state.messages.length === 2
   );
   const prompt = systemPrompts.slice(before).join("\n");
-  const soul = prompt.indexOf("<soul>\n# Golem");
+  const soul = prompt.indexOf("<soul>\n# Shadow");
   expect(soul).toBeGreaterThan(-1);
   expect(soul).toBeLessThan(prompt.indexOf("This thread is in #"));
   expect(soul).toBeLessThan(
-    prompt.indexOf("You are Golem, a family assistant.")
+    prompt.indexOf("You are Shadow, a family assistant.")
   );
   expect(prompt).not.toContain("Answer concisely");
 });
 
 test("the orchestrator compacts into a view of its memory, and its agent zooms into a message", async () => {
-  golem.faux.appendResponses(Array.from({ length: 40 }, () => agent));
-  const home = await golem.app.workspaces.create(alice, "Remembering");
-  const orchestrator = await golem.app.threads.orchestrator(home.id, alice);
+  shadow.faux.appendResponses(Array.from({ length: 40 }, () => agent));
+  const home = await shadow.app.workspaces.create(alice, "Remembering");
+  const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   const said = async (text: string, messages: number) => {
-    await golem.app.threads.send(orchestrator.id, alice, text);
+    await shadow.app.threads.send(orchestrator.id, alice, text);
     return until(
-      () => golem.app.threads.messages(orchestrator),
+      () => shadow.app.threads.messages(orchestrator),
       (state) => !state.running && state.messages.length === messages
     );
   };
@@ -1678,9 +1697,9 @@ test("the orchestrator compacts into a view of its memory, and its agent zooms i
   const zoomed = await said("Zoom 0", 10);
   const view = memoryViews.findLast((memory) => memory.includes("5+1|"));
   expect(view).toMatch(
-    /0\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: The wifi password is on the fridge\n1\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Golem: Ok.\n2\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: Bring the tent/
+    /0\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: The wifi password is on the fridge\n1\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Shadow: Ok.\n2\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: Bring the tent/
   );
-  expect(view).toMatch(/5\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Golem: Ok\./);
+  expect(view).toMatch(/5\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Shadow: Ok\./);
   expect(view).not.toContain("Here is the manual");
   // The transcript keeps the messages that the compaction took out of the model's context.
   expect(zoomed.messages[0]!.text).toBe("The wifi password is on the fridge");
@@ -1693,9 +1712,9 @@ test("the orchestrator compacts into a view of its memory, and its agent zooms i
 });
 
 test("the orchestrator compacts after its turn without notifying about the same answer again", async () => {
-  golem.faux.appendResponses(Array.from({ length: 20 }, () => agent));
-  const home = await golem.app.workspaces.create(alice, "Compacting");
-  const orchestrator = await golem.app.threads.orchestrator(home.id, alice);
+  shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
+  const home = await shadow.app.workspaces.create(alice, "Compacting");
+  const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
   const views = memoryViews.length;
   for (const [index, text] of [
     "Buy milk",
@@ -1704,38 +1723,38 @@ test("the orchestrator compacts after its turn without notifying about the same 
     // Long enough for the compaction after the turn, too short for one during it.
     `Here is the list: ${"word ".repeat(42_000)}`,
   ].entries()) {
-    await golem.app.threads.send(orchestrator.id, alice, text);
+    await shadow.app.threads.send(orchestrator.id, alice, text);
     await until(
-      () => golem.app.threads.messages(orchestrator),
+      () => shadow.app.threads.messages(orchestrator),
       (state) => !state.running && state.messages.length === (index + 1) * 2
     );
   }
   // The compaction waits for the memory to catch up, then runs; the next request reads its view.
   await Bun.sleep(3000);
-  await golem.app.threads.send(orchestrator.id, alice, "Buy butter");
+  await shadow.app.threads.send(orchestrator.id, alice, "Buy butter");
   await until(
-    () => golem.app.threads.messages(orchestrator),
+    () => shadow.app.threads.messages(orchestrator),
     (state) => !state.running && state.messages.length === 10
   );
   expect(memoryViews.length).toBeGreaterThan(views);
   await Bun.sleep(100);
   expect(
-    golem.app.notifications.inbox(home.id, alice).notifications
+    shadow.app.notifications.inbox(home.id, alice).notifications
   ).toHaveLength(5);
 }, 15_000);
 
-test("a quiet orchestrator teaches Golem what stays private to its person", async () => {
-  golem.faux.appendResponses(Array.from({ length: 4 }, () => agent));
-  const home = await golem.app.workspaces.create(alice, "Orchestrator memory");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const orchestrator = await golem.app.threads.orchestrator(home.id, alice);
-  await golem.app.threads.send(
+test("a quiet orchestrator teaches Shadow what stays private to its person", async () => {
+  shadow.faux.appendResponses(Array.from({ length: 4 }, () => agent));
+  const home = await shadow.app.workspaces.create(alice, "Orchestrator memory");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
+  await shadow.app.threads.send(
     orchestrator.id,
     alice,
     "I am vegetarian, what is for lunch?"
   );
   await until(
-    () => golem.app.threads.messages(orchestrator),
+    () => shadow.app.threads.messages(orchestrator),
     (state) => !state.running && state.messages.length === 2
   );
   // An orchestrator never settles, so only its quiet time starts a review.
@@ -1744,12 +1763,12 @@ test("a quiet orchestrator teaches Golem what stays private to its person", asyn
     () => realNow() + 11 * 60_000
   );
   try {
-    await golem.app.threads.orchestrator(home.id, bob);
+    await shadow.app.threads.orchestrator(home.id, bob);
     const started = realNow();
-    let learned = golem.app.threads.learnedFor(home.id, alice);
+    let learned = shadow.app.threads.learnedFor(home.id, alice);
     while (learned.length < 2 && realNow() - started < 10_000) {
       await Bun.sleep(50);
-      learned = golem.app.threads.learnedFor(home.id, alice);
+      learned = shadow.app.threads.learnedFor(home.id, alice);
     }
     expect(
       learned.map((item) => [item.kind, item.text, item.realm, item.channelId])
@@ -1757,37 +1776,37 @@ test("a quiet orchestrator teaches Golem what stays private to its person", asyn
       ["about", "Alice is vegetarian", alice.id, null],
       ["howto", "Groceries come from the corner shop", alice.id, null],
     ]);
-    expect(golem.app.threads.learnedFor(home.id, bob)).toEqual([]);
+    expect(shadow.app.threads.learnedFor(home.id, bob)).toEqual([]);
   } finally {
     clock.mockRestore();
   }
 }, 15_000);
 
-test("a quiet thread teaches Golem about its people and its channel, and Golem suggests an automation that waits for its person", async () => {
-  golem.faux.appendResponses(Array.from({ length: 20 }, () => agent));
-  const home = await golem.app.workspaces.create(alice, "Learning");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const food = golem.app.workspaces.createChannel(home.id, alice, "food");
-  const general = golem.app.workspaces
+test("a quiet thread teaches Shadow about its people and its channel, and Shadow suggests an automation that waits for its person", async () => {
+  shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
+  const home = await shadow.app.workspaces.create(alice, "Learning");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const food = shadow.app.workspaces.createChannel(home.id, alice, "food");
+  const general = shadow.app.workspaces
     .channels(home.id, alice)
     .find((channel) => channel.name === "general")!;
   const answered = (threadId: string) =>
     until(
       () =>
-        golem.app.threads.messages(
-          golem.app.workspaces.thread(threadId, alice)
+        shadow.app.threads.messages(
+          shadow.app.workspaces.thread(threadId, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
-  const lunch = await golem.app.threads.create(
+  const lunch = await shadow.app.threads.create(
     home.id,
     alice,
     food.id,
     "I am vegetarian, what is for lunch?"
   );
   await answered(lunch.id);
-  golem.app.workspaces.setThreadSettled(home.id, lunch.id, alice, true);
-  const elsewhere = await golem.app.threads.create(
+  shadow.app.workspaces.setThreadSettled(home.id, lunch.id, alice, true);
+  const elsewhere = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -1795,7 +1814,7 @@ test("a quiet thread teaches Golem about its people and its channel, and Golem s
   );
   await answered(elsewhere.id);
   const learned = await until(
-    () => Promise.resolve(golem.app.threads.learnedFor(home.id, bob)),
+    () => Promise.resolve(shadow.app.threads.learnedFor(home.id, bob)),
     (items) => items.length === 2
   );
   expect(learned.map((item) => [item.kind, item.text, item.realm])).toEqual([
@@ -1805,7 +1824,7 @@ test("a quiet thread teaches Golem about its people and its channel, and Golem s
   expect(learned[1]!.channelId).toBe(food.id);
 
   const before = systemPrompts.length;
-  const next = await golem.app.threads.create(
+  const next = await shadow.app.threads.create(
     home.id,
     bob,
     food.id,
@@ -1821,55 +1840,55 @@ test("a quiet thread teaches Golem about its people and its channel, and Golem s
   );
 
   // Only the person who wrote gets a suggestion, and nothing runs before they accept it.
-  expect(golem.app.agenda.upcoming(home.id, bob).suggestions).toEqual([]);
-  const [suggestion] = golem.app.agenda.upcoming(home.id, alice).suggestions;
+  expect(shadow.app.agenda.upcoming(home.id, bob).suggestions).toEqual([]);
+  const [suggestion] = shadow.app.agenda.upcoming(home.id, alice).suggestions;
   expect(suggestion).toMatchObject({
     kind: "routine",
     name: "Morning menu",
     channelId: food.id,
     threadId: lunch.id,
   });
-  expect(golem.app.routines.inWorkspace(home.id, alice.id)).toEqual([]);
-  await golem.app.agenda.answer(home.id, alice, suggestion!.id, true);
+  expect(shadow.app.routines.inWorkspace(home.id, alice.id)).toEqual([]);
+  await shadow.app.agenda.answer(home.id, alice, suggestion!.id, true);
   expect(
-    golem.app.routines
+    shadow.app.routines
       .inWorkspace(home.id, alice.id)
       .map((routine) => [routine.name, routine.channelId])
   ).toEqual([["Morning menu", food.id]]);
-  expect(golem.app.agenda.upcoming(home.id, alice).suggestions).toEqual([]);
-  expect(golem.app.agenda.automations(home.id, alice.id)).toContain(
+  expect(shadow.app.agenda.upcoming(home.id, alice).suggestions).toEqual([]);
+  expect(shadow.app.agenda.automations(home.id, alice.id)).toContain(
     'Suggested routine "Morning menu": accepted'
   );
   // Later tests tick every routine.
-  for (const routine of golem.app.routines.inWorkspace(home.id, alice.id)) {
-    golem.app.routines.delete(routine.id, alice);
+  for (const routine of shadow.app.routines.inWorkspace(home.id, alice.id)) {
+    shadow.app.routines.delete(routine.id, alice);
   }
 
-  // A person corrects and removes what Golem learned; the agent reads the change.
+  // A person corrects and removes what Shadow learned; the agent reads the change.
   const [fact, howto] = learned;
-  golem.app.threads.changeLearned(
+  shadow.app.threads.changeLearned(
     home.id,
     bob,
     fact!.id,
     "Alice eats fish, no meat"
   );
-  golem.app.threads.removeLearned(home.id, alice, howto!.id);
+  shadow.app.threads.removeLearned(home.id, alice, howto!.id);
   expect(
-    golem.app.threads.learnedFor(home.id, alice).map((item) => item.text)
+    shadow.app.threads.learnedFor(home.id, alice).map((item) => item.text)
   ).toEqual(["Alice eats fish, no meat"]);
   expect(() =>
-    golem.app.threads.removeLearned(home.id, alice, howto!.id)
+    shadow.app.threads.removeLearned(home.id, alice, howto!.id)
   ).toThrow();
 });
 
 test("a settled thread goes into its channel's brief and summary, which a new thread of the channel reads with the channel's threads", async () => {
-  golem.faux.appendResponses(Array.from({ length: 20 }, () => agent));
-  const home = await golem.app.workspaces.create(alice, "Briefs");
-  const food = golem.app.workspaces.createChannel(home.id, alice, "food");
-  const general = golem.app.workspaces
+  shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
+  const home = await shadow.app.workspaces.create(alice, "Briefs");
+  const food = shadow.app.workspaces.createChannel(home.id, alice, "food");
+  const general = shadow.app.workspaces
     .channels(home.id, alice)
     .find((channel) => channel.name === "general")!;
-  const pasta = await golem.app.threads.create(
+  const pasta = await shadow.app.threads.create(
     home.id,
     alice,
     food.id,
@@ -1878,16 +1897,16 @@ test("a settled thread goes into its channel's brief and summary, which a new th
   const answered = (threadId: string) =>
     until(
       () =>
-        golem.app.threads.messages(
-          golem.app.workspaces.thread(threadId, alice)
+        shadow.app.threads.messages(
+          shadow.app.workspaces.thread(threadId, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
   await answered(pasta.id);
-  expect(await golem.app.threads.brief(home.id, food.id, alice)).toBeNull();
-  golem.app.workspaces.setThreadSettled(home.id, pasta.id, alice, true);
+  expect(await shadow.app.threads.brief(home.id, food.id, alice)).toBeNull();
+  shadow.app.workspaces.setThreadSettled(home.id, pasta.id, alice, true);
   // Work anywhere in the workspace makes it catch up, and the settled thread needs no quiet time.
-  const elsewhere = await golem.app.threads.create(
+  const elsewhere = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -1895,20 +1914,20 @@ test("a settled thread goes into its channel's brief and summary, which a new th
   );
   await answered(elsewhere.id);
   const brief = await until(
-    () => golem.app.threads.brief(home.id, food.id, alice),
+    () => shadow.app.threads.brief(home.id, food.id, alice),
     (found) => found !== null
   );
   expect(brief!.text).toBe(
     `## Now\n- Pasta tonight [We eat pasta tonight](thread:${pasta.id})`
   );
   expect(
-    golem.app.workspaces
+    shadow.app.workspaces
       .channels(home.id, alice)
       .find((channel) => channel.id === food.id)!.summary
   ).toBe("What the family eats.");
 
   const before = systemPrompts.length;
-  const next = await golem.app.threads.create(
+  const next = await shadow.app.threads.create(
     home.id,
     alice,
     food.id,
@@ -1930,14 +1949,14 @@ test("a settled thread goes into its channel's brief and summary, which a new th
   expect(prompt).not.toContain(next.id);
 
   await expect(
-    golem.app.threads.brief(home.id, food.id, bob)
+    shadow.app.threads.brief(home.id, food.id, bob)
   ).rejects.toThrow();
 });
 
 test("an agent creates, searches, and merges channels, and a merge keeps everything in the other channel", async () => {
-  const home = await golem.app.workspaces.create(alice, "Channels");
-  const [general] = golem.app.workspaces.channels(home.id, alice);
-  const asked = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Channels");
+  const [general] = shadow.app.workspaces.channels(home.id, alice);
+  const asked = await shadow.app.threads.create(
     home.id,
     alice,
     general!.id,
@@ -1946,15 +1965,15 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
   const answered = (threadId: string) =>
     until(
       () =>
-        golem.app.threads.messages(
-          golem.app.workspaces.thread(threadId, alice)
+        shadow.app.threads.messages(
+          shadow.app.workspaces.thread(threadId, alice)
         ),
       (state) => !state.running && state.messages.length === 2
     );
   await answered(asked.id);
   const ask = async (text: string) => {
     const before = toolResults.length;
-    await golem.app.threads.send(asked.id, alice, text);
+    await shadow.app.threads.send(asked.id, alice, text);
     return (
       await until(
         async () => toolResults,
@@ -1967,7 +1986,7 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
   expect(await ask("Create channel Trips: Family trips and holidays")).toBe(
     "Created #trips."
   );
-  const trips = golem.app.workspaces
+  const trips = shadow.app.workspaces
     .channels(home.id, alice)
     .find((channel) => channel.name === "trips")!;
   expect(trips.summary).toBe("Family trips and holidays");
@@ -1981,48 +2000,50 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
     "#trips already exists"
   );
 
-  const packing = await golem.app.threads.create(
+  const packing = await shadow.app.threads.create(
     home.id,
     alice,
     trips.id,
     "Pack the tent"
   );
   await answered(packing.id);
-  golem.app.routines.create(home.id, trips.id, {
+  shadow.app.routines.create(home.id, trips.id, {
     id: crypto.randomUUID(),
     name: "Flight prices",
     schedule: "0 8 * * *",
     instructions: "Check the flight prices",
-    createdBy: "golem",
+    createdBy: "shadow",
   });
-  const [uploaded] = await golem.app.threads.upload(home.id, trips.id, alice, [
+  const [uploaded] = await shadow.app.threads.upload(home.id, trips.id, alice, [
     new File(["Tent, stove"], "packing.md"),
   ]);
   expect(await ask("Merge channel #trips into general")).toBe(
     "Merged #trips into #general."
   );
   expect(
-    golem.app.workspaces.channels(home.id, alice).map((channel) => channel.name)
+    shadow.app.workspaces
+      .channels(home.id, alice)
+      .map((channel) => channel.name)
   ).toEqual(["general"]);
   // The thread, the file that no thread mentions, and the routine go to #general; nothing is lost.
-  expect(golem.app.workspaces.thread(packing.id, alice).channelId).toBe(
+  expect(shadow.app.workspaces.thread(packing.id, alice).channelId).toBe(
     general!.id
   );
   expect(
     (
-      await golem.app.threads.files({
+      await shadow.app.threads.files({
         workspaceId: home.id,
         channelId: general!.id,
       })
     ).map((file) => file.id)
   ).toContain(uploaded!.id);
   expect(
-    golem.app.routines
+    shadow.app.routines
       .inWorkspace(home.id, null)
       .map((routine) => routine.channelId)
   ).toEqual([general!.id]);
   expect(
-    golem.app.database
+    shadow.app.database
       .query(
         "SELECT name, deleted_at IS NOT NULL AS deleted FROM channel WHERE id = ?"
       )
@@ -2038,10 +2059,10 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
   );
 
   // A private channel goes to every member only once its owner allows it.
-  golem.app.workspaces.createChannel(home.id, alice, "notes", true);
+  shadow.app.workspaces.createChannel(home.id, alice, "notes", true);
   const merged = ask("Merge channel notes into general");
   const [pending] = await until(
-    async () => golem.app.threads.approvalsFor(home.id, alice),
+    async () => shadow.app.threads.approvalsFor(home.id, alice),
     (approvals) => approvals.length > 0
   );
   expect(pending!.approval).toMatchObject({
@@ -2049,9 +2070,11 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
     approverId: alice.id,
   });
   expect(
-    golem.app.workspaces.channels(home.id, alice).map((channel) => channel.name)
+    shadow.app.workspaces
+      .channels(home.id, alice)
+      .map((channel) => channel.name)
   ).toContain("notes");
-  golem.app.threads.answerApproval(
+  shadow.app.threads.answerApproval(
     pending!.threadId,
     pending!.approval.id,
     alice,
@@ -2061,22 +2084,22 @@ test("an agent creates, searches, and merges channels, and a merge keeps everyth
 });
 
 test("people merge a channel into another; the orchestrator moves with it, and a shared channel stays shared", async () => {
-  const family = await golem.app.workspaces.create(alice, "Moving");
-  const [general] = golem.app.workspaces.channels(family.id, alice);
-  const food = golem.app.workspaces.createChannel(family.id, alice, "food");
-  const mine = golem.app.workspaces.createChannel(
+  const family = await shadow.app.workspaces.create(alice, "Moving");
+  const [general] = shadow.app.workspaces.channels(family.id, alice);
+  const food = shadow.app.workspaces.createChannel(family.id, alice, "food");
+  const mine = shadow.app.workspaces.createChannel(
     family.id,
     alice,
     "mine",
     true
   );
-  const orchestrator = await golem.app.threads.orchestrator(family.id, alice);
+  const orchestrator = await shadow.app.threads.orchestrator(family.id, alice);
   expect(orchestrator.channelId).toBe(general!.id);
 
-  const token = await golem.signIn("Alice", "alice@example.com");
-  const outsider = await golem.signIn("Bob", "bob@example.com");
+  const token = await shadow.signIn("Alice", "alice@example.com");
+  const outsider = await shadow.signIn("Bob", "bob@example.com");
   const merge = (channelId: string, into: string, as = token) =>
-    golem.call(`/api/v1/workspaces/${family.id}/channels/${channelId}/merge`, {
+    shadow.call(`/api/v1/workspaces/${family.id}/channels/${channelId}/merge`, {
       method: "POST",
       token: as,
       body: { into },
@@ -2084,21 +2107,23 @@ test("people merge a channel into another; the orchestrator moves with it, and a
   expect((await merge(general!.id, food.id, outsider)).status).toBe(404);
   expect((await merge(food.id, mine.id)).status).toBe(403);
   expect((await merge(general!.id, food.id)).status).toBe(204);
-  const moved = golem.app.workspaces.orchestratorOf(family.id, alice.id)!;
+  const moved = shadow.app.workspaces.orchestratorOf(family.id, alice.id)!;
   expect(moved.channelId).toBe(food.id);
-  expect(golem.app.workspaces.thread(moved.id, alice).id).toBe(orchestrator.id);
+  expect(shadow.app.workspaces.thread(moved.id, alice).id).toBe(
+    orchestrator.id
+  );
   // A private channel merges into a shared one.
   expect((await merge(mine.id, food.id)).status).toBe(204);
   expect(
-    golem.app.workspaces
+    shadow.app.workspaces
       .channels(family.id, alice)
       .map((channel) => channel.name)
   ).toEqual(["food"]);
 });
 
 test("save_file keeps the browser's screenshot and a file from the web in the channel", async () => {
-  const home = await golem.app.workspaces.create(alice, "Saves");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.workspaces.create(alice, "Saves");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
   const web = Bun.serve({
     port: 0,
     fetch: (request) => {
@@ -2114,7 +2139,7 @@ test("save_file keeps the browser's screenshot and a file from the web in the ch
       return new Response("photo");
     },
   });
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-save-"));
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-save-"));
   const threads = savingThreads(dataDirectory, async () =>
     new TextEncoder().encode("browser screen")
   );
@@ -2160,8 +2185,8 @@ test("save_file keeps the browser's screenshot and a file from the web in the ch
 });
 
 test("save_file refuses what is not an http file under 100 MB, stops reading a body at the limit, and leaves nothing of a failed file", async () => {
-  const home = await golem.app.workspaces.create(alice, "Refusals");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.workspaces.create(alice, "Refusals");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
   let endlessChunks = 0;
   const web = Bun.serve({
     port: 0,
@@ -2183,7 +2208,7 @@ test("save_file refuses what is not an http file under 100 MB, stops reading a b
       return new Response("Gone", { status: 404 });
     },
   });
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-save-"));
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-save-"));
   // Sparse: it says its size without taking the disk space.
   const large = join(dataDirectory, "large.bin");
   await Bun.write(large, "");
@@ -2243,10 +2268,10 @@ test("save_file refuses what is not an http file under 100 MB, stops reading a b
 });
 
 test("save_file writes text and prints an artifact", async () => {
-  const home = await golem.app.workspaces.create(alice, "Documents");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
+  const home = await shadow.app.workspaces.create(alice, "Documents");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
   const printed: string[] = [];
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-save-"));
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-save-"));
   const threads = savingThreads(dataDirectory, async () => null, {
     pdf: async (html) => {
       printed.push(html);
@@ -2262,9 +2287,9 @@ test("save_file writes text and prints an artifact", async () => {
     await ask(
       `Save ${JSON.stringify({ content: "# Shopping\n- milk", name: "list.md" })}`
     );
-    const invite = golem.app.artifacts.create(
+    const invite = shadow.app.artifacts.create(
       {
-        ...golem.app.workspaces.allThreadsIn(home.id)[0]!,
+        ...shadow.app.workspaces.allThreadsIn(home.id)[0]!,
         workspaceId: home.id,
       },
       general.id,
@@ -2330,12 +2355,17 @@ test("save_file writes text and prints an artifact", async () => {
 });
 
 test("the file tools work in another channel that the thread's person sees, never in another person's private one", async () => {
-  const home = await golem.app.workspaces.create(alice, "Files across");
-  await golem.app.workspaces.addMember(home.id, alice, bob.email);
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const work = golem.app.workspaces.createChannel(home.id, alice, "work", true);
-  golem.app.workspaces.createChannel(home.id, bob, "bobs", true);
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-across-"));
+  const home = await shadow.app.workspaces.create(alice, "Files across");
+  await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const work = shadow.app.workspaces.createChannel(
+    home.id,
+    alice,
+    "work",
+    true
+  );
+  shadow.app.workspaces.createChannel(home.id, bob, "bobs", true);
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-across-"));
   const threads = savingThreads(dataDirectory, async () => null);
   try {
     const ask = async (text: string) => {
@@ -2390,9 +2420,9 @@ test("the file tools work in another channel that the thread's person sees, neve
 });
 
 test("a script gets a connector tool's long answer whole, and an error for one that is too big", async () => {
-  const home = await golem.app.workspaces.create(alice, "Long answers");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-long-"));
+  const home = await shadow.app.workspaces.create(alice, "Long answers");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-long-"));
   const threads = savingThreads(
     dataDirectory,
     async () => null,
@@ -2432,11 +2462,16 @@ test("a script gets a connector tool's long answer whole, and an error for one t
 });
 
 test("a script saves a tool's long answer as a file and gives a file to a tool, and the model sees neither text", async () => {
-  const home = await golem.app.workspaces.create(alice, "Piping");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const work = golem.app.workspaces.createChannel(home.id, alice, "work", true);
+  const home = await shadow.app.workspaces.create(alice, "Piping");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const work = shadow.app.workspaces.createChannel(
+    home.id,
+    alice,
+    "work",
+    true
+  );
   const counted: number[] = [];
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-piping-"));
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-piping-"));
   const threads = savingThreads(
     dataDirectory,
     async () => null,
@@ -2489,9 +2524,9 @@ test("a script saves a tool's long answer as a file and gives a file to a tool, 
 });
 
 test("a connector tool saves a file it brings to the channel of the thread", async () => {
-  const home = await golem.app.workspaces.create(alice, "Bringing");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-bringing-"));
+  const home = await shadow.app.workspaces.create(alice, "Bringing");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-bringing-"));
   const threads = savingThreads(
     dataDirectory,
     async () => null,
@@ -2539,11 +2574,11 @@ test("a connector tool saves a file it brings to the channel of the thread", asy
 test.each(["message"] as const)(
   "a connector tool asks its person before every call (%s)",
   async () => {
-    const home = await golem.app.workspaces.create(alice, "Sending");
-    await golem.app.workspaces.addMember(home.id, alice, bob.email);
-    const general = golem.app.workspaces.channels(home.id, alice)[0]!;
+    const home = await shadow.app.workspaces.create(alice, "Sending");
+    await shadow.app.workspaces.addMember(home.id, alice, bob.email);
+    const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
     const sent: string[] = [];
-    const dataDirectory = await mkdtemp(join(tmpdir(), "golem-sending-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-sending-"));
     const threads = savingThreads(
       dataDirectory,
       async () => null,
@@ -2576,7 +2611,7 @@ test.each(["message"] as const)(
         general.id,
         requestText
       );
-      const thread = golem.app.workspaces
+      const thread = shadow.app.workspaces
         .allThreadsIn(home.id)
         .find((candidate) => candidate.id === summary.id)!;
       const waiting = (text: string) =>
@@ -2610,9 +2645,9 @@ test.each(["message"] as const)(
 );
 
 test("an approval's route answers 400 for a malformed answer and 404 for an approval or thread the person cannot see", async () => {
-  const home = await golem.app.workspaces.create(alice, "Approval route");
-  const general = golem.app.workspaces.channels(home.id, alice)[0]!;
-  const thread = await golem.app.threads.create(
+  const home = await shadow.app.workspaces.create(alice, "Approval route");
+  const general = shadow.app.workspaces.channels(home.id, alice)[0]!;
+  const thread = await shadow.app.threads.create(
     home.id,
     alice,
     general.id,
@@ -2620,13 +2655,13 @@ test("an approval's route answers 400 for a malformed answer and 404 for an appr
   );
   const answer = async (token: string, body: object) =>
     (
-      await golem.call(`/api/v1/threads/${thread.id}/approvals/none`, {
+      await shadow.call(`/api/v1/threads/${thread.id}/approvals/none`, {
         token,
         body,
       })
     ).status;
-  const aliceToken = await golem.signIn("Alice", "alice@example.com");
-  const eveToken = await golem.signIn("Eve", "eve@example.com");
+  const aliceToken = await shadow.signIn("Alice", "alice@example.com");
+  const eveToken = await shadow.signIn("Eve", "eve@example.com");
   expect(await answer(aliceToken, { allow: "yes" })).toBe(400);
   expect(await answer(aliceToken, { allow: true })).toBe(404);
   expect(await answer(eveToken, { allow: true })).toBe(404);
@@ -2649,9 +2684,9 @@ test("every codemode script gets a deadline of at most 15 minutes", () => {
 });
 
 test("a script runs with its deadline and stops at it", async () => {
-  const garden = await golem.app.workspaces.create(alice, "Deadlines");
-  const general = golem.app.workspaces.channels(garden.id, alice)[0]!;
-  const run = await golem.app.threads.create(
+  const garden = await shadow.app.workspaces.create(alice, "Deadlines");
+  const general = shadow.app.workspaces.channels(garden.id, alice)[0]!;
+  const run = await shadow.app.threads.create(
     garden.id,
     alice,
     general.id,
@@ -2666,12 +2701,12 @@ function savingThreads(
   dataDirectory: string,
   screenshot: () => Promise<Uint8Array | null>,
   browser: Partial<Pick<ThreadBrowser, "pdf" | "tools">> = {},
-  integrations: ThreadIntegrations = golem.app.integrations,
+  integrations: ThreadIntegrations = shadow.app.integrations,
   sourceRead: ThreadHooks["sourceRead"] = (thread, ownerId, read) =>
-    golem.app.intake.recordSourceRead(thread, ownerId, read)
+    shadow.app.intake.recordSourceRead(thread, ownerId, read)
 ) {
   // Each save is a tool call and an answer after it.
-  golem.faux.appendResponses(Array.from({ length: 20 }, () => agent));
+  shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
   // The test's web server is on this machine, which the egress proxy refuses everywhere else.
   const web = new Browser(
     undefined,
@@ -2679,10 +2714,10 @@ function savingThreads(
   );
   return new Threads(
     dataDirectory,
-    golem.app.llm,
-    golem.app.workspaces,
+    shadow.app.llm,
+    shadow.app.workspaces,
     integrations,
-    golem.app.artifacts,
+    shadow.app.artifacts,
     {
       pdf: () => Promise.reject(new Error("There is no browser.")),
       download: (address, destination, signal) =>
@@ -2691,11 +2726,17 @@ function savingThreads(
       tools: () => [],
       ...browser,
     },
-    golem.app.notifications,
+    shadow.app.notifications,
     {
       sourceRead,
       audit: (workspaceId, ownerId, trace, stage, data) =>
-        golem.app.intake.audit.record(trace, stage, workspaceId, ownerId, data),
+        shadow.app.intake.audit.record(
+          trace,
+          stage,
+          workspaceId,
+          ownerId,
+          data
+        ),
       changed: () => undefined,
       moved: () => undefined,
       merged: () => undefined,
@@ -2710,7 +2751,7 @@ function savingThreads(
 }
 
 function answeredIn(threads: Threads, workspaceId: string, threadId: string) {
-  const thread = golem.app.workspaces
+  const thread = shadow.app.workspaces
     .allThreadsIn(workspaceId)
     .find((candidate) => candidate.id === threadId)!;
   return until(
@@ -2720,22 +2761,22 @@ function answeredIn(threads: Threads, workspaceId: string, threadId: string) {
 }
 
 test("the model calls the core tools itself, and every other tool from codemode scripts by namespace", async () => {
-  const workspace = await golem.app.workspaces.create(alice, "Namespaces");
-  const [channel] = golem.app.workspaces.channels(workspace.id, alice);
+  const workspace = await shadow.app.workspaces.create(alice, "Namespaces");
+  const [channel] = shadow.app.workspaces.channels(workspace.id, alice);
   const before = systemPrompts.length;
-  const summary = await golem.app.threads.create(
+  const summary = await shadow.app.threads.create(
     workspace.id,
     alice,
     channel!.id,
     "Hi"
   );
-  const thread = golem.app.workspaces.thread(summary.id, alice);
+  const thread = shadow.app.workspaces.thread(summary.id, alice);
   await until(
-    () => golem.app.threads.messages(thread),
+    () => shadow.app.threads.messages(thread),
     (state) => !state.running && state.messages.length === 2
   );
   const request = systemPrompts.findIndex(
-    (system, index) => index >= before && system.includes("You are Golem")
+    (system, index) => index >= before && system.includes("You are Shadow")
   );
   expect(offeredTools[request]!.toSorted()).toEqual([
     "codemode",
@@ -2770,21 +2811,21 @@ test("a channel's emoji is the first emoji of the model's answer", () => {
 });
 
 test("a source destination request reuses the same thread after a retry", async () => {
-  const home = await golem.app.workspaces.create(alice, "Destination retry");
-  const channel = golem.app.workspaces.createChannel(
+  const home = await shadow.app.workspaces.create(alice, "Destination retry");
+  const channel = shadow.app.workspaces.createChannel(
     home.id,
     alice,
     "repairs",
     true
   );
   const request = { id: "intake:subject:repair-review", personId: alice.id };
-  const first = await golem.app.threads.startAgentThread(
+  const first = await shadow.app.threads.startAgentThread(
     home.id,
     channel.id,
     "Repair claim",
     request
   );
-  const retry = await golem.app.threads.startAgentThread(
+  const retry = await shadow.app.threads.startAgentThread(
     home.id,
     channel.id,
     "Repair claim",
@@ -2792,5 +2833,5 @@ test("a source destination request reuses the same thread after a retry", async 
   );
   expect(retry.id).toBe(first.id);
   expect(retry.conversationId).toBe(first.conversationId);
-  expect(golem.app.workspaces.threadsIn(home.id, alice.id)).toHaveLength(1);
+  expect(shadow.app.workspaces.threadsIn(home.id, alice.id)).toHaveLength(1);
 });

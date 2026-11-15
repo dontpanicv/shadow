@@ -102,7 +102,7 @@ export function IntegrationsSection({ workspaceId }: { workspaceId: string }) {
       return queryClient.invalidateQueries({ queryKey });
     },
   });
-  // The server's owner sets the OAuth client that Golem signs in with; the next sign-in uses it.
+  // The server's owner sets the OAuth client that Shadow signs in with; the next sign-in uses it.
   const setClient = useMutation({
     mutationFn: (input: { integration: Integration; form: FormData }) =>
       request(`/integrations/${input.integration.id}/client`, {
@@ -415,7 +415,7 @@ export function IntegrationsSection({ workspaceId }: { workspaceId: string }) {
               key="address"
               label="Address after sign-in"
               name="address"
-              placeholder="http://localhost/golem-sign-in?code=…"
+              placeholder="http://localhost/shadow-sign-in?code=…"
               required
             />
           </>

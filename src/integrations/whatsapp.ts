@@ -21,7 +21,7 @@ const RECIPIENT = Type.String({
   description:
     "A chat's JID, or a number with its country code, such as +420 777 123 456.",
 });
-/** How long Golem waits before it starts a stopped sync again. */
+/** How long Shadow waits before it starts a stopped sync again. */
 const RESTART_MS = 60 * 1000;
 /** The most messages that wacli asks the phone for at a time. */
 const BACKFILL_BATCH = 500;
@@ -138,7 +138,7 @@ export function whatsAppConnector(binary: string): Connector {
       {
         name: "whatsapp_backfill",
         description:
-          "Asks the person's phone for messages of a chat older than the oldest that Golem has, and keeps them; then read them with the other tools. The phone must be online. It takes up to two minutes for every 500 messages.",
+          "Asks the person's phone for messages of a chat older than the oldest that Shadow has, and keeps them; then read them with the other tools. The phone must be online. It takes up to two minutes for every 500 messages.",
         parameters: Type.Object({
           chat: Type.String({ description: "The chat's JID." }),
           messages: Type.Optional(
@@ -435,7 +435,7 @@ export class WhatsApp implements Device {
     path: string,
     signal: AbortSignal | undefined
   ): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "golem-whatsapp-"));
+    const directory = await mkdtemp(join(tmpdir(), "shadow-whatsapp-"));
     try {
       const media = (await this.run(
         store,
@@ -499,8 +499,8 @@ export class WhatsApp implements Device {
             signal
           );
         } finally {
-          // shortcut: a backfill that runs while Golem closes outlives it and holds the lock until wacli's timeout;
-          // the next Golem's sync retries every minute until then.
+          // shortcut: a backfill that runs while Shadow closes outlives it and holds the lock until wacli's timeout;
+          // the next Shadow's sync retries every minute until then.
           if (!this.closed) {
             this.keep(store);
           }

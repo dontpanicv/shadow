@@ -1,4 +1,4 @@
-/* Golem design system: components. Tokens live in tokens.css, generated from design/tokens.json.
+/* Shadow design system: components. Tokens live in tokens.css, generated from design/tokens.json.
    The spec for every component is design/components.md, measured from Linear; behaviors live in ui.js.
    Hover styles apply only to fine pointers. Hovers start at once and fade out in duration.fast, as Linear's do. */
 
@@ -293,7 +293,7 @@ img.avatar {
 span.avatar.small::after {
   mask-image: var(--dither-corner-20);
 }
-/* Golem's logo (Mark). In light, a black tile keeps the white badge apart from the white surface. */
+/* Shadow's logo (Mark). In light, a black tile keeps the white badge apart from the white surface. */
 .avatar.agent {
   background: light-dark(#000000, transparent);
 }
@@ -1221,7 +1221,7 @@ span.avatar.large::after {
 .message.failed .message-text {
   color: var(--color-danger);
 }
-/* A message in the outbox, which Golem does not have yet. */
+/* A message in the outbox, which Shadow does not have yet. */
 .message.pending .message-body {
   opacity: 0.6;
 }
@@ -1440,7 +1440,7 @@ span.avatar.large::after {
   background: var(--color-accent);
   animation: blink 1s steps(1) infinite;
 }
-/* The step Golem is at, after "Working for 12s". */
+/* The step Shadow is at, after "Working for 12s". */
 .work-now:not(:empty)::before {
   content: "·";
   margin: 0 var(--space-sm);
@@ -1448,7 +1448,7 @@ span.avatar.large::after {
 .work-now {
   color: var(--color-text-quaternary);
 }
-/* Words that Golem is at now; a light runs over them. */
+/* Words that Shadow is at now; a light runs over them. */
 .shimmer {
   background:
     linear-gradient(
@@ -2318,7 +2318,7 @@ button.settings-row:focus-visible {
   background: var(--color-accent);
 }
 
-/* What Golem learned: the entry in body text, a lock after a private one, and a full-width field to correct it. */
+/* What Shadow learned: the entry in body text, a lock after a private one, and a full-width field to correct it. */
 .settings-text .learned-text {
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-book);

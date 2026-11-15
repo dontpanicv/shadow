@@ -33,7 +33,7 @@ export interface ModelFile {
   readonly sha256: string;
 }
 
-/** What the local models need before they download the rest; Golem checks it before it starts. */
+/** What the local models need before they download the rest; Shadow checks it before it starts. */
 export function llamaRequirements(): Requirement[] {
   const platform = `${process.platform}-${process.arch}`;
   return [

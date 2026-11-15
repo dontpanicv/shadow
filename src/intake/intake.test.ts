@@ -145,7 +145,7 @@ async function setup(
         throw new Error("The thread is not reachable");
       }
       posts.push({ threadId: thread.id, text, notify, files });
-      // A post to a subject thread, not to the person's own Golem thread.
+      // A post to a subject thread, not to the person's own Shadow thread.
       if (thread.ownerId === null) {
         reviews.push({ threadId: thread.id, requestId, text, files });
         if (!deliveries.some((each) => each.startsWith(requestId))) {
@@ -413,7 +413,7 @@ function resolvesOnlyRead(input: AssessmentInput): Assessment[] {
   ];
 }
 
-/** The person's subject threads, without their own Golem thread that the morning summary starts. */
+/** The person's subject threads, without their own Shadow thread that the morning summary starts. */
 function subjectThreads(run: { workspaceId: string; owner: { id: string } }) {
   return app.app.workspaces
     .threadsIn(run.workspaceId, run.owner.id)
@@ -1326,7 +1326,7 @@ test("the morning review puts the updates of one matter into one new thread, sta
   expect(run.posts).toHaveLength(posted + 1);
 });
 
-test("the judge reads the family's facts and what Golem learned, in every assessment and in the morning review", async () => {
+test("the judge reads the family's facts and what Shadow learned, in every assessment and in the morning review", async () => {
   const run = await setup({
     initialNotice: "brief",
     learned: (ownerId) =>
@@ -1678,7 +1678,7 @@ test("the JSON API scopes source reads and validates corrections", async () => {
   );
   const call: typeof app.call = (path, options = {}) =>
     handler(
-      new Request(`http://golem.test${path}`, {
+      new Request(`http://shadow.test${path}`, {
         method: options.body === undefined ? "GET" : "POST",
         headers: {
           ...(options.token
@@ -1796,8 +1796,8 @@ test("an agent draft is retrieval context and does not become a new source event
       {
         id: "draft",
         text: "I will send the offer tomorrow",
-        author: "Golem",
-        authorId: "golem",
+        author: "Shadow",
+        authorId: "shadow",
         agent: true,
         failed: false,
         files: [],

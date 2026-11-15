@@ -1,5 +1,5 @@
 #!/bin/sh
-# Keeps Golem's public artifact host running on a Mac: a launchd job that runs a Cloudflare Tunnel with the token
+# Keeps Shadow's public artifact host running on a Mac: a launchd job that runs a Cloudflare Tunnel with the token
 # in config/share-tunnel.token, and restarts it if it stops. docs/artifacts-sharing.md shows how to create the tunnel.
 # Logs go to data/logs/share-tunnel.log. It uses HTTP/2 on TCP 443, because networks often block QUIC on UDP 7844.
 #
@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 CLOUDFLARED="$(command -v cloudflared || echo /opt/homebrew/bin/cloudflared)"
 TOKEN="$ROOT/config/share-tunnel.token"
-LABEL="dev.golem.share"
+LABEL="dev.shadow.share"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
 launchctl print "$DOMAIN" >/dev/null 2>&1 || DOMAIN="user/$(id -u)"

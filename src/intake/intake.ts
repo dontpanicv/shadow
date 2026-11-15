@@ -1286,7 +1286,7 @@ export class Intake {
     };
   }
 
-  /** The family's own facts and what Golem learned that the owner sees, for the judge that acts for them. */
+  /** The family's own facts and what Shadow learned that the owner sees, for the judge that acts for them. */
   private knowledge(workspaceId: string, owner: User): Knowledge {
     const names = new Map(
       this.workspaces
@@ -1500,7 +1500,7 @@ export class Intake {
     const text = links ? `${matter.message}\n\n${links}` : matter.message;
     const files = await this.reviewFiles(group, owner, thread.channelId);
     const requestId = `intake:morning:${hash(matter.updates.join(":"))}`;
-    // Golem remembers and reminds; the person does the work, so no agent starts on it.
+    // Shadow remembers and reminds; the person does the work, so no agent starts on it.
     await this.threads.observe(thread, text, requestId, owner, false, files);
     this.finishDelivery(group, owner, [], now);
     if (matter.ask) {
@@ -1842,7 +1842,7 @@ export class Intake {
     const files = await this.reviewFiles(deliveries, owner, thread.channelId);
     let confirmed: IntakeNotification[] = [];
     if (body) {
-      // Golem remembers and reminds; the person does the work, so the update is posted and no agent starts on it.
+      // Shadow remembers and reminds; the person does the work, so the update is posted and no agent starts on it.
       await this.threads.observe(
         thread,
         body,

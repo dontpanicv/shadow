@@ -61,10 +61,10 @@ export function fileHref(workspaceId: string, fileId: string): string {
 }
 
 /**
- * Set when a session ends or a sign-in starts: the browser's copy and its outbox wait until Golem says whose session
+ * Set when a session ends or a sign-in starts: the browser's copy and its outbox wait until Shadow says whose session
  * this is (`confirmPerson` in `query.ts`). Every tab sees it.
  */
-export const SIGNED_OUT = "golem-signed-out";
+export const SIGNED_OUT = "shadow-signed-out";
 
 export function markSignedOut(): void {
   localStorage.setItem(SIGNED_OUT, "1");

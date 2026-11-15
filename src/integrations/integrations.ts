@@ -34,7 +34,7 @@ export interface CredentialSummary {
   readonly ownerName: string;
   /** Whether the turns of every member use it; else only the turns of its owner. */
   readonly shared: boolean;
-  /** Whether its owner lets Golem read it for them; see `Connector.watch`. */
+  /** Whether its owner lets Shadow read it for them; see `Connector.watch`. */
   readonly watched: boolean;
 }
 export interface Integration {
@@ -45,7 +45,7 @@ export interface Integration {
   readonly connect: "secret" | "sign-in" | "phone";
   /** The name of the secret, for `connect: "secret"`. */
   readonly secretLabel: string | null;
-  /** Whether the person names a credential; else Golem names it from the secret, such as by its Slack workspace. */
+  /** Whether the person names a credential; else Shadow names it from the secret, such as by its Slack workspace. */
   readonly labeled: boolean;
   /** Whether a secret also needs the address of the person's own server, such as their Home Assistant's. */
   readonly address: boolean;
@@ -53,10 +53,10 @@ export interface Integration {
   readonly username: string | null;
   /** The steps that set it up, in Markdown; empty when Connect is all. */
   readonly guide: readonly string[];
-  /** Whether Golem can find its owner's tasks in a credential of it, once they turn that on. */
+  /** Whether Shadow can find its owner's tasks in a credential of it, once they turn that on. */
   readonly watchable: boolean;
   /**
-   * Golem's own OAuth client, for an integration whose sign-in server does not register clients: its ID once the
+   * Shadow's own OAuth client, for an integration whose sign-in server does not register clients: its ID once the
    * server's owner set it, and whether this person may set it. `null` for the other integrations.
    */
   readonly client: {
@@ -151,7 +151,7 @@ export interface Connector {
   /** Where its sign-in page sends people, when not `SIGN_IN_ADDRESS`, such as Tesla's, which refuses localhost. */
   readonly redirectUrl?: string;
   /**
-   * It signs in with Golem's own OAuth client, which the server's owner sets in Settings, because its sign-in server
+   * It signs in with Shadow's own OAuth client, which the server's owner sets in Settings, because its sign-in server
    * does not register clients. Only the owner sees it until then.
    */
   readonly registered?: boolean;
@@ -164,20 +164,20 @@ export interface Connector {
   /** The only tools of its MCP servers that agents get, when the others serve only the server's own agents. */
   readonly shownTools?: readonly string[];
   /**
-   * Makes the secret that Golem keeps, and its label, from what the person pastes, such as a cURL command of Slack's
-   * web app; it throws when that does not work. Without it, Golem keeps the pasted secret, and the person names it.
+   * Makes the secret that Shadow keeps, and its label, from what the person pastes, such as a cURL command of Slack's
+   * web app; it throws when that does not work. Without it, Shadow keeps the pasted secret, and the person names it.
    */
   readonly secretFrom?: (
     input: string
   ) => Promise<{ readonly secret: string; readonly label: string }>;
-  /** The device that Golem links to a person's number, such as WhatsApp's; its tools get the device's store. */
+  /** The device that Shadow links to a person's number, such as WhatsApp's; its tools get the device's store. */
   readonly device?: Device;
   /**
-   * Keeps data of each credential in its store while Golem runs, such as Tesla's charge sessions. The tools then get
+   * Keeps data of each credential in its store while Shadow runs, such as Tesla's charge sessions. The tools then get
    * the secret as JSON `{ store, secret }`.
    */
   readonly keeper?: Keeper;
-  /** The PEM public key that its API checks Golem's signed commands with, which Golem serves at its own address. */
+  /** The PEM public key that its API checks Shadow's signed commands with, which Shadow serves at its own address. */
   readonly publicKey?: () => string;
   /**
    * Reads what an account got and sent since a time, for its owner, once they turn that on for the credential
@@ -198,8 +198,8 @@ export interface Connector {
     attachmentId: string
   ) => Promise<Uint8Array>;
   /**
-   * Registers Golem with its API when the server's owner sets the client, such as Tesla's partner account for Golem's
-   * domain; Golem keeps the client only when it works.
+   * Registers Shadow with its API when the server's owner sets the client, such as Tesla's partner account for Shadow's
+   * domain; Shadow keeps the client only when it works.
    */
   readonly registerClient?: (client: OAuthClient) => Promise<void>;
 }
@@ -212,7 +212,7 @@ export interface WatchSource {
   readonly checkpoint?: { value: unknown; save: (value: unknown) => void };
   /** The credential's label, such as the address of a Google account. */
   readonly account: string;
-  /** Whether Golem already has an item, so a watch does not fetch it again. */
+  /** Whether Shadow already has an item, so a watch does not fetch it again. */
   readonly seen: (id: string) => boolean;
   /** What the connector's own tools get as the secret: a device's store, a fresh access token, or the secret. */
   readonly secret: () => Promise<string>;
@@ -224,7 +224,7 @@ export interface WatchSource {
   readonly signal?: AbortSignal;
 }
 
-/** A message or a document that a watched account got or sent, which Golem reads for its owner. */
+/** A message or a document that a watched account got or sent, which Shadow reads for its owner. */
 export interface WatchedItem {
   /** Unique within the credential and stable, such as the id of a Gmail message. */
   readonly id: string;
@@ -263,7 +263,7 @@ export interface WatchedAttachment {
   readonly size: number;
 }
 
-/** A credential whose owner lets Golem read it for them. */
+/** A credential whose owner lets Shadow read it for them. */
 export interface WatchedCredential {
   readonly id: string;
   readonly workspaceId: string;
@@ -273,7 +273,7 @@ export interface WatchedCredential {
   readonly label: string;
 }
 
-/** Keeps data of a connector's credentials while Golem runs, each in the store directory of its credential. */
+/** Keeps data of a connector's credentials while Shadow runs, each in the store directory of its credential. */
 export interface Keeper {
   /** Starts keeping a store; `secret` gives the secret, or a fresh access token, each time. */
   readonly keep: (store: string, secret: () => Promise<string>) => void;
@@ -281,14 +281,14 @@ export interface Keeper {
   readonly close: () => void;
 }
 
-/** A device that Golem links to a person's account, such as a WhatsApp number, and keeps in a store directory. */
+/** A device that Shadow links to a person's account, such as a WhatsApp number, and keeps in a store directory. */
 export interface Device {
   /** Gives the code that the person enters on their phone, and `linked`, which settles when they did. */
   readonly link: (
     store: string,
     phone: string
   ) => Promise<{ code: string; linked: Promise<void> }>;
-  /** Keeps a linked store current while Golem runs. */
+  /** Keeps a linked store current while Shadow runs. */
   readonly keep: (store: string) => void;
   /** Ends the link and stops keeping the store. */
   readonly unlink: (store: string) => Promise<void>;
@@ -339,9 +339,9 @@ export interface ConnectorNamespace {
 export interface IntegrationsOptions {
   /** Where the devices keep their stores, one folder for each credential. */
   readonly directory: string;
-  /** The email address of the server's owner, who alone sets Golem's own OAuth clients. */
+  /** The email address of the server's owner, who alone sets Shadow's own OAuth clients. */
   readonly owner?: string | null;
-  /** Golem's own address, where an API such as Tesla's reads Golem's public key. */
+  /** Shadow's own address, where an API such as Tesla's reads Shadow's public key. */
   readonly baseUrl?: string;
   /** Called when the connector tools of a workspace may change: a credential there changed. */
   readonly changed?: (workspaceId: string) => void;
@@ -420,7 +420,7 @@ export class Integrations {
     }
   }
 
-  /** Keeps a device's store current, or a keeper's data, while Golem runs. */
+  /** Keeps a device's store current, or a keeper's data, while Shadow runs. */
   private keep(connector: Connector, credentialId: string): void {
     const store = this.store(credentialId);
     connector.device?.keep(store);
@@ -493,7 +493,7 @@ export class Integrations {
   }
 
   /**
-   * Sets Golem's own OAuth client of an integration whose sign-in server does not register clients; only the server's
+   * Sets Shadow's own OAuth client of an integration whose sign-in server does not register clients; only the server's
    * owner does. The next sign-in uses it; the sign-ins before keep the client they signed in with.
    */
   async setClient(
@@ -580,8 +580,8 @@ export class Integrations {
   }
 
   /**
-   * Starts a sign-in. For a sign-in: registers Golem with the sign-in server, at `address` for a connector with
-   * `address`, unless Golem has its own client, and returns the page where the person signs in, which ends at an
+   * Starts a sign-in. For a sign-in: registers Shadow with the sign-in server, at `address` for a connector with
+   * `address`, unless Shadow has its own client, and returns the page where the person signs in, which ends at an
    * address that the person gives to `finishConnect`. For a device: returns the code that the person enters on the
    * phone of `phone`.
    */
@@ -823,8 +823,8 @@ export class Integrations {
   }
 
   /**
-   * Lets Golem read the person's own credential for them, or stops it. Only the owner does, also for a shared
-   * credential: what Golem finds is always theirs, and goes only where they can see it.
+   * Lets Shadow read the person's own credential for them, or stops it. Only the owner does, also for a shared
+   * credential: what Shadow finds is always theirs, and goes only where they can see it.
    */
   setWatched(
     workspaceId: string,
@@ -842,7 +842,7 @@ export class Integrations {
       throw notFound();
     }
     if (watched && !this.connector(row.integration).watch) {
-      throw new HttpError(400, "Golem cannot read this integration for you");
+      throw new HttpError(400, "Shadow cannot read this integration for you");
     }
     this.database
       .query("UPDATE credential SET watched = ? WHERE id = ?")
@@ -854,7 +854,7 @@ export class Integrations {
     return credential;
   }
 
-  /** The credentials whose owners let Golem find their tasks in them, of every workspace. */
+  /** The credentials whose owners let Shadow find their tasks in them, of every workspace. */
   watched(): WatchedCredential[] {
     const rows = this.database
       .query(
@@ -919,7 +919,7 @@ export class Integrations {
       .get(credentialId) as { integration: string; label: string } | null;
     const connector = this.catalog.find(({ id }) => id === row?.integration);
     if (!connector?.watch) {
-      throw new Error("Golem does not watch this credential");
+      throw new Error("Shadow does not watch this credential");
     }
     const credential = this.liveCredential(credentialId);
     return {
@@ -1399,7 +1399,7 @@ export class Integrations {
       const transport =
         this.options.transport?.(url, provider) ??
         new StreamableHTTPClientTransport(url, { authProvider: provider });
-      const connecting = new Client({ name: "Golem", version: "1" });
+      const connecting = new Client({ name: "Shadow", version: "1" });
       client = connecting.connect(transport).then(() => connecting);
       client.catch(() => this.clients.delete(key));
       this.clients.set(key, client);
@@ -1674,7 +1674,7 @@ class GrantProvider implements OAuthClientProvider {
 
   get clientMetadata() {
     return {
-      client_name: "Golem",
+      client_name: "Shadow",
       redirect_uris: [this.redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],

@@ -1,7 +1,7 @@
-/** Something Golem needs from the machine it runs on, checked before it starts. */
+/** Something Shadow needs from the machine it runs on, checked before it starts. */
 export interface Requirement {
   readonly name: string;
-  /** What Golem uses it for. */
+  /** What Shadow uses it for. */
   readonly purpose: string;
   /** How to get it when it is missing. */
   readonly install: string;
@@ -9,7 +9,7 @@ export interface Requirement {
   readonly problem: string | null;
 }
 
-/** A program that Golem runs, found on `PATH`. */
+/** A program that Shadow runs, found on `PATH`. */
 export function program(
   name: string,
   purpose: string,

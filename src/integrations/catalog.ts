@@ -12,9 +12,9 @@ import { whatsAppConnector } from "./whatsapp.ts";
 import { xConnector } from "./x.ts";
 
 /**
- * The connectors that Golem has: ones with a secret, MCP servers that people sign in to, Google when this machine has
- * gog, Slack when it has slackcli, WhatsApp when it has wacli, and Tesla when it has tesla-control. Tesla keeps Golem's
- * signing key in `server.directory`, and reads Golem's public key at `server.baseUrl`.
+ * The connectors that Shadow has: ones with a secret, MCP servers that people sign in to, Google when this machine has
+ * gog, Slack when it has slackcli, WhatsApp when it has wacli, and Tesla when it has tesla-control. Tesla keeps Shadow's
+ * signing key in `server.directory`, and reads Shadow's public key at `server.baseUrl`.
  */
 export function integrationCatalog(
   server: { readonly directory: string; readonly baseUrl?: string },
@@ -46,7 +46,7 @@ export function integrationCatalog(
       guide: ["Click **Connect**, and sign in to Plaud.", PASTE_ADDRESS],
       tools: [],
       mcp: ["https://mcp.plaud.ai/mcp"],
-      // Golem keeps the sign-in; an agent must not revoke it.
+      // Shadow keeps the sign-in; an agent must not revoke it.
       hiddenTools: ["login", "logout"],
       watch: watchRecordings,
       observations: recordingObservations,
@@ -55,12 +55,12 @@ export function integrationCatalog(
       id: "t3",
       name: "T3 Code",
       description:
-        "The person's T3 Code, which runs coding agents on their own machine: find a project, start a thread there with a task, such as one from a message, and read, answer, or stop its threads. Threads run with at most the access that the person gave Golem when they connected it.",
+        "The person's T3 Code, which runs coding agents on their own machine: find a project, start a thread there with a task, such as one from a message, and read, answer, or stop its threads. Threads run with at most the access that the person gave Shadow when they connected it.",
       secretLabel: null,
       address: true,
       guide: [
-        "Enter the address of your T3 Code server, such as `http://my-mac:3774`. Golem and your browser must both reach it.",
-        "Click **Continue**, then **Sign in to T3 Code**. Choose the access of Golem's threads, and approve with your T3 Code session or with a pairing code from `t3 pair`.",
+        "Enter the address of your T3 Code server, such as `http://my-mac:3774`. Shadow and your browser must both reach it.",
+        "Click **Continue**, then **Sign in to T3 Code**. Choose the access of Shadow's threads, and approve with your T3 Code session or with a pairing code from `t3 pair`.",
         PASTE_ADDRESS,
         "The sign-in lasts 30 days; then connect T3 Code again.",
       ],

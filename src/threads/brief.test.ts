@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { type BriefMessage, Briefs } from "./brief.ts";
 import type { Summarizer } from "./memory.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "golem-brief-"));
+const directory = await mkdtemp(join(tmpdir(), "shadow-brief-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
 const trips = { id: "trips", name: "trips" };

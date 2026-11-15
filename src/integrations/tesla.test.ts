@@ -25,14 +25,14 @@ function tesla(
   answer: (url: URL, init: RequestInit) => Response,
   failure?: string
 ) {
-  const directory = mkdtempSync(join(tmpdir(), "golem-tesla-test-"));
+  const directory = mkdtempSync(join(tmpdir(), "shadow-tesla-test-"));
   const store = join(directory, "credential-1");
   const calls: URL[] = [];
   const commands: (readonly string[])[] = [];
   const connector = teslaConnector({
     binary: "tesla-control",
     directory,
-    domain: "golem.example.com",
+    domain: "shadow.example.com",
     request: (async (url: string | URL, init: RequestInit) => {
       calls.push(new URL(url));
       return answer(new URL(url), init);
@@ -167,14 +167,14 @@ test("a command wakes a sleeping car, then tesla-control signs it", async () => 
   ).rejects.toThrow("This command needs `percent`.");
 });
 
-test("a car without Golem's key says how to add it", async () => {
+test("a car without Shadow's key says how to add it", async () => {
   const { run } = tesla(
     () => Response.json({ response: { vin: VIN, state: "online" } }),
     "vehicle rejected request: your public key has not been paired with the vehicle"
   );
   await expect(
     run("tesla_command", { command: "climate_on", vin: VIN })
-  ).rejects.toThrow("https://tesla.com/_ak/golem.example.com");
+  ).rejects.toThrow("https://tesla.com/_ak/shadow.example.com");
 });
 
 test("opening the car asks the person first", async () => {
@@ -188,7 +188,7 @@ test("opening the car asks the person first", async () => {
   ).toBe(`Open the frunk of the Tesla ${VIN}`);
 });
 
-test("the client registers Golem's domain in each region, and Golem serves its public key", async () => {
+test("the client registers Shadow's domain in each region, and Shadow serves its public key", async () => {
   const bodies: string[] = [];
   const { connector, directory } = tesla((url, init) => {
     bodies.push(String(init.body));
@@ -202,12 +202,12 @@ test("the client registers Golem's domain in each region, and Golem serves its p
   expect(token.get("grant_type")).toBe("client_credentials");
   expect(token.get("client_secret")).toBe(secret);
   expect(token.get("audience")).toBe(EU);
-  expect(bodies[1]).toBe(JSON.stringify({ domain: "golem.example.com" }));
+  expect(bodies[1]).toBe(JSON.stringify({ domain: "shadow.example.com" }));
   expect(bodies).toHaveLength(4);
 
   const key = connector.publicKey!();
   expect(key).toStartWith("-----BEGIN PUBLIC KEY-----");
-  // Golem makes the key once.
+  // Shadow makes the key once.
   expect(
     readFileSync(join(directory, "tesla", "private-key.pem"), "utf8")
   ).toStartWith("-----BEGIN EC PRIVATE KEY-----");

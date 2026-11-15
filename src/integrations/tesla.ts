@@ -19,7 +19,7 @@ import type { Connector, Keeper } from "./integrations.ts";
 import { pasteAddress } from "./sign-in.ts";
 
 const AUTH = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3";
-/** The regions of the Fleet API where Golem registers its domain; China has its own sign-in, which Golem does not use. */
+/** The regions of the Fleet API where Shadow registers its domain; China has its own sign-in, which Shadow does not use. */
 const REGIONS = [
   "https://fleet-api.prd.eu.vn.cloud.tesla.com",
   "https://fleet-api.prd.na.vn.cloud.tesla.com",
@@ -32,7 +32,7 @@ const SCOPES = [
   "vehicle_cmds",
   "vehicle_charging_cmds",
 ];
-/** Where the Fleet API reads the public key of Golem's signing key, on Golem's own address. */
+/** Where the Fleet API reads the public key of Shadow's signing key, on Shadow's own address. */
 export const PUBLIC_KEY_PATH =
   "/.well-known/appspecific/com.tesla.3p.public-key.pem";
 /** How long one call to the Fleet API may take. */
@@ -109,7 +109,7 @@ interface Vehicle {
   readonly state: string;
 }
 
-/** The parts of `vehicle_data` that Golem reads; the Fleet API gives distances in miles. */
+/** The parts of `vehicle_data` that Shadow reads; the Fleet API gives distances in miles. */
 interface VehicleData extends Vehicle {
   readonly charge_state?: Record<string, unknown>;
   readonly climate_state?: Record<string, unknown>;
@@ -175,9 +175,9 @@ export interface Charge {
 export interface TeslaOptions {
   /** The path of tesla-control, which signs the commands. */
   readonly binary: string;
-  /** Where Golem keeps its signing key. */
+  /** Where Shadow keeps its signing key. */
   readonly directory: string;
-  /** Golem's domain, where the Fleet API reads the public key. */
+  /** Shadow's domain, where the Fleet API reads the public key. */
   readonly domain: string;
   readonly request?: typeof fetch;
   /** Runs tesla-control with its arguments; tests pass their own. */
@@ -191,8 +191,8 @@ export interface TeslaOptions {
 /**
  * Tesla cars through the Fleet API (https://developer.tesla.com/docs/fleet-api), with a sign-in to the app that the
  * server's owner made at developer.tesla.com. Agents read the cars and send commands, which tesla-control
- * (https://github.com/teslamotors/vehicle-command) signs with Golem's key; the cars take them after the person adds
- * that key in the Tesla app. While Golem runs, it logs the charge sessions of each account.
+ * (https://github.com/teslamotors/vehicle-command) signs with Shadow's key; the cars take them after the person adds
+ * that key in the Tesla app. While Shadow runs, it logs the charge sessions of each account.
  */
 export function teslaConnector(options: TeslaOptions): Connector {
   const request = options.request ?? fetch;
@@ -278,19 +278,19 @@ export function teslaConnector(options: TeslaOptions): Connector {
         throw error;
       }
       throw new Error(
-        `The car does not have Golem's key yet. The person opens https://tesla.com/_ak/${options.domain} on the phone with the Tesla app and adds the key to the car; then the command works.`
+        `The car does not have Shadow's key yet. The person opens https://tesla.com/_ak/${options.domain} on the phone with the Tesla app and adds the key to the car; then the command works.`
       );
     });
     return { done: true, vin: car.vin };
   }
 
   const log = chargeLog(fleet);
-  const redirectUrl = `https://${options.domain}/golem-sign-in`;
+  const redirectUrl = `https://${options.domain}/shadow-sign-in`;
   return {
     id: "tesla",
     name: "Tesla",
     description:
-      "The person's Tesla cars: battery, charging, climate, location, and locks, and the charge sessions that Golem logs, with the kWh into the battery and from the wall. Preheat or cool the car, set charging, and lock it; unlocking and opening ask the person first.",
+      "The person's Tesla cars: battery, charging, climate, location, and locks, and the charge sessions that Shadow logs, with the kWh into the battery and from the wall. Preheat or cool the car, set charging, and lock it; unlocking and opening ask the person first.",
     secretLabel: null,
     oauth: AUTH,
     oauthEndpoints: {
@@ -305,7 +305,7 @@ export function teslaConnector(options: TeslaOptions): Connector {
     guide: [
       "At [developer.tesla.com](https://developer.tesla.com), sign in with the Tesla account, and create an app. Select **Authorization Code and Machine-to-Machine**, and the scopes **Vehicle Information**, **Vehicle Location**, **Vehicle Commands**, and **Vehicle Charging Management**.",
       `In **Allowed Origin(s)**, type \`https://${options.domain}\`, and in **Allowed Redirect URI(s)**, \`${redirectUrl}\`. Copy the client ID and the client secret.`,
-      `Click **Client** here, and paste them. Golem registers \`${options.domain}\` with Tesla, which reads Golem's key at \`https://${options.domain}${PUBLIC_KEY_PATH}\`.`,
+      `Click **Client** here, and paste them. Shadow registers \`${options.domain}\` with Tesla, which reads Shadow's key at \`https://${options.domain}${PUBLIC_KEY_PATH}\`.`,
       "Click **Connect**, sign in to Tesla, and allow all the scopes.",
       pasteAddress(redirectUrl),
       `For commands, open [tesla.com/_ak/${options.domain}](https://tesla.com/_ak/${options.domain}) on the phone with the Tesla app, and add the key to each car.`,
@@ -487,7 +487,7 @@ export function teslaConnector(options: TeslaOptions): Connector {
       {
         name: "tesla_charges",
         description:
-          "The charge sessions that Golem logged, oldest first, with the place, the battery levels, the kWh into the battery, and the kWh from the wall, which Golem adds up from the charger's volts, amps, and phases. A session that goes on has `ongoing`. Golem looks at each car every 30 minutes, so a session can start up to 30 minutes before its `start`; its kWh are whole.",
+          "The charge sessions that Shadow logged, oldest first, with the place, the battery levels, the kWh into the battery, and the kWh from the wall, which Shadow adds up from the charger's volts, amps, and phases. A session that goes on has `ongoing`. Shadow looks at each car every 30 minutes, so a session can start up to 30 minutes before its `start`; its kWh are whole.",
         parameters: Type.Object({
           vin: Type.Optional(Type.String()),
           from: Type.Optional(
@@ -893,7 +893,7 @@ function round(kwh: number): number {
   return Math.round(kwh * 100) / 100;
 }
 
-/** Golem's signing key, which it makes once; the cars take only commands that it signed. */
+/** Shadow's signing key, which it makes once; the cars take only commands that it signed. */
 function signingKey(directory: string): string {
   const file = join(directory, "tesla", "private-key.pem");
   if (!existsSync(file)) {
@@ -912,7 +912,7 @@ function signingKey(directory: string): string {
   return file;
 }
 
-/** Runs tesla-control; it reads the token from a file, which only Golem's user can read, and which Golem removes. */
+/** Runs tesla-control; it reads the token from a file, which only Shadow's user can read, and which Shadow removes. */
 function spawner(
   binary: string,
   keyFile: string
@@ -920,7 +920,7 @@ function spawner(
   return async (command, signal) => {
     const tokenAt = command.indexOf("-token");
     const token = command[tokenAt + 1]!;
-    const directory = mkdtempSync(join(tmpdir(), "golem-tesla-"));
+    const directory = mkdtempSync(join(tmpdir(), "shadow-tesla-"));
     try {
       const tokenFile = join(directory, "token");
       writeFileSync(tokenFile, token, { mode: 0o600 });

@@ -1,6 +1,6 @@
 # Modular monolith
 
-The server is one process with one `golem.sqlite`, split into modules. A module is a vertical slice of one domain:
+The server is one process with one `shadow.sqlite`, split into modules. A module is a vertical slice of one domain:
 its service, its tests, and its JSON routes when people use them directly. Modules talk to each other only through their
 entry file. `test/architecture.test.ts` enforces the rules on this page.
 
@@ -37,8 +37,8 @@ src/
 ├── search/                  Extraction, embeddings, and the index of each workspace
 ├── routines/                Scheduled scripts and instructions of each channel, and their runs
 ├── reminders/               One-time workspace reminders and their agent tools
-├── agenda/                  Each person's Upcoming, and the automations Golem suggests to them
-├── feedback/                What agents report about Golem itself, for the server's owner
+├── agenda/                  Each person's Upcoming, and the automations Shadow suggests to them
+├── feedback/                What agents report about Shadow itself, for the server's owner
 ```
 
 Each module has the same files, when it needs them:

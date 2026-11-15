@@ -8,11 +8,11 @@ import {
   slackConnector,
 } from "./slack.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "golem-slack-test-"));
+const directory = await mkdtemp(join(tmpdir(), "shadow-slack-test-"));
 const slackcli = join(directory, "slackcli");
 const SESSION =
   '{"default_workspace":"T1","workspaces":{"T1":{"workspace_id":"T1","workspace_name":"Family","auth_type":"browser"}}}';
-// slackcli as Golem runs it: parse-curl keeps a session of the cURL on stdin; other commands answer with their
+// slackcli as Shadow runs it: parse-curl keeps a session of the cURL on stdin; other commands answer with their
 // arguments, their home, and the session there; `fail` fails as a `--json` command does.
 await Bun.write(
   slackcli,

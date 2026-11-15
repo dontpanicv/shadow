@@ -130,7 +130,7 @@ export class IntakeDestinations {
         const channel = this.workspaces.addChannel(
           workspaceId,
           name,
-          "golem",
+          "shadow",
           owner.id
         );
         this.workspaces.setChannelSummary(

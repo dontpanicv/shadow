@@ -9,7 +9,7 @@ test("the workspace's one orchestrator from before becomes the own of the person
     .query("PRAGMA user_version")
     .get() as { user_version: number };
   // The state before the migration of the orchestrators and the one after it: one orchestrator of the workspace,
-  // made by Golem, no OAuth clients, no channel emojis, no facts, no private channels, and no recent searches.
+  // made by Shadow, no OAuth clients, no channel emojis, no facts, no private channels, and no recent searches.
   database.run(`ALTER TABLE reminder DROP COLUMN not_before; ALTER TABLE reminder DROP COLUMN not_after; ALTER TABLE intake_check DROP COLUMN nudge_at; DROP TABLE intake_block; DROP TABLE intake_feedback; DROP TABLE intake_archive; DROP TRIGGER intake_check_created; DROP TRIGGER intake_check_changed; DROP TABLE intake_check_revision;
   ALTER TABLE routine_run DROP COLUMN input;
 	DROP TABLE intake_source_read;
@@ -43,7 +43,7 @@ test("the workspace's one orchestrator from before becomes the own of the person
 	DROP INDEX thread_own_orchestrator;
 	CREATE UNIQUE INDEX thread_orchestrator ON thread (workspace_id) WHERE orchestrator = 1;
 	INSERT INTO channel (id, workspace_id, name, created_by, created_at) VALUES ('general', 'home', 'general', 'alice', 1), ('food', 'home', 'food', 'bob', 2);
-	INSERT INTO thread (id, workspace_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('golem', 'home', 'food', 'Golem', 'golem', 1, 1, 1), ('dinner', 'home', 'food', 'Dinner', 'bob', 1, 1, 0);
+	INSERT INTO thread (id, workspace_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('shadow', 'home', 'food', 'Shadow', 'shadow', 1, 1, 1), ('dinner', 'home', 'food', 'Dinner', 'bob', 1, 1, 0);
 	PRAGMA user_version = ${version - 32};`);
   migrate(database);
   expect(
@@ -52,14 +52,14 @@ test("the workspace's one orchestrator from before becomes the own of the person
       .all()
   ).toEqual([
     { id: "dinner", createdBy: "bob" },
-    { id: "golem", createdBy: "alice" },
+    { id: "shadow", createdBy: "alice" },
   ]);
   database.run(
-    "INSERT INTO thread (id, workspace_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('bobs', 'home', 'general', 'Golem', 'bob', 1, 1, 1)"
+    "INSERT INTO thread (id, workspace_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('bobs', 'home', 'general', 'Shadow', 'bob', 1, 1, 1)"
   );
   expect(() =>
     database.run(
-      "INSERT INTO thread (id, workspace_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('again', 'home', 'general', 'Golem', 'bob', 1, 1, 1)"
+      "INSERT INTO thread (id, workspace_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('again', 'home', 'general', 'Shadow', 'bob', 1, 1, 1)"
     )
   ).toThrow();
 });

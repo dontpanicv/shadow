@@ -7,7 +7,7 @@
     "locale": "en",
     "quality_profile": "showcase",
     "repository": {
-      "url": "https://github.com/dontpanicv/golem.git",
+      "url": "https://github.com/dontpanicv/shadow.git",
       "revision": "e7c5a467da460472216f4421b4b60de90185882b"
     }
   },
@@ -33,7 +33,7 @@
     {
       "id": "app-host",
       "type": "cloud",
-      "label": "golem.example.com",
+      "label": "shadow.example.com",
       "sublabel": "the whole app",
       "pos": [300, 60],
       "size": [150, 64],
@@ -78,9 +78,9 @@
       ]
     },
     {
-      "id": "golem",
+      "id": "shadow",
       "type": "backend",
-      "label": "Golem",
+      "label": "Shadow",
       "sublabel": "127.0.0.1:3000",
       "pos": [810, 190],
       "size": [140, 64],
@@ -145,7 +145,7 @@
     {
       "id": "runtime",
       "type": "backend",
-      "label": "golem runtime",
+      "label": "shadow runtime",
       "sublabel": "mine · shared · everyone",
       "pos": [820, 400],
       "size": [150, 64],
@@ -160,7 +160,7 @@
     {
       "id": "store",
       "type": "database",
-      "label": "golem.sqlite",
+      "label": "shadow.sqlite",
       "sublabel": "artifact · artifact_record",
       "pos": [590, 400],
       "size": [150, 64],
@@ -202,7 +202,15 @@
     {
       "kind": "region",
       "label": "Mac mini at home: no open port",
-      "wraps": ["tunnel", "golem", "check", "page", "runtime", "store", "agent"]
+      "wraps": [
+        "tunnel",
+        "shadow",
+        "check",
+        "page",
+        "runtime",
+        "store",
+        "agent"
+      ]
     }
   ],
   "connections": [
@@ -233,14 +241,14 @@
       "variant": "security"
     },
     {
-      "id": "tunnel-golem",
+      "id": "tunnel-shadow",
       "from": "tunnel",
-      "to": "golem",
+      "to": "shadow",
       "label": "127.0.0.1"
     },
     {
-      "id": "golem-check",
-      "from": "golem",
+      "id": "shadow-check",
+      "from": "shadow",
       "to": "check",
       "label": "/a/name"
     },
@@ -255,7 +263,7 @@
       "id": "page-runtime",
       "from": "page",
       "to": "runtime",
-      "label": "golem.* calls"
+      "label": "shadow.* calls"
     },
     {
       "id": "runtime-store",
@@ -286,15 +294,15 @@
       "title": "The sandbox",
       "items": [
         "The HTML runs in a frame without allow-same-origin",
-        "It cannot read Golem's cookies or call Golem's API",
-        "The content policy blocks fetch; data goes only through golem"
+        "It cannot read Shadow's cookies or call Shadow's API",
+        "The content policy blocks fetch; data goes only through shadow"
       ]
     },
     {
       "dot": "cyan",
       "title": "The deploy model",
       "items": [
-        "Golem listens on 127.0.0.1; cloudflared connects out",
+        "Shadow listens on 127.0.0.1; cloudflared connects out",
         "The public host passes only artifact paths, else 404",
         "Too many missing links from one address get 429"
       ]

@@ -2,20 +2,20 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /**
- * Golem keeps everything in two folders:
- * - `config/`: what Golem needs to start: `golem.toml` and `secret.key`. Keep a copy somewhere safe, apart from
+ * Shadow keeps everything in two folders:
+ * - `config/`: what Shadow needs to start: `shadow.toml` and `secret.key`. Keep a copy somewhere safe, apart from
  *   the data backup, because `secret.key` decrypts the credentials stored in `data/`.
- * - `data/`: everything Golem stores: databases, markdown, files, indexes, models, and logs. Back this up offsite.
+ * - `data/`: everything Shadow stores: databases, markdown, files, indexes, models, and logs. Back this up offsite.
  */
 export interface Config {
   readonly configDirectory: string;
   readonly dataDirectory: string;
-  /** The network address Golem listens on; `127.0.0.1` lets only a proxy on the same machine reach it. */
+  /** The network address Shadow listens on; `127.0.0.1` lets only a proxy on the same machine reach it. */
   readonly host: string;
   readonly port: number;
   /** The address people open; better-auth uses it for links and origin checks. */
   readonly baseUrl: string;
-  /** The public address of public artifacts, such as https://a.example.com, when the rest of Golem is private. */
+  /** The public address of public artifacts, such as https://a.example.com, when the rest of Shadow is private. */
   readonly shareUrl: string | null;
   /** The only people who may sign in. */
   readonly allowedEmails: readonly string[];
@@ -28,17 +28,17 @@ export interface OAuthClient {
   readonly clientSecret: string;
 }
 
-const TEMPLATE = `# Golem configuration. Golem created this file on first start; edit it and restart Golem.
+const TEMPLATE = `# Shadow configuration. Shadow created this file on first start; edit it and restart Shadow.
 
-# The address people open, for example https://golem.example.com. Google sign-in needs https, or localhost.
+# The address people open, for example https://shadow.example.com. Google sign-in needs https, or localhost.
 base_url = "http://localhost:3000"
 port = 3000
 
-# The network address Golem listens on. 127.0.0.1 lets only this machine reach it, for example through a proxy;
+# The network address Shadow listens on. 127.0.0.1 lets only this machine reach it, for example through a proxy;
 # 0.0.0.0 opens it to every network the machine is on.
 host = "127.0.0.1"
 
-# The public address of public artifact links, for example https://a.example.com, when the rest of Golem is private.
+# The public address of public artifact links, for example https://a.example.com, when the rest of Shadow is private.
 # That address answers only artifact links; docs/artifacts-sharing.md shows how to set it up.
 # share_url = "https://a.example.com"
 
@@ -52,18 +52,18 @@ client_id = ""
 client_secret = ""
 `;
 
-/** Reads `config/golem.toml`, creating `config/` and `data/` with defaults on first start. */
+/** Reads `config/shadow.toml`, creating `config/` and `data/` with defaults on first start. */
 export async function readConfig(
   env: Record<string, string | undefined> = process.env
 ): Promise<Config> {
-  const configDirectory = resolve(env.GOLEM_CONFIG ?? "config");
-  const dataDirectory = resolve(env.GOLEM_DATA ?? "data");
+  const configDirectory = resolve(env.SHADOW_CONFIG ?? "config");
+  const dataDirectory = resolve(env.SHADOW_DATA ?? "data");
   for (const directory of [configDirectory, dataDirectory]) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    // Only Golem's user reads the secrets and the family's data, also on an install that an older version made.
+    // Only Shadow's user reads the secrets and the family's data, also on an install that an older version made.
     chmodSync(directory, 0o700);
   }
-  const file = Bun.file(join(configDirectory, "golem.toml"));
+  const file = Bun.file(join(configDirectory, "shadow.toml"));
   if (!(await file.exists())) {
     await Bun.write(file, TEMPLATE);
   }
@@ -91,21 +91,21 @@ export async function readConfig(
 
 function integer(value: unknown, key: string): number {
   if (!Number.isInteger(value)) {
-    throw new Error(`config/golem.toml: ${key} must be a whole number`);
+    throw new Error(`config/shadow.toml: ${key} must be a whole number`);
   }
   return value as number;
 }
 
 function text(value: unknown, key: string): string {
   if (typeof value !== "string" || !value) {
-    throw new Error(`config/golem.toml: ${key} must be a text value`);
+    throw new Error(`config/shadow.toml: ${key} must be a text value`);
   }
   return value;
 }
 
 function list(value: unknown, key: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new Error(`config/golem.toml: ${key} must be a list of text values`);
+    throw new Error(`config/shadow.toml: ${key} must be a list of text values`);
   }
   return value;
 }

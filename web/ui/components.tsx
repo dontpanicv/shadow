@@ -369,7 +369,7 @@ function initial(name: string): string {
   return name.normalize("NFD").slice(0, 1).toUpperCase();
 }
 
-/** Golem's logo, 1 px a noise cell. */
+/** Shadow's logo, 1 px a noise cell. */
 export function Mark({ size }: { size?: "large" }) {
   const side = size === "large" ? 48 : 24;
   return (
@@ -508,7 +508,7 @@ export function WorkingSpinner({ threadId }: { threadId: string }) {
   return useContext(WorkingContext).has(threadId) ? <PixelSpinner /> : null;
 }
 
-/** Four pixels in a square that light in turn, as the icon's pixels do: Golem works. */
+/** Four pixels in a square that light in turn, as the icon's pixels do: Shadow works. */
 export function PixelSpinner() {
   return (
     <span aria-label="Working" className="working-spinner" role="img">

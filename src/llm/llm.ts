@@ -60,7 +60,7 @@ export interface LlmStatus {
 }
 
 /**
- * What a model call was for: a person's thread, their orchestrator, a routine run, a reminder, what Golem read in the
+ * What a model call was for: a person's thread, their orchestrator, a routine run, a reminder, what Shadow read in the
  * accounts a person watches, or work for nobody.
  */
 export type UsageSource =
@@ -220,7 +220,7 @@ export class Llm {
         "oauth",
         {
           signal: abort.signal,
-          // Golem has no browser on the server, so it always picks the device code method.
+          // Shadow has no browser on the server, so it always picks the device code method.
           prompt: async (prompt) => {
             if (
               prompt.type === "select" &&
@@ -245,7 +245,7 @@ export class Llm {
             codeShown.resolve();
           },
         },
-        { agentName: "Golem", getDeviceId: () => this.deviceId() }
+        { agentName: "Shadow", getDeviceId: () => this.deviceId() }
       )
       .catch((error: unknown) => {
         if (!abort.signal.aborted) {

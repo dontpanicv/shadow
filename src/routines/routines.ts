@@ -127,7 +127,7 @@ interface RoutineRow {
   readonly enabled: number;
   readonly nextRunAt: number | null;
   readonly threadId: string | null;
-  /** The member who last wrote its instructions or script, whose turns its runs are; `golem` when nobody did. */
+  /** The member who last wrote its instructions or script, whose turns its runs are; `shadow` when nobody did. */
   readonly createdBy: string;
   readonly placeId: string | null;
   readonly placeEvent: PlaceEvent | null;
@@ -203,7 +203,7 @@ export class Routines {
       } else {
         this.database
           .query(
-            "UPDATE routine_run SET outcome = 'failed', finished_at = ?, error = 'Golem stopped during the run', input = NULL, result = NULL WHERE id = ?"
+            "UPDATE routine_run SET outcome = 'failed', finished_at = ?, error = 'Shadow stopped during the run', input = NULL, result = NULL WHERE id = ?"
           )
           .run(Date.now(), run.id);
       }
@@ -452,7 +452,7 @@ export class Routines {
     const routine = routineId
       ? this.row(workspaceId, routineId, realm)
       : undefined;
-    if (routine && routine.createdBy !== (userId ?? "golem")) {
+    if (routine && routine.createdBy !== (userId ?? "shadow")) {
       throw new Error(
         "Only the person who last wrote this routine can test with its stored values. Test without the routine."
       );
@@ -463,7 +463,7 @@ export class Routines {
         .query(
           "SELECT result FROM routine_run WHERE routine_id = ? AND outcome = 'running' AND result IS NOT NULL AND (input IS NULL OR json_extract(input, '$.createdBy') = ?) ORDER BY started_at DESC LIMIT 1"
         )
-        .get(routine.id, userId ?? "golem") as
+        .get(routine.id, userId ?? "shadow") as
         | { result: string }
         | null
         | undefined);
@@ -568,7 +568,7 @@ export class Routines {
     startedAt: number,
     found: ScriptResult | null
   ): Promise<"quiet" | "posted"> {
-    if (routine.createdBy !== "golem") {
+    if (routine.createdBy !== "shadow") {
       try {
         this.workspaces.requireMember(routine.workspaceId, {
           id: routine.createdBy,
@@ -660,7 +660,7 @@ export class Routines {
     runId: string,
     error: string
   ): Promise<void> {
-    if (routine.createdBy === "golem") {
+    if (routine.createdBy === "shadow") {
       return;
     }
     await this.threads.observe(
@@ -870,7 +870,7 @@ export class Routines {
       };
     }
     const { id, event, personId } = input.place!;
-    const people = createdBy === "golem" ? [personId] : [personId, createdBy];
+    const people = createdBy === "shadow" ? [personId] : [personId, createdBy];
     if (
       !(
         (event === "arrive" || event === "leave") &&
@@ -916,7 +916,7 @@ export class Routines {
     } catch {
       // The person left the workspace; the run says their id.
     }
-    return `It runs each time ${name} ${place.event === "arrive" ? "arrives at" : "leaves"} ${place.name}, as their iPhone tells Golem, and when someone runs it by hand.`;
+    return `It runs each time ${name} ${place.event === "arrive" ? "arrives at" : "leaves"} ${place.name}, as their iPhone tells Shadow, and when someone runs it by hand.`;
   }
 
   private routineOf(row: RoutineRow): Routine {
@@ -1068,7 +1068,7 @@ function repairTask(
     `The script of the routine "${routine.name}" (routine ${routine.id}) failed at ${localTime(startedAt)}: ${result.error}`,
     result.text ? `It printed:\n${cut(result.text)}` : "",
     `The script:\n${routine.script}`,
-    "Find the cause. If the script is wrong, fix it: run the new script with routines_test_script, then save it with routines_update. Say in plain words what did not work and what you did; when something outside the script fails, such as a connector or a website, say what the people can do. Golem notifies the routine's person of the failure itself.",
+    "Find the cause. If the script is wrong, fix it: run the new script with routines_test_script, then save it with routines_update. Say in plain words what did not work and what you did; when something outside the script fails, such as a connector or a website, say what the people can do. Shadow notifies the routine's person of the failure itself.",
   ]
     .filter(Boolean)
     .join("\n\n");

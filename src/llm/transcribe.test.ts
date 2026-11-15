@@ -14,7 +14,7 @@ async function script(name: string, body: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), "golem-transcribe-test-"));
+  directory = await mkdtemp(join(tmpdir(), "shadow-transcribe-test-"));
   // A model that is there does not download.
   await mkdir(join(directory, "models"));
   await Bun.write(join(directory, "models/ggml-large-v3-turbo.bin"), "model");
@@ -24,7 +24,7 @@ afterAll(() => rm(directory, { recursive: true, force: true }));
 
 const temporaryFolders = async () =>
   (await readdir(tmpdir())).filter((name) =>
-    /^golem-transcribe-(?!test-)/.test(name)
+    /^shadow-transcribe-(?!test-)/.test(name)
   );
 
 test("gives what whisper prints for the file's sound, in the language spoken, and leaves no audio behind", async () => {

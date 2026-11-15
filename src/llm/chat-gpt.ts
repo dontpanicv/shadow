@@ -17,7 +17,7 @@ export const chatGpt: LlmProvider = {
 };
 
 /**
- * Asks every answer of `provider` for `verbosity`. pi-ai sends `low` by default, which leaves no room for Golem's soul,
+ * Asks every answer of `provider` for `verbosity`. pi-ai sends `low` by default, which leaves no room for Shadow's soul,
  * and Pi Durable passes no `textVerbosity` through; the request body takes it.
  */
 export function withVerbosity(

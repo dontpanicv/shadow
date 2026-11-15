@@ -20,10 +20,10 @@ const searched = {
     action: {
       sources: [
         {
-          url: "https://www.prague.eu/golem?utm_source=openai",
+          url: "https://www.prague.eu/shadow?utm_source=openai",
           title: "Prague",
         },
-        { url: "https://en.wikipedia.org/wiki/Golem", title: "Golem" },
+        { url: "https://en.wikipedia.org/wiki/Shadow", title: "Shadow" },
         { url: "javascript:alert(1)", title: "Not a page" },
         { url: "https://example.org/untitled" },
       ],
@@ -37,12 +37,12 @@ const answered = {
     content: [
       {
         type: "output_text",
-        text: "Rabbi Loew made the Golem of Prague.",
+        text: "Rabbi Loew made the Shadow of Prague.",
         annotations: [
           {
             type: "url_citation",
-            url: "https://en.wikipedia.org/wiki/Golem?utm_source=openai",
-            title: "Golem - Wikipedia",
+            url: "https://en.wikipedia.org/wiki/Shadow?utm_source=openai",
+            title: "Shadow - Wikipedia",
           },
         ],
       },
@@ -63,7 +63,7 @@ const request = (fetch: typeof globalThis.fetch) => ({
   baseUrl: "https://chatgpt.com/backend-api",
   model: "gpt-6-luna",
   token,
-  query: "Who made the Golem of Prague?",
+  query: "Who made the Shadow of Prague?",
   fetch,
 });
 
@@ -94,13 +94,13 @@ describe("searchWeb", () => {
         totalTokens: 120,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
-      answer: "Rabbi Loew made the Golem of Prague.",
+      answer: "Rabbi Loew made the Shadow of Prague.",
       sources: [
         {
-          title: "Golem - Wikipedia",
-          url: "https://en.wikipedia.org/wiki/Golem",
+          title: "Shadow - Wikipedia",
+          url: "https://en.wikipedia.org/wiki/Shadow",
         },
-        { title: "Prague", url: "https://www.prague.eu/golem" },
+        { title: "Prague", url: "https://www.prague.eu/shadow" },
         { title: null, url: "https://example.org/untitled" },
       ],
     });
@@ -114,7 +114,7 @@ describe("searchWeb", () => {
       tools: [{ type: "web_search" }],
       tool_choice: "required",
       store: false,
-      input: [{ content: [{ text: "Who made the Golem of Prague?" }] }],
+      input: [{ content: [{ text: "Who made the Shadow of Prague?" }] }],
     });
   });
 

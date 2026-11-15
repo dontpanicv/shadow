@@ -144,7 +144,7 @@ function parsedStream(stream: string): {
   return { items, usage };
 }
 
-/** OpenAI's usage, whose input includes the cached tokens, as Golem counts it. */
+/** OpenAI's usage, whose input includes the cached tokens, as Shadow counts it. */
 function tokens(usage: ResponseUsage): Usage {
   const cached = usage.input_tokens_details?.cached_tokens ?? 0;
   return {

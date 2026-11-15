@@ -46,12 +46,12 @@ export interface IntakeUpdate {
   id: string;
   threadId: string | null;
   threadTitle: string | null;
-  /** The title of the thread that Golem will start, when no thread fits yet. */
+  /** The title of the thread that Shadow will start, when no thread fits yet. */
   newThread: string | null;
   body: string;
   /** now: at the next minute; brief: at the 08:00 review. */
   attention: "now" | "brief";
-  /** Why Golem will also notify the person; null for a silent update. */
+  /** Why Shadow will also notify the person; null for a silent update. */
   notice: string | null;
   createdAt: number;
   deliveredAt: number | null;

@@ -1,4 +1,4 @@
-/* Golem in its own look. Every value is from Golem's public/tokens.css and
+/* Shadow in its own look. Every value is from Shadow's public/tokens.css and
    public/styles.css: the canvas sidebar, the inset panel with a hairline and
    square corners, Inter at weight 450, Geist Mono for values, and Ember's one
    rust accent. The dark theme (film.mjs --dark) is one block below. */
@@ -99,7 +99,7 @@
   border-right: 0;
 }
 
-/* Golem's page sits in one inset panel on the canvas (.panel) */
+/* Shadow's page sits in one inset panel on the canvas (.panel) */
 .gd-window[data-kind="sidebar"] .ss-window__main {
   margin: 8px 8px 0 0;
   overflow: hidden;
@@ -322,7 +322,7 @@
   height: 100%;
 }
 
-/* Golem's logo (Mark). In light, a black tile keeps the white face apart from
+/* Shadow's logo (Mark). In light, a black tile keeps the white face apart from
    the white surface. */
 .gd-face {
   flex: none;
@@ -392,7 +392,7 @@
   animation: gd-shimmer 2.2s linear infinite;
 }
 
-/* Golem writes "12s", with no space before the unit */
+/* Shadow writes "12s", with no space before the unit */
 .gd-shimmer {
   --ss-count-unit-gap: 0px;
 }
@@ -624,9 +624,9 @@
   background: var(--ss-text-strong);
 }
 
-/* ---- Compact: Golem's iOS app in a phone, pinned a gutter from the bottom,
+/* ---- Compact: Shadow's iOS app in a phone, pinned a gutter from the bottom,
    off the top below the status bar. Sizes in points from the mobile tokens
-   (design/tokens.json) and ios/Golem/Views/MessageRow.swift, Composer.swift ---- */
+   (design/tokens.json) and ios/Shadow/Views/MessageRow.swift, Composer.swift ---- */
 
 .gd-phone {
   position: absolute;

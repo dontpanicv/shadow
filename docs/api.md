@@ -1,4 +1,4 @@
-# Golem API
+# Shadow API
 
 The web app uses this JSON API with its session cookie; a request that names another origin than `base_url` gets
 `403`. A JSON body over 1 MB, an artifact call over 1 MB, and any body over 100 MB get `413`.
@@ -6,7 +6,7 @@ The web app uses this JSON API with its session cookie; a request that names ano
 ## Authentication
 
 Accounts are managed by [better-auth](https://www.better-auth.com). People sign in only with Google, and only with
-an email in `allowed_emails` in `config/golem.toml`. There is no sign-up and no password. The web app uses better-auth's
+an email in `allowed_emails` in `config/shadow.toml`. There is no sign-up and no password. The web app uses better-auth's
 session cookie. The routes are in `src/accounts/`.
 
 | Request | Response |
@@ -15,14 +15,14 @@ session cookie. The routes are in `src/accounts/`.
 | `POST /api/auth/sign-out` | `{ success }` |
 
 Send `Authorization: Bearer <token>`, or the session cookie, on every `/api/v1` request. A `401` response means the
-token or the session is missing or expired. Golem checks `allowed_emails` on every request: after a restart without
+token or the session is missing or expired. Shadow checks `allowed_emails` on every request: after a restart without
 their email, a person gets `401`, also from every `/api/auth` route except sign-out. A person who leaves a workspace
 stops getting its event streams.
 
 ## Types
 
 ```ts
-type User = { id: string; name: string; email: string; picture: string | null }; // picture: the address of the profile picture, or null for none; until a person uploads one, it is a copy of their Google picture, which Golem makes once
+type User = { id: string; name: string; email: string; picture: string | null }; // picture: the address of the profile picture, or null for none; until a person uploads one, it is a copy of their Google picture, which Shadow makes once
 type Workspace = { id: string; name: string; role: "owner" | "member" }; // `role` is the person's
 type ThreadSummary = { id: string; channelId: string; title: string; updatedAt: number; settledAt: number | null }; // times are Unix milliseconds
 type ListedThread = ThreadSummary & { channel: string }; // channel name, without #
@@ -55,7 +55,7 @@ type Brief = {
 type Message = {
 	id: string;
 	authorId: string | null; // null for the agent
-	author: string; // display name, "Golem" for the agent
+	author: string; // display name, "Shadow" for the agent
 	agent: boolean;
 	text: string; // may hold thread links, [title](thread:<threadId>): show each as a link that opens the thread
 	time: number;
@@ -102,8 +102,8 @@ type SearchResult = {
 };
 type RecentSearch = { query: string; searchedAt: number }; // newest first; the same query again, in any case, only moves to the top
 type Member = { userId: string; name: string; email: string; picture: string | null; role: "owner" | "admin" | "member" };
-type Credential = { id: string; label: string; ownerId: string; ownerName: string; shared: boolean; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone shares, watches, or deletes it; shared: every member's turns use it, else only its owner's; watched: its owner lets Golem read it for them (`src/intake/`)
-type Integration = { id: string; name: string; connect: "secret" | "sign-in" | "phone"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Golem can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Golem names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Golem's own OAuth client, and whether this person may set it
+type Credential = { id: string; label: string; ownerId: string; ownerName: string; shared: boolean; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone shares, watches, or deletes it; shared: every member's turns use it, else only its owner's; watched: its owner lets Shadow read it for them (`src/intake/`)
+type Integration = { id: string; name: string; connect: "secret" | "sign-in" | "phone"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
 type RoutineRun = {
 	id: string;
 	routineId: string;
@@ -176,14 +176,14 @@ type Llm = {
 	error: string | null; // the last login error
 };
 type UsageTotals = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number }; // tokens; input leaves out cacheRead, the tokens read from the prompt cache; cost in US dollars at the model's list price, which a ChatGPT login does not pay
-type UsageSource = "thread" | "orchestrator" | "routine" | "reminder" | "intake" | "background"; // intake: what Golem reads in watched accounts; background: briefs, memory, names, emojis, and what Golem learns
+type UsageSource = "thread" | "orchestrator" | "routine" | "reminder" | "intake" | "background"; // intake: what Shadow reads in watched accounts; background: briefs, memory, names, emojis, and what Shadow learns
 type Usage = {
 	days: (UsageTotals & { day: string })[]; // "YYYY-MM-DD" in UTC, oldest first; a day without use is left out
 	total: UsageTotals;
 	sources: (UsageTotals & { source: UsageSource })[]; // most cost first
 	models: (UsageTotals & { model: string })[]; // "provider/model", or "tool:<name>" for a tool's own model calls
 	threads: (UsageTotals & { threadId: string; title: string })[]; // the 10 that cost most, of those the person sees
-	people: (UsageTotals & { userId: string; name: string })[] | null; // only for the server's owner; userId "" is work for nobody, named "Golem"
+	people: (UsageTotals & { userId: string; name: string })[] | null; // only for the server's owner; userId "" is work for nobody, named "Shadow"
 };
 type Learned = {
 	id: number;
@@ -192,7 +192,7 @@ type Learned = {
 	channelId: string | null; // the channel of a "howto"; null for one of the person's own orchestrator
 	realm: string | null; // the person who alone sees it, because it came from their private channel or orchestrator; null: every member
 	text: string;
-	threadId: string | null; // where Golem learned it
+	threadId: string | null; // where Shadow learned it
 	updatedAt: number;
 };
 type Suggestion = {
@@ -239,24 +239,24 @@ type WatchedPlace = {
 
 ## Endpoints
 
-Golem has one workspace, the family's; nobody makes or deletes one. Workspace paths answer `404` to users who are not
+Shadow has one workspace, the family's; nobody makes or deletes one. Workspace paths answer `404` to users who are not
 members of the workspace, and the paths of a private channel, its threads, files, artifacts, and routines answer `404`
 to everyone but its person.
 
-Every delete is soft: Golem keeps what was deleted, hidden, and no route, page, tool, or search shows it again.
+Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page, tool, or search shows it again.
 
 ### Workspaces (`src/workspaces/`)
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `GET /api/v1/me` | | `{ user: User, workspaces: Workspace[], owner: boolean }`; the first person to sign in starts Golem's one workspace, with a `general` channel, and is its owner. `owner`: the person is the server's owner, the first of `allowed_emails` |
+| `GET /api/v1/me` | | `{ user: User, workspaces: Workspace[], owner: boolean }`; the first person to sign in starts Shadow's one workspace, with a `general` channel, and is its owner. `owner`: the person is the server's owner, the first of `allowed_emails` |
 | `POST /api/v1/me/picture` | `multipart/form-data` with one JPEG, PNG, or WebP file | `{ picture }`: the new address; the apps send a 256 px square. `400` for another kind, `413` over 1 MB |
 | `DELETE /api/v1/me/picture` | | `204`; the person shows their initial, also in place of their Google picture |
 | `GET /api/v1/pictures/:pictureId` | | The picture, for its person and the members of their workspace, else `404`. A new picture gets a new address, so the browser keeps this one |
 | `GET /api/v1/workspaces/:workspaceId` | | `{ workspace: Workspace, channels: Channel[] }`: the channels every member sees, and the person's own private ones |
 | `PUT /api/v1/workspaces/:workspaceId` | `{ name }` | `Workspace`; `403` for a member who is not an owner |
 | `POST /api/v1/workspaces/:workspaceId/channels` | `{ name, private? }` | `Channel`; a `private` one is the person's own. `409` if the name exists, also as another person's private channel |
-| `PUT /api/v1/workspaces/:workspaceId/channels/:channelId` | `{ name }` | `Channel`, with the name as Golem keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words. `409` if the name exists |
+| `PUT /api/v1/workspaces/:workspaceId/channels/:channelId` | `{ name }` | `Channel`, with the name as Shadow keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words. `409` if the name exists |
 | `POST /api/v1/workspaces/:workspaceId/channels/:channelId/merge` | `{ into }` | `204`; its threads, files, artifacts, routines, suggestions, and source archives move to channel `into`, then the empty channel goes and the orchestrators move to the next channel that every member sees. Nobody deletes a channel otherwise. `403` when a channel that every member sees would merge into a private one; `409` while an agent of the channel works. Agents merge with `merge_channel` when a person asks; a private channel merges into one that every member sees only after its owner allows it |
 | `GET /api/v1/workspaces/:workspaceId/facts` | | `{ text }`: facts that the family writes by hand, such as names, birthdays, and places; every agent of the workspace reads them; `""` until someone writes them |
 | `PUT /api/v1/workspaces/:workspaceId/facts` | `{ text }` | `{ text }`; every member can write them; `400` over 20,000 characters |
@@ -272,7 +272,7 @@ Every delete is soft: Golem keeps what was deleted, hidden, and no route, page, 
 | `POST /api/v1/workspaces/:workspaceId/threads` | `{ channelId, text }` | `ThreadSummary`; `text` becomes the first message, and its first line the title until the model names the subject in a few words |
 | `GET /api/v1/threads/:threadId` | | `ThreadState` |
 | `POST /api/v1/workspaces/:workspaceId/threads/:threadId/settled` | `{ settled: boolean }` | `ThreadSummary`; settled threads stay available in their channel, and any new message in one, such as a routine's answer, opens it again; `400` for the orchestrator |
-| `POST /api/v1/workspaces/:workspaceId/threads/:threadId/channel` | `{ channelId }` | `ThreadSummary`; the thread moves to another channel that the person sees, with its artifacts, the files of its channel that no other thread there mentions, its routine, its open suggestions, and what Golem learned from it, and gets a note of who moved it. Only the person who started a thread moves it into their private channel. `400` for the orchestrator, `403` into a private channel for another person, `404` for a channel the person does not see, `409` while its agent works. Agents move a thread with `move_thread` when a person asks |
+| `POST /api/v1/workspaces/:workspaceId/threads/:threadId/channel` | `{ channelId }` | `ThreadSummary`; the thread moves to another channel that the person sees, with its artifacts, the files of its channel that no other thread there mentions, its routine, its open suggestions, and what Shadow learned from it, and gets a note of who moved it. Only the person who started a thread moves it into their private channel. `400` for the orchestrator, `403` into a private channel for another person, `404` for a channel the person does not see, `409` while its agent works. Agents move a thread with `move_thread` when a person asks |
 | `GET /api/v1/threads/:threadId/events` | | Server-sent events: `event: thread`, `data: ThreadState` after every change |
 | `POST /api/v1/threads/:threadId/messages` | `{ text, voice?, requestId? }` | `204`; a retry with the same `requestId` sends nothing again |
 | `POST /api/v1/threads/:threadId/approvals/:approvalId` | `{ allow: boolean }` | `204`; `allow` runs the action once. `403` for a person who is not the approver; `404` when the approval ended or the person is not a member |
@@ -302,7 +302,7 @@ Each member has an orchestrator of their own in the workspace, their personal as
 which the workspace opens on, and whose agent gives work to the threads of the channels. Only its person reads and
 writes it: for anyone else, its routes answer `404`, and search, recall, routines, and other agents leave it out. It is
 in the first channel, but no `Channel.threads` list shows it, and it cannot be settled. Its memory keeps only its own
-conversation, including the complete text and source link of each result that a worker sends back, even if Golem
+conversation, including the complete text and source link of each result that a worker sends back, even if Shadow
 answers `QUIET`. Worker reasoning,
 tool calls, and other channel conversations stay out. `zoom` opens the original conversation messages and returned
 results; `read_thread` and `recall` find other thread history when needed. On startup, the orchestrator restores its
@@ -311,9 +311,9 @@ orchestrator from before each member had one belongs to the person who made the 
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `GET /api/v1/workspaces/:workspaceId/learned` | | `{ learned: Learned[] }`: what Golem learned that the person sees, facts first |
+| `GET /api/v1/workspaces/:workspaceId/learned` | | `{ learned: Learned[] }`: what Shadow learned that the person sees, facts first |
 | `PUT /api/v1/workspaces/:workspaceId/learned/:id` | `{ text }` | `Learned`; any person who sees an entry corrects it |
-| `DELETE /api/v1/workspaces/:workspaceId/learned/:id` | | `204`; Golem does not learn it again |
+| `DELETE /api/v1/workspaces/:workspaceId/learned/:id` | | `204`; Shadow does not learn it again |
 
 After a thread with a person's new messages is quiet for 10 minutes, or settled, the model reviews those messages
 (`src/threads/learned.ts`): it adds, changes, and removes facts about the people of the thread and the how-tos of its
@@ -336,7 +336,7 @@ Settling only cleans the UI. Settled threads remain in the search index, recall,
 under the same access rules. The channel section of an agent's prompt lists the newest 30 other threads, including
 settled ones; `list_threads`, `read_thread`, and `recall` give access to older threads.
 
-Once every 24 hours, Golem settles the open channel threads with no activity for more than 14 days; no model reads
+Once every 24 hours, Shadow settles the open channel threads with no activity for more than 14 days; no model reads
 them. The existing five-minute background check starts the check when it is due, including after startup; the last
 check time is saved in the workspace's memory database. Running threads, threads that wait for an approval,
 orchestrators, and already settled threads stay as they are. Any new message in a settled thread, such as a
@@ -344,7 +344,7 @@ routine's answer, opens it again. This sends no notification. The thread and wor
 thread with the existing settled endpoint.
 
 The web app keeps a text message that it cannot send yet, such as without a connection, and sends it later with a
-`requestId`, so a message that reached Golem before its response was lost stays one message.
+`requestId`, so a message that reached Shadow before its response was lost stays one message.
 
 A message steers a run at work for its author: the agent reads it after its current tool calls, instead of after its
 answer. A message waits for a run at work for another person, so that run keeps the credentials of its own person.
@@ -358,7 +358,7 @@ answer. A message waits for a run at work for another person, so that run keeps 
 
 A notification goes to a person's inbox when the agent answers their message, when a channel thread reports back to a
 thread they write in, for each answer of a reminder (to its recipient) that is not `QUIET`, for every failed
-run of a routine (to its person, with the error, as a Golem message in its thread), and when an agent calls its `notify` tool, as it
+run of a routine (to its person, with the error, as a Shadow message in its thread), and when an agent calls its `notify` tool, as it
 does in a routine's run only when something is wrong or not usual. Other answers of a routine stay in its thread. An answer waits while threads that its agent asked still work for
 it: the answer to their report notifies, or without one, this answer when they stop. While a screen of the person
 follows the thread's events stream, its notifications are read at once; opening the stream reads the thread's
@@ -381,21 +381,21 @@ An artifact is a page or a small app that an agent makes in a thread with its `a
 `artifacts_edit`, `artifacts_read`, `artifacts_list`, `artifacts_data`, and `artifacts_set_data` tools. It belongs to the
 thread's channel, or to a channel the agent names: every thread of the channel sees it, and it stays after the thread
 is settled. The orchestrator's belong to the workspace. `content` is the
-agent's HTML with a content policy and Golem's `golem` runtime at the start of the page. The policy lets scripts,
+agent's HTML with a content policy and Shadow's `shadow` runtime at the start of the page. The policy lets scripts,
 styles, and fonts come only from cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, and Google Fonts, and pictures
 only from the page itself. The runtime sends each call as a message on a
-`MessagePort` that the link's page gives the frame at its first load. Its reply, `{ golem: 1, id, result }` or
-`{ golem: 1, id, error }`, goes back on the port.
+`MessagePort` that the link's page gives the frame at its first load. Its reply, `{ shadow: 1, id, result }` or
+`{ shadow: 1, id, error }`, goes back on the port.
 
 The runtime the page calls:
 
 | Call | `op` and `args` | Who |
 | --- | --- | --- |
-| `golem.ready`, `golem.me` | `me`: `{}` → `{ id, name, member }`; a member is their user id and name, and every other visitor an id of this artifact only, with no name until `setName` | everyone |
-| `golem.setName(name)` | `name`: `{ name }` → the new `me` | everyone |
-| `golem.mine.get/set/delete/list` | `get`, `set`, `delete`, `list`: `{ scope: "mine", key, value?, prefix? }` | everyone, on their own records |
-| `golem.everyone.list(prefix?)` | `list`: `{ scope: "everyone", prefix }` → `ArtifactRecord[]` of visitors | everyone |
-| `golem.shared.get/set/delete/list` | the same with `scope: "shared"` | everyone reads; members change |
+| `shadow.ready`, `shadow.me` | `me`: `{}` → `{ id, name, member }`; a member is their user id and name, and every other visitor an id of this artifact only, with no name until `setName` | everyone |
+| `shadow.setName(name)` | `name`: `{ name }` → the new `me` | everyone |
+| `shadow.mine.get/set/delete/list` | `get`, `set`, `delete`, `list`: `{ scope: "mine", key, value?, prefix? }` | everyone, on their own records |
+| `shadow.everyone.list(prefix?)` | `list`: `{ scope: "everyone", prefix }` → `ArtifactRecord[]` of visitors | everyone |
+| `shadow.shared.get/set/delete/list` | the same with `scope: "shared"` | everyone reads; members change |
 
 `list` gives `{ key, value, updatedAt }[]` for `mine` and `shared`. A value is up to 64 KB of JSON; a visitor keeps up
 to 1000 keys, and an artifact up to 20,000 records, 10 MB of values, and 10,000 visitors; a visitor past that can look and
@@ -406,13 +406,13 @@ The web app opens an artifact at its `url`, with no `/api` prefix:
 
 | Request | Response |
 | --- | --- |
-| `GET /a/:artifactId` | The page: a frame with the artifact. A public visitor without a session gets a `golem-visitor` cookie; the runtime keeps their data under its hash. A signed-out person goes to `/login?next=/a/:artifactId` for a members artifact. |
-| `GET /a/:artifactId/content` | `content`, with `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads` and the page's content policy: it runs without the site's origin, so it cannot read Golem's cookies or call Golem, and it loads no pictures from other sites |
-| `POST /a/:artifactId/rpc` | `{ op, args }` → `{ result }`, as the session's user or the `golem-visitor` cookie's visitor. Only from Golem's own origin. |
+| `GET /a/:artifactId` | The page: a frame with the artifact. A public visitor without a session gets a `shadow-visitor` cookie; the runtime keeps their data under its hash. A signed-out person goes to `/login?next=/a/:artifactId` for a members artifact. |
+| `GET /a/:artifactId/content` | `content`, with `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads` and the page's content policy: it runs without the site's origin, so it cannot read Shadow's cookies or call Shadow, and it loads no pictures from other sites |
+| `POST /a/:artifactId/rpc` | `{ op, args }` → `{ result }`, as the session's user or the `shadow-visitor` cookie's visitor. Only from Shadow's own origin. |
 
 With `share_url` set, its host serves public artifacts at `/:artifactId`, `/:artifactId/content`, and
 `/:artifactId/rpc`, and answers `404` to everything else, members artifacts too. docs/artifacts-sharing.md shows how
-to put that host on the internet while the rest of Golem stays private.
+to put that host on the internet while the rest of Shadow stays private.
 
 ### Search (`src/search/`)
 
@@ -434,8 +434,8 @@ to put that host on the internet while the rest of Golem stays private.
 | `POST …/integrations/:integrationId/sign-in` | `{ address }`; `{}` for `"phone"` | `Credential`, private; `400` when the address is not of the person's own sign-in in this workspace, the sign-in did not finish, or the number did not link within a minute |
 | `PUT …/credentials/:credentialId` | `{ shared }`, `{ watched }`, or both | `Credential`; `404` unless it is the person's own; `400` for `watched: true` when the integration is not `watchable` |
 | `DELETE …/credentials/:credentialId` | | `204`; `404` unless it is the person's own |
-| `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is the server's owner, `404` unless the integration has `client`, `400` with the reason when the integration's API refuses the client, such as Tesla's when it cannot register Golem's domain |
-| `GET /.well-known/appspecific/com.tesla.3p.public-key.pem` | | The public key that Tesla's Fleet API checks Golem's signed commands with, with no sign-in; `404` without the Tesla integration |
+| `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is the server's owner, `404` unless the integration has `client`, `400` with the reason when the integration's API refuses the client, such as Tesla's when it cannot register Shadow's domain |
+| `GET /.well-known/appspecific/com.tesla.3p.public-key.pem` | | The public key that Tesla's Fleet API checks Shadow's signed commands with, with no sign-in; `404` without the Tesla integration |
 
 A person connects integrations in Settings. A new credential is private: only the turns of its owner use it. Its owner
 shares it, and then the turns of every member use it, or makes it private again; only its owner deletes it. A turn is
@@ -446,18 +446,18 @@ uses the newest credential of that person, else the newest shared one, unless th
 that someone connected there. Secrets never leave the server.
 
 An integration with `connect: "sign-in"` is one or more MCP servers, such as Rohlík's or Plaud's, or an API that
-Golem's own tools call, such as Google's. With `address`, such as T3 Code, the MCP server runs on the person's own
+Shadow's own tools call, such as Google's. With `address`, such as T3 Code, the MCP server runs on the person's own
 machine: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. Rohlík lets self-registered clients return only to
 loopback addresses, so the sign-in ends on an error page at
-`https://localhost/golem-sign-in?code=…&state=…`. The person pastes that address, and `sign-in` keeps the tokens as a
+`https://localhost/shadow-sign-in?code=…&state=…`. The person pastes that address, and `sign-in` keeps the tokens as a
 credential, labeled with the account's email when the server gives it. The agents then get the servers' tools as
-`<integrationId>_<tool>`, in the codemode namespace of the integration. Golem lists a server's tools with the newest
+`<integrationId>_<tool>`, in the codemode namespace of the integration. Shadow lists a server's tools with the newest
 shared sign-in, else with a private one; the list has only tool names and schemas. Google's tools run gog with
-an access token that Golem renews with the refresh token.
+an access token that Shadow renews with the refresh token.
 
-An integration with `client` signs in with Golem's own OAuth client, because its sign-in server does not register
+An integration with `client` signs in with Shadow's own OAuth client, because its sign-in server does not register
 clients: Google, Netatmo, and Tesla. The server's owner sets the client in Settings; until then, only the owner sees
-the integration, and `connect` answers `400`. Tesla registers Golem's domain with the client before Golem keeps it.
+the integration, and `connect` answers `400`. Tesla registers Shadow's domain with the client before Shadow keeps it.
 `docs/integrations.md` shows how to make the clients.
 
 An integration with `connect: "phone"`, WhatsApp, links the person's number as a device. `connect` gives the code that
@@ -476,7 +476,7 @@ People create and change routines by asking an agent in a thread: agents have th
 `routines_update`, `routines_delete`, `routines_list`, and `routines_test_script` tools. A routine runs as the person
 who last wrote its instructions or script; a change of only its name, schedule, or pause keeps that person. Only that
 person tests a script with the values the routine stored. When that person is no longer a member, each run fails until
-a member changes the routine. A run that a stop or a restart of Golem cuts off stays `running`, and ends when Golem
+a member changes the routine. A run that a stop or a restart of Shadow cuts off stays `running`, and ends when Shadow
 starts again and its agent answers; the script does not run again.
 
 Every new run starts a new active context in the same Pi Durable conversation. Its full transcript stays visible.
@@ -488,7 +488,7 @@ count. A reminder keeps its existing conversation context.
 
 A routine at a place has a place, `arrive` or `leave`, and a person in place of a schedule. The place must be one that
 the person and the writer of the routine both use, and the person must see its channel. It runs each time the person
-crosses the circle for its event, at most every 15 minutes, and not for a crossing that Golem hears of more than 15
+crosses the circle for its event, at most every 15 minutes, and not for a crossing that Shadow hears of more than 15
 minutes late. A new routine waits for the next crossing. A removed place keeps its routines.
 
 ### One-time reminders (`src/reminders/`)
@@ -496,13 +496,13 @@ minutes late. A new routine waits for the next crossing. A removed place keeps i
 Agents in every thread of a workspace, including its orchestrator, have `reminders_create`, `reminders_places`,
 `reminders_search_points_of_interest`, `reminders_create_at_point_of_interest`, `reminders_list`, `reminders_update`,
 and `reminders_cancel`. A reminder belongs to that workspace and its source thread. It runs once when
-its saved UTC time is due, or when Golem starts again after that time. Its turn is for the person who asked for it or
+its saved UTC time is due, or when Shadow starts again after that time. Its turn is for the person who asked for it or
 last changed it, not for its recipient; a reminder from before this rule uses only the shared credentials.
 Agents make and change reminders; a person sees their pending ones in Upcoming and cancels one there.
 
 A reminder at a place has a place and `arrive` or `leave` in place of a time. The place must be one that its recipient
 and the person who asks both use. It is due once the recipient crosses the circle for its event after it was made, also
-when Golem hears of it late. A new reminder starts as outside: one for an arrival where the recipient is now is due at
+when Shadow hears of it late. A new reminder starts as outside: one for an arrival where the recipient is now is due at
 once. A reminder at a place can have a window: `from` (not before, such as "when I get to work on Monday"; for an
 arrival where the recipient already is then, it fires then) and `until` (when its event has not come by then, it fires
 then anyway, so a reminder is never lost). "At 18:00 if I am home, else when I get home" is arrive home from 18:00.
@@ -512,7 +512,7 @@ A reminder can also wait at a point of interest: one specific public place, such
 `reminders_create_at_point_of_interest`; it asks the person when the place is not clear. Such a reminder is only for the
 person who asks. A city or another area is not a specific place. A point of interest is a place of that person that
 Settings, `reminders_places`, and routines do not show, and Upcoming shows its reminder like any other. A person has
-pending reminders at no more than 12 points of interest, because iOS watches at most 20 places for an app. Golem sends
+pending reminders at no more than 12 points of interest, because iOS watches at most 20 places for an app. Shadow sends
 OpenStreetMap only the search words and the id, one request each second, as [its
 policy](https://operations.osmfoundation.org/policies/nominatim/) says.
 
@@ -527,7 +527,7 @@ Evidence has `id`, `conversation` (source account and conversation), `text`, `at
 `text`, `sourceIds`, `checkAt`, `deadlineAt`, `reviewAt`, and `notifiedAt`. A null `deadlineAt` means an internal review,
 not a promised deadline. Coverage has `source` (credential id), `through` (Unix milliseconds), and `error`.
 All workspace access requires membership. Turning off an account stops its source reads and automatic checks and
-notices. Existing audit records remain private. Deleted Golem threads are excluded from source recall.
+notices. Existing audit records remain private. Deleted Shadow threads are excluded from source recall.
 
 "Read for me" is off by default and only its credential owner can change it. It permits automatic private context,
 future checks, and useful updates posted in the existing subject thread. Matching shared family threads may receive
@@ -535,16 +535,16 @@ the source material. External messages still need the person's request and norma
 poll can retain a backlog checkpoint without claiming complete source coverage.
 
 Personally relevant Slack messages, Primary inbox mail after Gmail filters plus sent-mail context, and both directions of WhatsApp are grouped into bounded batches. Related source history and subject checks reach the
-configured model provider. Golem validates source ids, exact supporting quotes, destinations, and time fields before
+configured model provider. Shadow validates source ids, exact supporting quotes, destinations, and time fields before
 it changes state. Each subject gets its own decision. Current source versions are searchable; older versions remain
 as historical evidence. Full source and decision records live in the private audit database.
 
-Future checks run from durable times, even without new messages. Before a no-reply decision, Golem checks source
+Future checks run from durable times, even without new messages. Before a no-reply decision, Shadow checks source
 coverage and related replies. Passive filing starts no thread turn. Useful thread reviews can run silently. A useful development is posted
-in its existing subject thread, as a visible Golem message with attached source files; no agent starts on it, and
+in its existing subject thread, as a visible Shadow message with attached source files; no agent starts on it, and
 the thread's agent works only when a person asks there.
-When no thread matches a useful development, Golem starts a subject thread in one of the person's own private
-channels. If none fits, Golem creates a private channel and its first thread. Invitations and tickets can start these threads.
+When no thread matches a useful development, Shadow starts a subject thread in one of the person's own private
+channels. If none fits, Shadow creates a private channel and its first thread. Invitations and tickets can start these threads.
 Channel names cover lasting subjects; thread titles name specific matters. The normal agent can search connected
 accounts for older related sources. No background worker thread is made. Nonurgent developments wait for the person's morning
 review in the 08:00 Europe/Prague hour: one plan groups them by matter, drops what is handled or stale, posts one
@@ -558,7 +558,7 @@ Only a proposed notification triggers a fresh read of its source accounts and a 
 answers. A later owner reply can suppress the notice while the useful answer remains visible. Source failures keep
 the notification pending for retry. Silent turns cannot promote themselves with `notify` or a useful answer. A morning
 review cannot promote a silent update either; its one summary notification is the person's. Only confirmed notifications mark their related due checks as notified.
-No source starts an agent: an update is a Golem message with its files, and the thread's agent works only when a
+No source starts an agent: an update is a Shadow message with its files, and the thread's agent works only when a
 person asks there. Source messages and files use the existing message endpoints and event streams.
 
 A turn uses the script tools for the person it answers, in any thread: `intake_read({ query })` and `intake_update({ id, action, revision, quote })`. `intake_read` gives the observations that match the query, every waiting update with its destination, time, and source names, and the checks; reading it changes nothing. The latter
@@ -567,7 +567,7 @@ requires an exact quote from the person's latest message. Source text is untrust
 #### Following
 
 Both apps show in **Following** all that intake holds for the signed-in person: the thread updates that wait, the
-open checks, the sources with how far Golem read them, what it keeps and where each observation went, the updates and
+open checks, the sources with how far Shadow read them, what it keeps and where each observation went, the updates and
 checks of the last week that are done, and the person's feedback. Each row opens its detail.
 
 | Endpoint | Body | Response |
@@ -598,8 +598,8 @@ type FollowingOverview = {
   blocked: { id: string; kind: "sender" | "thread"; label: string; createdAt: number }[]; // newest first
 };
 type IntakeUpdate = {
-  id: string; threadId: string | null; threadTitle: string | null; newThread: string | null; // the title of a thread Golem will start
-  body: string; attention: "now" | "brief"; notice: string | null; // why Golem will also notify
+  id: string; threadId: string | null; threadTitle: string | null; newThread: string | null; // the title of a thread Shadow will start
+  body: string; attention: "now" | "brief"; notice: string | null; // why Shadow will also notify
   createdAt: number; deliveredAt: number | null; cancelledAt: number | null; evidence: IntakeEvidence[];
 };
 type IntakeFeedback = { id: string; target: string; about: string; quote: string; createdAt: number };
@@ -612,21 +612,21 @@ type IntakeFeedback = { id: string; target: string; about: string; quote: string
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `GET /api/v1/workspaces/:workspaceId/upcoming` | | `Upcoming`: what Golem runs for the person and what waits for them |
-| `POST /api/v1/workspaces/:workspaceId/suggestions/:suggestionId` | `{ accept: boolean }` | `204`; `accept` makes the routine in its channel, the reminder in the person's orchestrator, or the person's private channel, all as theirs; else Golem does not suggest it again. `404` for another person's suggestion; `409` when its channel is gone or its time has passed |
+| `GET /api/v1/workspaces/:workspaceId/upcoming` | | `Upcoming`: what Shadow runs for the person and what waits for them |
+| `POST /api/v1/workspaces/:workspaceId/suggestions/:suggestionId` | `{ accept: boolean }` | `204`; `accept` makes the routine in its channel, the reminder in the person's orchestrator, or the person's private channel, all as theirs; else Shadow does not suggest it again. `404` for another person's suggestion; `409` when its channel is gone or its time has passed |
 | `GET /api/v1/workspaces/:workspaceId/watched-places` | | `{ places: WatchedPlace[] }`: the places that the person's iPhone watches, those of their pending reminders and enabled routines at a place |
 | `POST /api/v1/workspaces/:workspaceId/watched-places/:placeId/reports` | `{ event: "arrive" \| "leave", at, initial }` | `204`; the iPhone saw the person arrive or leave at `at` (Unix milliseconds; a time in the future is now). `initial`: the first state after it started to watch the place, which is no crossing. A report older than the last one, or of the same state, changes nothing. `400` for another body; `404` unless the person's iPhone watches the place |
 | `DELETE /api/v1/workspaces/:workspaceId/reminders/:reminderId` | | `204`; cancels a pending reminder for the person or from them; `404` for another one; `409` while it runs or after it was delivered |
 
 The iPhone watches the places of `watched-places` with Core Location, and an Android phone with geofences; each tells
-Golem only what it sees there, never where the person is. Golem keeps only each person's last state at each place, and
-only while the phone watches it: a place that `watched-places` leaves out has no state until the phone says again. Golem
+Shadow only what it sees there, never where the person is. Shadow keeps only each person's last state at each place, and
+only while the phone watches it: a place that `watched-places` leaves out has no state until the phone says again. Shadow
 decides what is due: a crossing makes due the reminders and runs the routines of its event. The first state after the
 iPhone starts to watch a place makes due only the reminders for an arrival, as a reminder starts as outside. The
 iPhone gets a new place when the app opens or goes to the background.
 
-Golem suggests and never makes an automation or a channel itself: a suggestion waits, with no push, until its person
-accepts or declines it. A person has at most 3 waiting; Golem drops one with the same name as one they already had, and one whose
+Shadow suggests and never makes an automation or a channel itself: a suggestion waits, with no push, until its person
+accepts or declines it. A person has at most 3 waiting; Shadow drops one with the same name as one they already had, and one whose
 schedule or time cannot run.
 
 ### Places (`src/places/`)
@@ -638,7 +638,7 @@ schedule or time cannot run.
 | `PUT /api/v1/workspaces/:workspaceId/places/:placeId` | `{ name, latitude, longitude, radius, shared }` | `Place`; `404` unless the person added it |
 | `DELETE /api/v1/workspaces/:workspaceId/places/:placeId` | | `204`; `404` unless the person added it. Its pending reminders keep it |
 | `GET /api/v1/map/search?q=<address>` | | `{ latitude, longitude, label }`: the first place that OpenStreetMap's search finds, which the web app's map moves to; `404` when it finds none |
-| `GET /api/v1/map/:zoom/:x/:y` | | An OpenStreetMap tile as PNG, which the web app's map shows; Golem gets it, because the page loads pictures only from Golem |
+| `GET /api/v1/map/:zoom/:x/:y` | | An OpenStreetMap tile as PNG, which the web app's map shows; Shadow gets it, because the page loads pictures only from Shadow |
 
 A person adds places in Settings, from a pin in the middle of a map, which an address moves to. A new place is private to its owner's turns until
 they share it.
@@ -653,7 +653,7 @@ they share it.
 Agents in every thread have `feedback_report`: when a tool fails or answers wrong, when no tool can do what the work
 needs, or when they see an easier way, they report it once and continue. A report keeps its thread and the person of
 its turn. The server's owner reads every report, also those from another person's private turns, without the link to
-a thread they do not see; the agent describes Golem, not the person.
+a thread they do not see; the agent describes Shadow, not the person.
 
 ### LLM (`src/llm/`)
 
@@ -674,7 +674,7 @@ share. Each run counts once, at its end, for the person of its message.
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `POST /api/v1/server/restart` | | `202`; Golem stops, and its service starts it again with the configuration of `config/golem.toml`. Turns continue after the restart. `403` for a person who is not the server's owner. |
+| `POST /api/v1/server/restart` | | `202`; Shadow stops, and its service starts it again with the configuration of `config/shadow.toml`. Turns continue after the restart. `403` for a person who is not the server's owner. |
 
 Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
 
@@ -695,14 +695,14 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
   keep. Its name is four words that people can remember, about 1.6e8 names; names from before have two words and can
   be guessed, so make such an artifact again. A client that opens 20 artifact links in 10 minutes that do not exist,
   or that are for members while it is signed out, gets `429` until the 10 minutes end. On the public host the client
-  is `CF-Connecting-IP`; on Golem's own address, the last `X-Forwarded-For` address, which only a Golem with
+  is `CF-Connecting-IP`; on Shadow's own address, the last `X-Forwarded-For` address, which only a Shadow with
   `host = "127.0.0.1"` behind Caddy can trust. An IPv6 client is its /48 network. Keep private things in members
   artifacts.
 - Each thread is one conversation in its workspace's Pi Durable session, a SQLite file in the workspace's directory.
 - A connector tool that acts as a person, such as `google_mail_send`, `google_mail_send_draft`, `slack_send`,
   `whatsapp_send`, `whatsapp_send_file`, or a `google_calendar_*_event` call with `notify`, waits for an approval before every call, which shows what it sends: from the person who added the credential that it uses while
   they are a member, else from the turn's person. A routine's script cannot call it.
-- Agents reach public addresses only: the browser and `save_file` go through Golem's egress proxy, which refuses
+- Agents reach public addresses only: the browser and `save_file` go through Shadow's egress proxy, which refuses
   loopback, private, link-local, and other non-public addresses after each DNS answer and redirect. Each person of a
   thread has a browser of their own, with their own logins.
 - A codemode script stops after 15 minutes. A routine runs at most every 15 minutes.

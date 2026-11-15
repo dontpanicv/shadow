@@ -7,7 +7,7 @@ import { Egress } from "../platform/egress.ts";
 import type { Requirement } from "../platform/requirements.ts";
 import { browserSession, browserTools } from "./tools.ts";
 
-/** agent-browser's launcher, which starts the native binary of this machine; it runs on Bun, as Golem does. */
+/** agent-browser's launcher, which starts the native binary of this machine; it runs on Bun, as Shadow does. */
 const CLI = [
   process.execPath,
   Bun.resolveSync("agent-browser/bin/agent-browser.js", import.meta.dir),
@@ -138,11 +138,11 @@ export class Browser {
   }
 
   /**
-   * A PDF of a page, printed in a Chrome of its own with the page size its CSS asks for and its backgrounds. Golem
+   * A PDF of a page, printed in a Chrome of its own with the page size its CSS asks for and its backgrounds. Shadow
    * prints through Chrome's DevTools protocol, because agent-browser's `pdf` keeps neither.
    */
   async pdf(html: string): Promise<Uint8Array> {
-    const session = `golem-print-${randomUUID()}`;
+    const session = `shadow-print-${randomUUID()}`;
     try {
       const output = await this.run(
         ["--session", session, ...(await this.proxy()), "batch"],
@@ -173,7 +173,7 @@ export class Browser {
       checkCommand(command);
     }
     const directory = screenshot
-      ? await mkdtemp(join(tmpdir(), "golem-browser-"))
+      ? await mkdtemp(join(tmpdir(), "shadow-browser-"))
       : null;
     const picture = directory ? join(directory, "page.png") : null;
     try {
@@ -333,7 +333,7 @@ function checkCommand(command: readonly string[]): void {
   if (name === "screenshot") {
     throw new Error("Set screenshot to true to see the page.");
   }
-  // The policy allows `launch` for Golem's own options, which start Chrome behind the egress proxy.
+  // The policy allows `launch` for Shadow's own options, which start Chrome behind the egress proxy.
   if (name === "launch") {
     throw new Error("The browser starts by itself; open a page.");
   }

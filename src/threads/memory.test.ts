@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { until } from "../../test/harness.ts";
 import { Memory, type Said, type Summarizer } from "./memory.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "golem-memory-"));
+const directory = await mkdtemp(join(tmpdir(), "shadow-memory-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
 /** A message of the orchestrator thread: from Alice, or an answer of the agent. */
@@ -13,7 +13,7 @@ function message(id: number, role: "user" | "assistant", text: string): Said {
   return {
     threadId: "orchestrator",
     messageId: id,
-    text: role === "user" ? `Alice: ${text}` : `Golem: ${text}`,
+    text: role === "user" ? `Alice: ${text}` : `Shadow: ${text}`,
   };
 }
 
@@ -77,15 +77,15 @@ test("a message that fits is its own line, and lines that fit together join with
   expect(memory.view(4)).toEndWith(
     [
       "0+1|Alice: Plan the trip to Prague",
-      "1+1|Golem: Which dates?",
+      "1+1|Shadow: Which dates?",
       "2+1|Alice: The first weekend of May",
-      "3+1|Golem: Noted.",
+      "3+1|Shadow: Noted.",
     ].join("\n")
   );
   expect(await memory.zoom(0, 4)).toBe(
     [
-      "0+2|Alice: Plan the trip to Prague Golem: Which dates?",
-      "2+2|Alice: The first weekend of May Golem: Noted.",
+      "0+2|Alice: Plan the trip to Prague Shadow: Which dates?",
+      "2+2|Alice: The first weekend of May Shadow: Noted.",
     ].join("\n")
   );
   expect(await memory.zoom(2, 1)).toBe(

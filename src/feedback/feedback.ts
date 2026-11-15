@@ -7,7 +7,7 @@ import { feedbackTools } from "./tools.ts";
 
 export const FEEDBACK_KINDS = ["error", "missing", "better"] as const;
 
-/** What an agent reports about Golem itself while it works, for the server's owner to make Golem better. */
+/** What an agent reports about Shadow itself while it works, for the server's owner to make Shadow better. */
 export interface Feedback {
   readonly id: string;
   /** `error`: a tool failed or answered wrong; `missing`: no tool can do it; `better`: an easier or faster way. */
@@ -41,7 +41,7 @@ const COLUMNS =
   "id, kind, tool, summary, detail, thread_id AS threadId, created_at AS createdAt";
 
 /**
- * The reports that agents write about Golem: failed tools, missing tools, and better ways. Only the server's owner
+ * The reports that agents write about Shadow: failed tools, missing tools, and better ways. Only the server's owner
  * reads them, also those from other people's private turns, but without a link to a thread they do not see.
  */
 export class FeedbackReports {

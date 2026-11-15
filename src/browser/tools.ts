@@ -26,8 +26,8 @@ export function browserSession(
   conversationId: number,
   personId: string | null
 ): string {
-  const key = `${workspaceId}-${conversationId}-${personId ?? "golem"}`;
-  return `golem-${createHash("sha256").update(key).digest("hex").slice(0, 24)}`;
+  const key = `${workspaceId}-${conversationId}-${personId ?? "shadow"}`;
+  return `shadow-${createHash("sha256").update(key).digest("hex").slice(0, 24)}`;
 }
 
 /** The tool that lets agents visit websites, in one browser session for each thread and person. */

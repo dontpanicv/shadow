@@ -15,7 +15,7 @@ import {
 
 let directory: string;
 beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), "golem-extract-"));
+  directory = await mkdtemp(join(tmpdir(), "shadow-extract-"));
 });
 afterAll(() => rm(directory, { recursive: true, force: true }));
 

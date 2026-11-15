@@ -3,7 +3,7 @@ import { json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
 
 /**
- * Each person's agenda: what Golem runs for them, what waits for them, and the automations Golem suggests; and the
+ * Each person's agenda: what Shadow runs for them, what waits for them, and the automations Shadow suggests; and the
  * places that their iPhone watches for it, with its reports that they arrived or left.
  */
 export const agendaApiRoutes: readonly Route[] = [

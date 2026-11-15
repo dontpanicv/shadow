@@ -6,10 +6,10 @@ import { PUBLIC_KEY_PATH } from "./tesla.ts";
 
 /**
  * The integrations, with the credentials that a person sees in the workspace: the shared ones and their own, which they
- * share or delete. Golem's own OAuth client of an integration is the server's.
+ * share or delete. Shadow's own OAuth client of an integration is the server's.
  */
 export const integrationApiRoutes: readonly Route[] = [
-  // Tesla's Fleet API reads the key that Golem signs commands with here, at Golem's domain.
+  // Tesla's Fleet API reads the key that Shadow signs commands with here, at Shadow's domain.
   [
     "GET",
     PUBLIC_KEY_PATH,

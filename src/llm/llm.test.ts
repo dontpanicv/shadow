@@ -216,7 +216,7 @@ describe("Llm device login", () => {
       login: null,
     });
     expect(seen.method).toBe("device_code");
-    expect(seen.agentName).toBe("Golem");
+    expect(seen.agentName).toBe("Shadow");
     // The device ID is made once and then kept.
     expect(seen.deviceIds[0]).toBe(seen.deviceIds[1]!);
     expect(setting(db, "llm.deviceId")).toBe(seen.deviceIds[0]!);
@@ -559,7 +559,7 @@ describe("Threads with the Llm", () => {
   const user = { id: "user-1", name: "Alice", email: "alice@example.com" };
 
   test("a thread follows the model chosen in settings, also after it changes", async () => {
-    const dataDirectory = await mkdtemp(join(tmpdir(), "golem-llm-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-llm-"));
     const faux = twoModels();
     const llm = new Llm(
       database(),
@@ -615,7 +615,7 @@ describe("Threads with the Llm", () => {
   });
 
   test("the fast model names a new thread for the subject of its first message", async () => {
-    const dataDirectory = await mkdtemp(join(tmpdir(), "golem-llm-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-llm-"));
     const faux = twoModels();
     const llm = new Llm(
       database(),
@@ -665,7 +665,7 @@ describe("Threads with the Llm", () => {
   });
 
   test("the threads of a workspace are separate conversations in one session file, also after a restart", async () => {
-    const dataDirectory = await mkdtemp(join(tmpdir(), "golem-llm-"));
+    const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-llm-"));
     const faux = twoModels();
     const llm = new Llm(
       database(),

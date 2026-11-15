@@ -16,7 +16,7 @@ const KINDS: Record<Feedback["kind"], { label: string; icon: IconName }> = {
   better: { label: "Better way", icon: "forward" },
 };
 
-/** What the agents reported about Golem, newest first; a report opens its thread when the owner sees it. */
+/** What the agents reported about Shadow, newest first; a report opens its thread when the owner sees it. */
 export function FeedbackPage() {
   const { workspaceId } = route.useParams();
   const { data: reports = [], isReady } = useLiveQuery({

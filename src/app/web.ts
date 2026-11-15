@@ -7,7 +7,7 @@ const publicDirectory = resolve(import.meta.dir, "../../public");
 const appDirectory = resolve(import.meta.dir, "../../dist/web");
 
 /**
- * What the app's page may load: its own scripts, and pictures, frames, and data only from Golem, so a picture or a
+ * What the app's page may load: its own scripts, and pictures, frames, and data only from Shadow, so a picture or a
  * link in what an agent writes cannot send data to another site. Shiki compiles its grammars to WebAssembly; the
  * previews and Radix add inline styles.
  */

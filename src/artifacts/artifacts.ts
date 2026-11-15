@@ -11,7 +11,7 @@ export type Visibility = "public" | "members";
 
 /**
  * A page or small app that an agent made. It belongs to a channel, or to the workspace when `channelId` is null, as the
- * orchestrator's do, and stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `golem`.
+ * orchestrator's do, and stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `shadow`.
  */
 export interface Artifact {
   readonly id: string;
@@ -20,7 +20,7 @@ export interface Artifact {
   readonly threadId: string;
   readonly title: string;
   readonly visibility: Visibility;
-  /** The link people share: `<share_url>/<id>` when public and Golem has a public host, else `<base_url>/a/<id>`. */
+  /** The link people share: `<share_url>/<id>` when public and Shadow has a public host, else `<base_url>/a/<id>`. */
   readonly url: string;
   /** How many people opened it. */
   readonly visitors: number;
@@ -51,7 +51,7 @@ export interface Viewer {
   readonly token?: string;
 }
 
-/** What `golem.me` is in an artifact. */
+/** What `shadow.me` is in an artifact. */
 export interface Me {
   readonly id: string;
   readonly name: string | null;
@@ -90,25 +90,25 @@ const WORDS =
   );
 const VISIBILITIES: readonly Visibility[] = ["public", "members"];
 
-/** The `golem` object that Golem adds to every artifact. The web app answers its messages. */
+/** The `shadow` object that Shadow adds to every artifact. The web app answers its messages. */
 const BRIDGE = `(() => {
   const pending = new Map();
   let next = 0;
   // The link's page gives a port only to the first page of the frame.
   const port = new Promise((resolve) => addEventListener("message", (event) => {
     const [given] = event.ports;
-    if (event.source !== parent || event.data?.golem !== 1 || !given) return;
+    if (event.source !== parent || event.data?.shadow !== 1 || !given) return;
     given.onmessage = (reply) => receive(reply.data);
     resolve(given);
   }));
   const send = (op, args) => new Promise((resolve, reject) => {
     const id = ++next;
     pending.set(id, { resolve, reject });
-    const message = { golem: 1, id, op, args };
+    const message = { shadow: 1, id, op, args };
     port.then((given) => given.postMessage(message));
   });
   const receive = (data) => {
-    const call = data?.golem === 1 && pending.get(data.id);
+    const call = data?.shadow === 1 && pending.get(data.id);
     if (!call) return;
     pending.delete(data.id);
     if (data.error) call.reject(new Error(data.error)); else call.resolve(data.result);
@@ -119,15 +119,15 @@ const BRIDGE = `(() => {
     delete: (key) => send("delete", { scope: name, key }),
     list: (prefix = "") => send("list", { scope: name, prefix }),
   });
-  const golem = {
+  const shadow = {
     me: null,
     mine: scope("mine"),
     shared: scope("shared"),
     everyone: { list: (prefix = "") => send("list", { scope: "everyone", prefix }) },
-    setName: async (name) => (golem.me = await send("name", { name })),
+    setName: async (name) => (shadow.me = await send("name", { name })),
   };
-  golem.ready = send("me", {}).then((me) => (golem.me = me));
-  window.golem = golem;
+  shadow.ready = send("me", {}).then((me) => (shadow.me = me));
+  window.shadow = shadow;
 })();`;
 
 /** CDNs that do not show their request logs to the authors of pages. */
@@ -135,7 +135,7 @@ const CDNS =
   "https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com";
 
 /**
- * Sends data only through `golem`: scripts, styles, and fonts come only from `CDNS`, and pictures only from the page.
+ * Sends data only through `shadow`: scripts, styles, and fonts come only from `CDNS`, and pictures only from the page.
  * The web also sends it as a header, with the sandbox.
  */
 export const CONTENT_POLICY = [
@@ -209,7 +209,7 @@ export class Artifacts {
     }
     this.database
       .query(
-        "INSERT INTO artifact (id, workspace_id, channel_id, thread_id, title, html, visibility, request_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'golem', ?, ?)"
+        "INSERT INTO artifact (id, workspace_id, channel_id, thread_id, title, html, visibility, request_key, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'shadow', ?, ?)"
       )
       .run(
         this.newName(),
@@ -341,7 +341,7 @@ export class Artifacts {
     }
   }
 
-  /** The HTML an agent wrote, without Golem's additions. */
+  /** The HTML an agent wrote, without Shadow's additions. */
   html(id: string): string {
     return (
       this.database.query("SELECT html FROM artifact WHERE id = ?").get(id) as {
@@ -386,7 +386,7 @@ export class Artifacts {
   }
 
   /**
-   * The page to run: the content policy and the `golem` runtime at the start of the page, then the agent's HTML. The
+   * The page to run: the content policy and the `shadow` runtime at the start of the page, then the agent's HTML. The
    * parser puts them in the page's head, before any of the agent's HTML can run.
    */
   content(id: string): string {
@@ -394,7 +394,7 @@ export class Artifacts {
     return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${CONTENT_POLICY}"><script>${BRIDGE}</script>${html}`;
   }
 
-  /** Answers a call of an artifact's `golem` runtime for a viewer who may open it. */
+  /** Answers a call of an artifact's `shadow` runtime for a viewer who may open it. */
   call(id: string, viewer: Viewer, op: unknown, args: unknown): unknown {
     const artifact = this.open(id, viewer);
     const me = this.visit(artifact.id, viewer);
@@ -646,7 +646,7 @@ export class Artifacts {
         return name;
       }
     }
-    throw new HttpError(503, "Golem has no free artifact names");
+    throw new HttpError(503, "Shadow has no free artifact names");
   }
 
   /**

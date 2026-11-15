@@ -78,7 +78,7 @@ export class RecentSearches {
  * Keeps each workspace's index in step with its threads and folders, and embeds in the background.
  * Every index belongs to one workspace and reads only that workspace's folder; searches never cross workspaces.
  */
-/** What the indexer reads from the directory in `golem.sqlite`: every workspace, and the channels and threads in one. */
+/** What the indexer reads from the directory in `shadow.sqlite`: every workspace, and the channels and threads in one. */
 export type WorkspaceDirectory = Pick<
   Workspaces,
   "ids" | "allChannelsIn" | "allThreadsIn" | "channelsIn" | "threadsIn"
@@ -160,7 +160,7 @@ export class Indexer {
 
   /**
    * Searches one workspace for what `realm` sees: the channels every member sees, and the person's own thread with
-   * Golem and private channels; no other person's. The caller has checked that the person is a member. Results of a
+   * Shadow and private channels; no other person's. The caller has checked that the person is a member. Results of a
    * deleted channel or artifact stay out at once, before the next scan takes them from the index.
    */
   async search(
@@ -386,7 +386,7 @@ export class Indexer {
           return {
             title: extraction.title,
             segments: [
-              // The path is always searchable by keywords, also for files Golem cannot read.
+              // The path is always searchable by keywords, also for files Shadow cannot read.
               { key: "name", text: relative, modality: "none" as const },
               ...(await this.withMediaVectors(extraction.segments, version)),
             ],

@@ -17,7 +17,7 @@ import type { User } from "../platform/auth.ts";
 import { Secrets } from "../platform/secrets.ts";
 import { Routines, type RoutineThreads } from "./routines.ts";
 
-let golem: TestApp;
+let shadow: TestApp;
 let alice: User;
 let workspaceId: string;
 let channelId: string;
@@ -58,37 +58,37 @@ if (messages.length) store("since", messages.at(-1).time);
 return messages;`;
 
 beforeAll(async () => {
-  golem = await startTestApp();
-  await golem.signIn("Alice", "alice@example.com");
-  const { internalAdapter } = await golem.app.auth.$context;
+  shadow = await startTestApp();
+  await shadow.signIn("Alice", "alice@example.com");
+  const { internalAdapter } = await shadow.app.auth.$context;
   const { user } = (await internalAdapter.findUserByEmail(
     "alice@example.com"
   ))!;
   alice = { id: user.id, name: user.name, email: user.email };
-  workspaceId = (await golem.app.workspaces.create(alice, "Family")).id;
-  channelId = golem.app.workspaces.createChannel(
+  workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
+  channelId = shadow.app.workspaces.createChannel(
     workspaceId,
     alice,
     "school"
   ).id;
   integrations = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
-    { directory: golem.app.config.dataDirectory, catalog: [connector] }
+    shadow.app.workspaces,
+    { directory: shadow.app.config.dataDirectory, catalog: [connector] }
   );
   routines = new Routines(
-    golem.app.database,
-    golem.app.workspaces,
+    shadow.app.database,
+    shadow.app.workspaces,
     integrations,
-    golem.app.threads,
-    golem.app.indexer,
-    golem.app.places
+    shadow.app.threads,
+    shadow.app.indexer,
+    shadow.app.places
   );
   // The memory and the channel briefs ask the model in the background too.
-  golem.faux.setResponses(Array.from({ length: 200 }, () => agent));
+  shadow.faux.setResponses(Array.from({ length: 200 }, () => agent));
 });
-afterAll(() => golem.close());
+afterAll(() => shadow.close());
 
 function textOf(message: Message): string {
   return typeof message.content === "string"
@@ -160,14 +160,14 @@ function agent(context: Context) {
 
 /** The texts of Alice's notifications that open the thread. */
 function noticesOf(threadId: string): string[] {
-  return golem.app.notifications
+  return shadow.app.notifications
     .inbox(workspaceId, alice)
     .notifications.filter((notice) => notice.threadId === threadId)
     .map((notice) => notice.text);
 }
 
 function threadOf(threadId: string | null) {
-  return golem.app.workspaces
+  return shadow.app.workspaces
     .allThreadsIn(workspaceId)
     .find((thread) => thread.id === threadId)!;
 }
@@ -200,7 +200,7 @@ test("a script that finds nothing ends the run quietly, without the agent or a t
     routines.inWorkspace(workspaceId, null).some(({ id }) => id === routine.id)
   ).toBe(false);
   expect(
-    golem.app.database
+    shadow.app.database
       .query(
         "SELECT deleted_at IS NOT NULL AS deleted FROM routine WHERE id = ?"
       )
@@ -223,7 +223,7 @@ test("the agent judges what the script found: quiet answers stay out of the thre
   const thread = threadOf(routines.get(routine.id, alice).threadId);
   expect(thread.title).toBe("School");
   expect(thread.channelId).toBe(channelId);
-  expect((await golem.app.threads.messages(thread)).messages).toEqual([]);
+  expect((await shadow.app.threads.messages(thread)).messages).toEqual([]);
 
   // The script remembers what it saw, so the next run gives the agent only the new message.
   school.push({ time: 2, text: "The class goes on a trip on Friday." });
@@ -231,7 +231,7 @@ test("the agent judges what the script found: quiet answers stay out of the thre
     routines.get(routine.id, alice).nextRunAt!
   )[0]!;
   expect(posted.outcome).toBe("posted");
-  const { messages } = await golem.app.threads.messages(thread);
+  const { messages } = await shadow.app.threads.messages(thread);
   expect(messages.map((message) => message.text)).toEqual([
     "The class goes on a trip on Friday.",
   ]);
@@ -271,7 +271,7 @@ test("what the script found waits for the next run when the agent cannot answer"
     expect(posted.outcome).toBe("posted");
     const thread = threadOf(routines.get(routine.id, alice).threadId);
     expect(
-      (await golem.app.threads.messages(thread)).messages.at(-1)?.text
+      (await shadow.app.threads.messages(thread)).messages.at(-1)?.text
     ).toBe("Anna has an exam on Monday.");
   } finally {
     modelDown = false;
@@ -295,7 +295,7 @@ test("a failing script fails the run, goes to the agent to repair, and notifies 
   });
   const thread = threadOf(routines.get(routine.id, alice).threadId);
   const failure = 'The routine "Failing" failed: Error: The login page changed';
-  const { messages } = await golem.app.threads.messages(thread);
+  const { messages } = await shadow.app.threads.messages(thread);
   expect(messages.map((message) => message.text)).toEqual([
     "I cannot read the school system.",
     failure,
@@ -309,21 +309,21 @@ test("a failing script fails the run, goes to the agent to repair, and notifies 
 
 test("a connector without a credential fails the script", async () => {
   const other = new Integrations(
-    golem.app.database,
+    shadow.app.database,
     Secrets.forTests(),
-    golem.app.workspaces,
+    shadow.app.workspaces,
     {
-      directory: golem.app.config.dataDirectory,
+      directory: shadow.app.config.dataDirectory,
       catalog: [{ ...connector, id: "school-2", name: "School 2" }],
     }
   );
   const scripts = new Routines(
-    golem.app.database,
-    golem.app.workspaces,
+    shadow.app.database,
+    shadow.app.workspaces,
     other,
-    golem.app.threads,
-    golem.app.indexer,
-    golem.app.places
+    shadow.app.threads,
+    shadow.app.indexer,
+    shadow.app.places
   );
   const result = await scripts.test(workspaceId, null, SCRIPT, undefined, null);
   expect(result).toMatchObject({ ok: false });
@@ -353,9 +353,9 @@ test("a paused routine does not run, and a routine runs once however many runs i
 });
 
 test("a routine runs as the person who last wrote its script, and not after its person leaves", async () => {
-  await golem.signIn("Bob", "bob@example.com");
-  await golem.app.workspaces.addMember(workspaceId, alice, "bob@example.com");
-  const bob = golem.app.workspaces
+  await shadow.signIn("Bob", "bob@example.com");
+  await shadow.app.workspaces.addMember(workspaceId, alice, "bob@example.com");
+  const bob = shadow.app.workspaces
     .members(workspaceId, alice)
     .find((member) => member.email === "bob@example.com")!;
   const bobUser: User = { id: bob.userId, name: bob.name, email: bob.email };
@@ -403,7 +403,7 @@ test("a routine runs as the person who last wrote its script, and not after its 
     (await routines.test(workspaceId, null, SCRIPT, routine.id, bob.userId)).ok
   ).toBe(true);
 
-  golem.app.database
+  shadow.app.database
     .query("DELETE FROM member WHERE organizationId = ? AND userId = ?")
     .run(workspaceId, bob.userId);
   secretsSeen.length = 0;
@@ -431,7 +431,7 @@ test("a routine runs at most every 15 minutes, whatever its schedule says", asyn
 });
 
 test("a routine at a place runs each time its person arrives or leaves, at most every 15 minutes", async () => {
-  const cottage = golem.app.places.create(workspaceId, alice, {
+  const cottage = shadow.app.places.create(workspaceId, alice, {
     name: "Cottage",
     latitude: 49.1,
     longitude: 16.2,
@@ -484,7 +484,7 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
   expect(await run).toMatchObject({ outcome: "posted" });
   const ran = routines.get(routine.id, alice);
   expect(
-    (await golem.app.threads.messages(threadOf(ran.threadId))).messages.at(-1)
+    (await shadow.app.threads.messages(threadOf(ran.threadId))).messages.at(-1)
       ?.text
   ).toBe("The heating is on.");
   // A second arrival soon after, as at the edge of the circle, runs nothing.
@@ -493,7 +493,7 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
   );
   // A pause and a new name keep its place, and a schedule takes its place.
   expect(
-    golem.app.routines.update(
+    shadow.app.routines.update(
       workspaceId,
       null,
       routine.id,
@@ -517,9 +517,9 @@ test("a routine at a place runs each time its person arrives or leaves, at most 
 });
 
 test("a run that a stop cuts off goes on at the next start, and the agent does its work once", async () => {
-  const { threads } = golem.app;
+  const { threads } = shadow.app;
   let answered: Promise<string | null> | undefined;
-  // As Golem stops: the agent got the task, then its harness closes while the run waits for the answer.
+  // As Shadow stops: the agent got the task, then its harness closes while the run waits for the answer.
   const stopping: RoutineThreads = {
     messages: (thread) => threads.messages(thread),
     requester: (workspace, conversation) =>
@@ -535,12 +535,12 @@ test("a run that a stop cuts off goes on at the next start, and the agent does i
     },
   };
   const beforeStop = new Routines(
-    golem.app.database,
-    golem.app.workspaces,
+    shadow.app.database,
+    shadow.app.workspaces,
     integrations,
     stopping,
-    golem.app.indexer,
-    golem.app.places
+    shadow.app.indexer,
+    shadow.app.places
   );
   const routine = beforeStop.create(workspaceId, channelId, {
     id: crypto.randomUUID(),
@@ -594,7 +594,7 @@ test("a script run that a stop cut off goes on with what the script found, and o
   };
   const cutOff = (routineId: string, result: string | null) => {
     const id = crypto.randomUUID();
-    golem.app.database
+    shadow.app.database
       .query(
         "INSERT INTO routine_run (id, routine_id, started_at, outcome, result) VALUES (?, ?, ?, 'running', ?)"
       )
@@ -615,19 +615,19 @@ test("a script run that a stop cut off goes on with what the script found, and o
     });
     expect(await outcomeOf(ofDeleted)).toEqual({
       outcome: "failed",
-      error: "Golem stopped during the run",
+      error: "Shadow stopped during the run",
       result: null,
     });
     // The script did not run again, and what it stored is saved once the agent has its result.
     expect(secretsSeen).toHaveLength(seen);
     expect(
-      golem.app.database
+      shadow.app.database
         .query("SELECT store FROM routine WHERE id = ?")
         .get(routine.id)
     ).toEqual({ store: JSON.stringify(found.store) });
     const thread = threadOf(routines.get(routine.id, alice).threadId);
     expect(
-      (await golem.app.threads.messages(thread)).messages.at(-1)?.text
+      (await shadow.app.threads.messages(thread)).messages.at(-1)?.text
     ).toBe("Anna has an exam on Monday.");
   } finally {
     afterStart.close();
@@ -635,15 +635,15 @@ test("a script run that a stop cut off goes on with what the script found, and o
   }
 });
 
-/** The routines of a Golem that starts again. */
+/** The routines of a Shadow that starts again. */
 function restart(): Routines {
   const started = new Routines(
-    golem.app.database,
-    golem.app.workspaces,
+    shadow.app.database,
+    shadow.app.workspaces,
     integrations,
-    golem.app.threads,
-    golem.app.indexer,
-    golem.app.places
+    shadow.app.threads,
+    shadow.app.indexer,
+    shadow.app.places
   );
   started.start();
   return started;
@@ -653,7 +653,7 @@ function restart(): Routines {
 function outcomeOf(runId: string) {
   return until(
     async () =>
-      golem.app.database
+      shadow.app.database
         .query("SELECT outcome, error, result FROM routine_run WHERE id = ?")
         .get(runId) as {
         outcome: string;
@@ -676,7 +676,7 @@ test("the agent reads this run's pending records before its scan state commits, 
   });
   let failing = true;
   let read = false;
-  golem.faux.setResponses(
+  shadow.faux.setResponses(
     Array.from({ length: 100 }, () => (context: Context) => {
       const last = context.messages.at(-1)!;
       const text = textOf(last);
@@ -694,7 +694,7 @@ test("the agent reads this run's pending records before its scan state commits, 
       if (last.role === "toolResult" && text.includes("video-url")) {
         read = true;
         expect(
-          golem.app.database
+          shadow.app.database
             .query("SELECT store FROM routine WHERE id = ?")
             .get(routine.id)
         ).toEqual({ store: "{}" });
@@ -714,7 +714,7 @@ test("the agent reads this run's pending records before its scan state commits, 
     );
     expect(read).toBe(true);
     expect(
-      golem.app.database
+      shadow.app.database
         .query("SELECT store FROM routine WHERE id = ?")
         .get(routine.id)
     ).toEqual({ store: "{}" });
@@ -724,26 +724,26 @@ test("the agent reads this run's pending records before its scan state commits, 
     )[0]!;
     expect(run.outcome).toBe("posted");
     expect(
-      golem.app.database
+      shadow.app.database
         .query("SELECT store FROM routine WHERE id = ?")
         .get(routine.id)
     ).toEqual({ store: JSON.stringify({ pending: { current: "video-url" } }) });
     expect(
-      golem.app.database
+      shadow.app.database
         .query("SELECT input, result FROM routine_run WHERE id = ?")
         .get(run.id)
     ).toEqual({ input: null, result: null });
   } finally {
     routines.delete(routine.id, alice);
-    golem.faux.setResponses(Array.from({ length: 200 }, () => agent));
+    shadow.faux.setResponses(Array.from({ length: 200 }, () => agent));
   }
 });
 
 test("a restart before input admission uses the saved instructions, script result, and scan state", async () => {
-  const { threads } = golem.app;
+  const { threads } = shadow.app;
   const beforeStop = new Routines(
-    golem.app.database,
-    golem.app.workspaces,
+    shadow.app.database,
+    shadow.app.workspaces,
     integrations,
     {
       messages: (thread) => threads.messages(thread),
@@ -759,8 +759,8 @@ test("a restart before input admission uses the saved instructions, script resul
         return Promise.reject(new Error("Server stopped before admission"));
       },
     },
-    golem.app.indexer,
-    golem.app.places
+    shadow.app.indexer,
+    shadow.app.places
   );
   const routine = beforeStop.create(workspaceId, channelId, {
     id: crypto.randomUUID(),
@@ -789,7 +789,7 @@ test("a restart before input admission uses the saved instructions, script resul
       "Anna has an exam on Monday."
     );
     expect(
-      golem.app.database
+      shadow.app.database
         .query("SELECT store FROM routine WHERE id = ?")
         .get(routine.id)
     ).toEqual({ store: JSON.stringify({ since: 7 }) });
@@ -800,7 +800,7 @@ test("a restart before input admission uses the saved instructions, script resul
 });
 
 test("agents create routines and test scripts", async () => {
-  const thread = await golem.app.threads.create(
+  const thread = await shadow.app.threads.create(
     workspaceId,
     alice,
     channelId,
@@ -809,7 +809,7 @@ test("agents create routines and test scripts", async () => {
   const ref = () => threadOf(thread.id);
   const idle = () =>
     until(
-      () => golem.app.threads.messages(ref()),
+      () => shadow.app.threads.messages(ref()),
       (state) => !state.running && state.messages.at(-1)?.text === "Done."
     );
   await idle();
@@ -817,7 +817,7 @@ test("agents create routines and test scripts", async () => {
     "Created the routine.\nSchool (routine "
   );
   expect(toolResults.at(-1)).toContain("in #school");
-  const [created] = golem.app.routines.inWorkspace(workspaceId, null);
+  const [created] = shadow.app.routines.inWorkspace(workspaceId, null);
   expect(created).toMatchObject({
     name: "School",
     channelId,
@@ -826,39 +826,39 @@ test("agents create routines and test scripts", async () => {
     enabled: true,
   });
 
-  await golem.app.threads.send(thread.id, alice, "Make a broken routine");
+  await shadow.app.threads.send(thread.id, alice, "Make a broken routine");
   await until(
-    () => golem.app.threads.messages(ref()),
+    () => shadow.app.threads.messages(ref()),
     (state) => !state.running && state.messages.length === 4
   );
   expect(toolResults.at(-1)).toContain(
     'The schedule "every morning" is not a cron expression'
   );
-  expect(golem.app.routines.inWorkspace(workspaceId, null)).toHaveLength(1);
+  expect(shadow.app.routines.inWorkspace(workspaceId, null)).toHaveLength(1);
 
-  await golem.app.threads.send(thread.id, alice, "Test a script");
+  await shadow.app.threads.send(thread.id, alice, "Test a script");
   await until(
-    () => golem.app.threads.messages(ref()),
+    () => shadow.app.threads.messages(ref()),
     (state) => !state.running && state.messages.length === 6
   );
   expect(toolResults.at(-1)).toContain(
     "The agent would get:\nhello\n[\n  1,\n  2\n]"
   );
 
-  golem.app.places.create(workspaceId, alice, {
+  shadow.app.places.create(workspaceId, alice, {
     name: "Cabin",
     latitude: 49.1,
     longitude: 16.2,
     radius: 300,
     shared: false,
   });
-  await golem.app.threads.send(
+  await shadow.app.threads.send(
     thread.id,
     alice,
     "Warm the cabin when I arrive"
   );
   await until(
-    () => golem.app.threads.messages(ref()),
+    () => shadow.app.threads.messages(ref()),
     (state) => !state.running && state.messages.length === 8
   );
   expect(toolResults.at(-1)).toContain(

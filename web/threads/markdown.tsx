@@ -14,7 +14,7 @@ import { ThreadLink } from "./thread-link.tsx";
 const SCHEME = /^(thread|file|artifact):([\w-]+)$/;
 
 /**
- * What an agent writes can hold simple HTML. The sanitizer keeps what cannot run or restyle the page, and Golem's own
+ * What an agent writes can hold simple HTML. The sanitizer keeps what cannot run or restyle the page, and Shadow's own
  * addresses.
  */
 const SCHEMA = {

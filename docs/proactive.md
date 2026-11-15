@@ -1,6 +1,6 @@
-# Proactive Golem
+# Proactive Shadow
 
-Golem follows useful matters from accounts that their owner has enabled. A person can continue normal conversations.
+Shadow follows useful matters from accounts that their owner has enabled. A person can continue normal conversations.
 They do not need to maintain a task list or set a routine for each expected reply.
 
 ## The process
@@ -11,14 +11,14 @@ They do not need to maintain a task list or set a routine for each expected repl
 2. **Select and batch.** Slack retains the person's messages, direct mentions, DMs, group DMs, and replies in
    threads where they wrote or were mentioned. The adapter resolves Slack thread roots and preserves cursors for
    deferred lookups and partial thread reads. General channel activity is excluded. Gmail and WhatsApp keep incoming
-   and outgoing text regardless of whether Golem sent it. Each judge batch has at most six source conversations and
+   and outgoing text regardless of whether Shadow sent it. Each judge batch has at most six source conversations and
    normally 24,000 characters of new text. A larger individual message remains whole in its own batch.
 3. **Recall and assess.** FTS5 and EmbeddingGemma find candidate subject threads. Recall adds only matching checks,
    at most twelve additional evidence records within 8,000 characters, and at most 6,000 characters of thread
    context. Latest thread messages come before prior summaries, so clipping
    preserves the latest state.
    The configured judge receives original text, direction, source IDs, bulk metadata, and attachment names/types/sizes.
-   It also receives the facts that the family wrote and what Golem learned that the owner sees. These explain the
+   It also receives the facts that the family wrote and what Shadow learned that the owner sees. These explain the
    evidence and carry the owner's wishes about what to watch or report; they are never evidence.
    There is no Qwen reader. Code validates destinations, evidence IDs, exact quotes, and times. A failed batch does
    not prevent unrelated batches from being assessed. Source text never gives tool instructions.
@@ -32,34 +32,34 @@ They do not need to maintain a task list or set a routine for each expected repl
    An unresolved request, partial fulfilment, or undated commitment gets an internal review after three days; this is
    not a promised deadline. Unknown sending or delivery details are verified in the existing thread. Later reviews stay quiet
    unless a follow-up helps. A stated calendar-day period keeps the local wall time across a clock change.
-6. **Confirm the destination and review.** Before creating a new discussion, Golem reads the relevant sources again
+6. **Confirm the destination and review.** Before creating a new discussion, Shadow reads the relevant sources again
    and the judge checks whether the queued review still helps. It can suppress a handled matter or reuse an existing
    thread with a different title or source conversation. Recent threads and their summaries include destinations made
    earlier in the same batch. Only a confirmed useful review creates a subject thread, and only in one of the
    person's own private channels, or a new private channel and its first thread when none fits; a channel that others
    see is never offered for a new matter, and silent filing stays in the person's private channels too. This decision needs no person approval. Related queued updates
    are then grouped by their selected thread. A saved request id reuses a thread after an interrupted creation.
-   A useful development adds a visible Golem source message, the email or other
-   source as a file, and supported attachments to the existing subject thread. No agent starts on it: Golem is the
+   A useful development adds a visible Shadow source message, the email or other
+   source as a file, and supported attachments to the existing subject thread. No agent starts on it: Shadow is the
    person's second brain, not their worker, and the thread's agent works only when the person asks there. Normal
    filing stays silent. Nonurgent changes wait for the person's morning review (`src/intake/morning.ts`), once a day in
-   the 08:00 Europe/Prague hour. Golem reads their source accounts again, then one model call plans all of the
+   the 08:00 Europe/Prague hour. Shadow reads their source accounts again, then one model call plans all of the
    person's waiting updates together: it groups them by matter, puts each matter into its existing thread or one new
    thread, and drops what the newest sources show handled or stale. For each source it reads what came after it in that
-   conversation, with the owner's replies, under a limit per conversation. Each matter gets one Golem message with its
+   conversation, with the owner's replies, under a limit per conversation. Each matter gets one Shadow message with its
    source files in its thread, which says what changed, what it asks of the owner or of whom, and any stated
    deadline; no agent starts on it. The plan never analyses further or drafts. A matter that needs something of the
    owner gets a check: a literal request, a reported problem, someone who waits for them, an unsolved failure or
    decision, or their own unfinished matter; when the plan is not sure, it keeps the ask. The morning summary nudges the check every 2 days. The same plan first reads each due
    nudge against the newest sources and the person's pending reminders, and closes it only with clear evidence that it is handled, or that a reminder
-   covers it or it is someone else's. The owner can also say it is done, rejected, or someone else's (handled or stop in Following, or `intake_update`). Then the person's own Golem thread gets one
+   covers it or it is someone else's. The owner can also say it is done, rejected, or someone else's (handled or stop in Following, or `intake_update`). Then the person's own Shadow thread gets one
    summary with a link to each thread with an ask or a deadline, and a notification; a matter with neither stays in its thread. A plan that leaves an update out or names a thread or
    channel that was not given changes nothing, and the review is tried again after 15 minutes, then 30. After two
    failed plans, each update goes alone to its thread without a plan. A failing review has its own back-off, so the
    person's urgent updates never wait for it, and a summary that a try could not send goes at the next try. Other
    failed intake work waits 15 minutes, then twice as long each time it fails in a row, up to a day.
 7. **Decide whether to notify.** Thread completion is silent, even when its answer is useful. The judge must supply
-   a separate reason and exact source quote before a notification is eligible. After the answer, Golem reads the
+   a separate reason and exact source quote before a notification is eligible. After the answer, Shadow reads the
    source accounts again and checks the proposed reason against the latest evidence. A later reply can suppress the
    notice while the useful answer stays in the thread. A source outage leaves the notice pending for retry. A confirmed
    notice opens the same thread. A `QUIET` answer stays quiet. Stable request ids prevent duplicate inputs, runs,
@@ -78,16 +78,16 @@ They do not need to maintain a task list or set a routine for each expected repl
    retain their pending read and retry with backoff; a failed thread cannot block unrelated source-read assessments.
    Repeated reads reuse the evidence and assessment. These targeted reads do not advance polling coverage.
 
-A source conversation is an email conversation, a WhatsApp chat, a Slack thread or DM, or a Plaud recording. A Golem
+A source conversation is an email conversation, a WhatsApp chat, a Slack thread or DM, or a Plaud recording. A Shadow
 thread is a conversation about a subject. These are different. A source conversation can contain several subjects;
-a subject can span several accounts and Golem threads.
+a subject can span several accounts and Shadow threads.
 
 ## Example: a response within 30 days
 
-Your outgoing email states that a builder has 30 calendar days to give a substantive response. Golem keeps that exact
+Your outgoing email states that a builder has 30 calendar days to give a substantive response. Shadow keeps that exact
 source and a future check. A receipt acknowledgement leaves it open. A full reply in a new email conversation can
 resolve it. A partial reply can leave the unanswered part open. Your statement that you resolved it by phone is also
-evidence. At the due time, Golem looks for replies and checks source coverage. It can report a useful follow-up, or
+evidence. At the due time, Shadow looks for replies and checks source coverage. It can report a useful follow-up, or
 state that it could not verify the account. It must not present a source outage as proof that nobody replied.
 
 Business-day rules and periods that start on delivery need evidence of the rule and start. The model is instructed
@@ -95,7 +95,7 @@ to use an uncertain internal review if it cannot establish them. This system doe
 
 ## Data and privacy
 
-Operational state lives in `golem.sqlite`, in the `intake_*` tables. Current source versions have an FTS5 index.
+Operational state lives in `shadow.sqlite`, in the `intake_*` tables. Current source versions have an FTS5 index.
 Source reads reuse original message ids, timestamps, and attachment metadata where the connector supplies them.
 Plaud note reads do not supply the recording date: `observedAt` marks their read time, which cannot start a response
 period. Original returned tool data and the source-read judgment are also in the separate audit.
@@ -106,7 +106,7 @@ library. On macOS, Bun still selects Apple's SQLite. FTS5 is enabled; this imple
 Each record belongs to one member. A shared integration credential still produces private evidence for its owner.
 An existing shared family thread may receive source material that matches its subject, as explicitly permitted.
 Other people's private threads remain inaccessible. The posted update is visible in the matching thread. Any confirmed notification goes only to the account owner. Turning an account off stops its reads, checks,
-and queued reviews. It keeps historical audit data. Deleted Golem threads are hidden from source recall.
+and queued reviews. It keeps historical audit data. Deleted Shadow threads are hidden from source recall.
 
 An intake message starts a normal turn in its destination thread. Its agent has the same tools as a turn started by
 the person, including connected-account search and attachment retrieval. The account owner remains the turn's person;
@@ -115,7 +115,7 @@ Automatic turns cannot send a completion notification themselves, including thro
 owns this decision. Approval requests for protected actions keep their normal rules.
 
 Notification permission defaults to null. It requires one supported reason: the owner asked to be told; a substantive
-reply changes a matter Golem was following and needs attention; an unresolved stated time arrived; or time-sensitive
+reply changes a matter Shadow was following and needs attention; an unresolved stated time arrived; or time-sensitive
 preparation or a changed event needs attention now. Ordinary messages, mentions, unread status, important matters,
 and an hour without a reply do not qualify alone. Internal review times do not count as promised deadlines. The morning
 review uses the same rule. A silent thread update leaves future checks eligible for later notification. Only eligible
@@ -139,7 +139,7 @@ no integration credential store. [SQLite backup](data.md#audit-export) makes a c
 another machine. This raw log supports later evaluation and training; it does not train a model by itself.
 
 A turn reads intake as the person it answers, in any thread they see, also in a channel that others see: it can use
-`intake_read` to explain what Golem is following, with every update that still waits for its thread or the morning
+`intake_read` to explain what Shadow is following, with every update that still waits for its thread or the morning
 review; reading it delivers nothing. When the person writes in a thread, the updates that wait for it
 from their accounts join that turn in its observed context, and count as delivered once that turn answers: a turn
 that fails takes them again, and no delivery posts them meanwhile. Another member's
@@ -153,7 +153,7 @@ The direct-judge revision passes its tests, lint, and backend and web type check
 messages, exact mentions, DMs, group DMs, participating-thread replies, unrelated-channel exclusion, deferred root
 lookups, and partial thread cursors. Intake tests cover whole long email bodies, outgoing direction, attachment
 metadata, bounded batches, per-batch retry isolation, scoped checks, and a queued review's fixed subject.
-Intake does not read the messages that people write in Golem threads; agents apply corrections with `intake_update`.
+Intake does not read the messages that people write in Shadow threads; agents apply corrections with `intake_update`.
 
 Sequence tests cover a 30-day check across a restart, acknowledgements, replies across conversations, account
 outages, repeated polls, silent due reviews, membership and owner isolation, resolved morning updates, opt-out,
@@ -189,17 +189,17 @@ new checks, split subjects, and promoted notification reasons during the final d
 ## Manual trial
 
 Use the complete source snapshot with a separate configuration folder and a consistent copy of the data folder.
-Do not point the trial at the running server's database. Give the trial its own `base_url` and port in `golem.toml`.
+Do not point the trial at the running server's database. Give the trial its own `base_url` and port in `shadow.toml`.
 Keep the model service available as configured. The account Settings control which accounts intake reads.
 
 ```sh
 bun install --frozen-lockfile
-GOLEM_CONFIG=/path/to/trial/config GOLEM_DATA=/path/to/trial/data bun start
+SHADOW_CONFIG=/path/to/trial/config SHADOW_DATA=/path/to/trial/data bun start
 ```
 
-Check the visible source messages and answers in Golem, use `intake_read` to inspect open questions, and keep the
+Check the visible source messages and answers in Shadow, use `intake_read` to inspect open questions, and keep the
 trial's separate `audit.sqlite`. The source-read change needs no new model or manual check setup. The trial starts
-normal Golem services, including routines and reminders. A source snapshot alone starts no service and copies no
+normal Shadow services, including routines and reminders. A source snapshot alone starts no service and copies no
 credentials or personal data. Destination selection is automatic. The older captured-data reports describe the
 earlier creation behavior; the delayed destination change needs a new live trial.
 

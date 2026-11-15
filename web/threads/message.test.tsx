@@ -101,7 +101,7 @@ test("an artifact in an answer runs in its own sandboxed page", async () => {
 const message = (work: Work): Message => ({
   id: "m",
   authorId: null,
-  author: "Golem",
+  author: "Shadow",
   agent: true,
   text: "",
   time: 0,
@@ -214,7 +214,7 @@ test("a card block shows its cards; one that is not valid shows as code", async 
   expect(html).toContain("No value");
 });
 
-test("the working summary says the step Golem is at, and an approval puts Allow first", async () => {
+test("the working summary says the step Shadow is at, and an approval puts Allow first", async () => {
   const working = await render(
     <MessageView
       message={message({
@@ -253,7 +253,7 @@ test("the working summary says the step Golem is at, and an approval puts Allow 
   expect(approval).not.toContain("Allow for this turn");
 });
 
-test("a turn that another thread's answer started continues Golem's message before it, and says where it came from", async () => {
+test("a turn that another thread's answer started continues Shadow's message before it, and says where it came from", async () => {
   const relayed = message({
     startedAt: 1000,
     endedAt: 4000,

@@ -1,7 +1,7 @@
 import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 
-/** The reports that agents write about Golem, for the server's owner. */
+/** The reports that agents write about Shadow, for the server's owner. */
 export const feedbackApiRoutes: readonly Route[] = [
   [
     "GET",

@@ -353,7 +353,7 @@ export class Reminders {
       // A QUIET answer is a reminder done: nothing needs the person now, and a retry would ask the agent again.
       await this.threads.instruct(
         thread,
-        `${occasion(reminder, member.name)} It is now ${new Date(now).toISOString()}. Remind ${member.name} (member ${member.userId}): ${reminder.text}. When it names matters that Golem follows, read intake_read first and leave out what is already handled. Answer in this thread.`,
+        `${occasion(reminder, member.name)} It is now ${new Date(now).toISOString()}. Remind ${member.name} (member ${member.userId}): ${reminder.text}. When it names matters that Shadow follows, read intake_read first and leave out what is already handled. Answer in this thread.`,
         `reminder:${reminder.id}:${reminder.attempts}`,
         [reminder.recipientId],
         // The turn is the asker's, with their own integrations: the text is theirs, not the recipient's.

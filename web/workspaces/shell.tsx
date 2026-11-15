@@ -333,8 +333,8 @@ function WorkspaceNav({
               to="/w/$workspaceId/thread/$threadId"
             >
               <NavContent
-                icon="golem"
-                label="Golem"
+                icon="shadow"
+                label="Shadow"
                 threadId={orchestrator.id}
               />
             </Link>

@@ -1,6 +1,7 @@
-# Golem Agent Guidance
+# Shadow Agent Guidance
 
-Golem is a family AI assistant and second brain that runs on our own machines, with no cloud and no central server.
+Shadow is a shadow company for a team: every employee gets a shadow, an AI agent and second brain that reads their
+Slack and mail and helps them with their work. It runs on the company's own server, with no cloud service.
 
 ## General Rules
 
@@ -37,13 +38,13 @@ addresses, or code and data from employers or clients.
   `docs/api.md`, that calls the module's service in `src/<module>/<module>.ts`. The web app is a React single-page app
   in `web/`; the server sends it for every app path and has no other pages.
 - Agents make and change reminders with tools; a person sees their pending ones in Upcoming and cancels one there.
-- Golem stays quiet by default: background work notifies a person only when they must act or asked for it, and a
+- Shadow stays quiet by default: background work notifies a person only when they must act or asked for it, and a
   routine or reminder answers `QUIET` when nothing needs anyone.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
   retain useful context and infer future checks. A useful development adds a visible source message and files to the
   existing subject thread, including an existing matching shared family thread; a new matter and silent filing stay in
-  the person's private channels. Golem is the
+  the person's private channels. Shadow is the
   person's second brain, not their worker: no source starts an agent, and an agent does research, analysis, or a draft
   only when a person asks. An urgent development is posted at once. The others wait for the person's one morning
   review in the 08:00 hour, which groups them by matter, posts one message to each thread with what it asks of the
@@ -53,7 +54,7 @@ addresses, or code and data from employers or clients.
   conversations and keeps incoming and outgoing context. Bounded batches and subject-scoped recall reach the
   configured model provider. Silent filing starts no agent turn and sends no notification.
 - Every workspace read and write goes through `Workspaces.requireMember`; answer `404` to non-members.
-- Golem has one workspace, the family's; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
+- Shadow has one workspace, the family's; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
   of it belong to one member. Every read of channels, threads, files, artifacts, routines, reminders, search, or memory
   names the `Realm` it serves: the person, or for an agent's turn `Threads.realm`, which is its thread's realm, or in a
   channel every member sees the person whose message the turn answers. Only background work that acts for no person
@@ -61,7 +62,7 @@ addresses, or code and data from employers or clients.
 - An orchestrator (`ThreadRef.ownerId` set) belongs to one member: every route, tool, search, and memory that reads
   threads leaves out the orchestrators of other people.
 - Serve HTML that an agent or a person wrote only from `/a/:id/content`, with its `sandbox` content policy; never run
-  it on Golem's origin.
+  it on Shadow's origin.
 
 ## Web app data
 
@@ -70,10 +71,10 @@ addresses, or code and data from employers or clients.
   TanStack Query. The Query cache is saved in IndexedDB, so the app opens on what it showed last.
 - The event streams of `docs/api.md` keep open threads and the working threads current; do not poll what they send.
 - Text messages go through the outbox (`web/threads/outbox.ts`), which keeps them in localStorage and sends them with a
-  `requestId` once Golem answers; a message with files needs a connection.
+  `requestId` once Shadow answers; a message with files needs a connection.
 - The saved cache and the outbox belong to one person (`confirmPerson` in `web/app/query.ts`): after a `401` or the
   start of a sign-in they wait; the same person gets both back, and the browser forgets both for another person.
-- The app page has a content policy (`src/app/web.ts`): scripts, pictures, and frames come only from Golem. A
+- The app page has a content policy (`src/app/web.ts`): scripts, pictures, and frames come only from Shadow. A
   picture from the web in Markdown shows as a link.
 - `bun start` builds the app into `dist/web/` first; `bun run dev` rebuilds it on every change.
 
@@ -102,7 +103,7 @@ addresses, or code and data from employers or clients.
   `src/threads/threads.ts`, or `<integration>_` for a connector, whose MCP server gives its tools.
 - A prompt section of the agents renders the same text until its content changes: no times and no order by time. Pi
   Durable adds each changed section to the conversation again, so a section that changes often repeats itself.
-- How Golem talks (voice, length, humor) is only in `SOUL` in `src/threads/threads.ts`, the first section of every
+- How Shadow talks (voice, length, humor) is only in `SOUL` in `src/threads/threads.ts`, the first section of every
   agent's prompt; `INSTRUCTIONS` and the task texts say how it works and never set a tone.
 - Only connector tools with an `approval` wait for a person. All web traffic of agents goes through `Egress`
   (`src/platform/egress.ts`), never a plain `fetch`.
@@ -120,7 +121,7 @@ addresses, or code and data from employers or clients.
 ## Code Conventions
 
 - Use descriptive names; do not abbreviate domain concepts.
-- Golem's conversations use Slack's words: a workspace has channels, and a channel has threads. A source's own
+- Shadow's conversations use Slack's words: a workspace has channels, and a channel has threads. A source's own
   conversation, such as a WhatsApp or Slack conversation of a watched account, is a `chat` (`WatchedItem.chat`).
 - Do not introduce `mock.module()` in tests; use dependency injection.
 - Order functions top-down by call hierarchy, with entry points before their helpers.

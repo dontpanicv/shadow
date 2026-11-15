@@ -268,7 +268,7 @@ const migrations = [
   `UPDATE thread SET created_by = (SELECT c.created_by FROM channel c WHERE c.workspace_id = thread.workspace_id ORDER BY c.created_at, c.rowid LIMIT 1) WHERE orchestrator = 1;
 	DROP INDEX thread_orchestrator;
 	CREATE UNIQUE INDEX thread_own_orchestrator ON thread (workspace_id, created_by) WHERE orchestrator = 1;`,
-  // integrations: Golem's own OAuth client of an integration whose sign-in server does not register clients, such as
+  // integrations: Shadow's own OAuth client of an integration whose sign-in server does not register clients, such as
   // Google's; the server's owner sets it in Settings. `secret` is the encrypted client secret.
   `CREATE TABLE oauth_client (
 		integration TEXT PRIMARY KEY,
@@ -365,7 +365,7 @@ const migrations = [
 		usage TEXT NOT NULL,
 		PRIMARY KEY (workspace_id, conversation_id)
 	);`,
-  // agenda: the automations that Golem suggests to a person, which wait until they accept or decline one.
+  // agenda: the automations that Shadow suggests to a person, which wait until they accept or decline one.
   `CREATE TABLE suggestion (
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
@@ -386,7 +386,7 @@ const migrations = [
 	);
 	CREATE INDEX suggestion_person ON suggestion (workspace_id, person_id, created_at);`,
   // notifications: the Live Activities of the iOS app, each following the work for one message of a person, and the
-  // last state Golem pushed to it.
+  // last state Shadow pushed to it.
   `CREATE TABLE live_activity (
 		token TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
@@ -442,7 +442,7 @@ const migrations = [
 		at INTEGER NOT NULL,
 		PRIMARY KEY (place_id, person_id)
 	);`,
-  // feedback: what agents report about Golem itself, for the server's owner; `person_id` is the person of the turn,
+  // feedback: what agents report about Shadow itself, for the server's owner; `person_id` is the person of the turn,
   // null for background work.
   `CREATE TABLE feedback (
 		id TEXT PRIMARY KEY,
@@ -460,7 +460,7 @@ const migrations = [
   // routines: keep the definition and script store a run started with; older servers leave this nullable column unset.
   "ALTER TABLE routine_run ADD COLUMN input TEXT;",
 
-  // integrations: whether the owner of a credential lets Golem read its account for them.
+  // integrations: whether the owner of a credential lets Shadow read its account for them.
   "ALTER TABLE credential ADD COLUMN watched INTEGER NOT NULL DEFAULT 0;",
   // intake: durable source observations, private context, future checks, and idempotent deliveries.
   `CREATE TABLE intake_source (

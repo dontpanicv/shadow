@@ -168,7 +168,7 @@ export interface Integration {
   readonly connect: "secret" | "sign-in" | "phone";
   /** The name of the secret, for `connect: "secret"`. */
   readonly secretLabel: string | null;
-  /** Whether the person names a credential; else Golem names it from the secret. */
+  /** Whether the person names a credential; else Shadow names it from the secret. */
   readonly labeled: boolean;
   /** Whether the secret, or the sign-in, also needs the address of the person's own server. */
   readonly address: boolean;
@@ -177,7 +177,7 @@ export interface Integration {
   /** The steps that set it up, in Markdown; empty when Connect is all. */
   readonly guide: readonly string[];
   readonly watchable: boolean;
-  /** Golem's own OAuth client, which the server's owner sets: its ID, and whether this person may set it. */
+  /** Shadow's own OAuth client, which the server's owner sets: its ID, and whether this person may set it. */
   readonly client: {
     readonly clientId: string | null;
     readonly changeable: boolean;
@@ -263,7 +263,7 @@ export type Effort =
   | "xhigh"
   | "max";
 
-/** What an agent reported about Golem itself; only the server's owner reads it. */
+/** What an agent reported about Shadow itself; only the server's owner reads it. */
 export interface Feedback {
   readonly id: string;
   readonly kind: "error" | "missing" | "better";
@@ -349,7 +349,7 @@ export interface Usage {
     | null;
 }
 
-/** What Golem learned: a fact about a person, or a how-to of a channel. */
+/** What Shadow learned: a fact about a person, or a how-to of a channel. */
 export interface Learned {
   readonly id: number;
   readonly kind: "about" | "howto";
@@ -363,7 +363,7 @@ export interface Learned {
   readonly updatedAt: number;
 }
 
-/** An automation that Golem suggests; nothing runs until the person accepts it. */
+/** An automation that Shadow suggests; nothing runs until the person accepts it. */
 export interface Suggestion {
   readonly id: string;
   readonly kind: "routine" | "reminder";

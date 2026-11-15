@@ -32,7 +32,7 @@ export function LoginPage() {
       message?: string;
     } | null;
     if (response.ok && body?.url) {
-      // Another person may sign in here, so the saved copy and the outbox wait until Golem says who it is.
+      // Another person may sign in here, so the saved copy and the outbox wait until Shadow says who it is.
       markSignedOut();
       location.assign(body.url);
       return;
@@ -45,7 +45,7 @@ export function LoginPage() {
       <form aria-busy={busy || undefined} onSubmit={signIn}>
         <div className="mark">
           <Mark size="large" />
-          <h1>Sign in to Golem</h1>
+          <h1>Sign in to Shadow</h1>
         </div>
         <Button
           autoFocus
@@ -59,7 +59,7 @@ export function LoginPage() {
   );
 }
 
-/** Signs out on this device and forgets what the app saved. When Golem does not confirm it, the page stays. */
+/** Signs out on this device and forgets what the app saved. When Shadow does not confirm it, the page stays. */
 export async function signOut(): Promise<void> {
   const response = await fetch("/api/auth/sign-out", {
     method: "POST",
@@ -80,7 +80,7 @@ export async function signOut(): Promise<void> {
  */
 export function localPath(path: string | undefined): string | null {
   return path?.startsWith("/") &&
-    new URL(path, "http://golem.invalid").host === "golem.invalid"
+    new URL(path, "http://shadow.invalid").host === "shadow.invalid"
     ? path
     : null;
 }

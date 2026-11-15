@@ -5,7 +5,7 @@
 // from the second loop (the first has the cursor's entrance): from 400 ms
 // before one `type` mark to 400 ms before the next, a calm frame both ends.
 //
-//   node examples/golem-demo/render.mjs <url> <out.mp4> [--width 1100] [--dark]
+//   node examples/shadow-demo/render.mjs <url> <out.mp4> [--width 1100] [--dark]
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -35,7 +35,7 @@ await page.goto(url)
 const stage = page.locator('.ss-stage:visible').first()
 await stage.waitFor()
 
-const dir = mkdtempSync(join(tmpdir(), 'golem-render-'))
+const dir = mkdtempSync(join(tmpdir(), 'shadow-render-'))
 const shots = []
 const types = []
 let last = null

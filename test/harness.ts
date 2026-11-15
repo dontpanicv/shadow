@@ -22,26 +22,26 @@ export interface CallOptions {
 export type TestApp = Awaited<ReturnType<typeof startTestApp>>;
 
 /**
- * A Golem server in a temporary folder with the faux LLM provider; alice, bob, and eve may sign in.
+ * A Shadow server in a temporary folder with the faux LLM provider; alice, bob, and eve may sign in.
  *
  * @example
- * const golem = await startTestApp();
- * const alice = await golem.signIn("Alice", "alice@example.com");
- * const me = await golem.call("/api/v1/me", { token: alice });
- * await golem.close();
+ * const shadow = await startTestApp();
+ * const alice = await shadow.signIn("Alice", "alice@example.com");
+ * const me = await shadow.call("/api/v1/me", { token: alice });
+ * await shadow.close();
  */
 export async function startTestApp() {
   const faux = fauxProvider();
   const model = faux.getModel();
-  const dataDirectory = await mkdtemp(join(tmpdir(), "golem-"));
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-"));
   const app: App = await createApp(
     {
       configDirectory: dataDirectory,
       dataDirectory,
       host: "127.0.0.1",
       port: 0,
-      baseUrl: "http://golem.test",
-      shareUrl: "http://share.golem.test",
+      baseUrl: "http://shadow.test",
+      shareUrl: "http://share.shadow.test",
       allowedEmails: [
         "alice@example.com",
         "bob@example.com",
@@ -68,7 +68,7 @@ export async function startTestApp() {
       headers.set("content-type", "application/json");
     }
     return handler(
-      new Request(`http://golem.test${path}`, {
+      new Request(`http://shadow.test${path}`, {
         method: options.method ?? (options.body === undefined ? "GET" : "POST"),
         headers,
         body:

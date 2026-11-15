@@ -46,7 +46,7 @@ type Selected =
   | { kind: "source"; id: string };
 
 /**
- * All that Golem holds for the person from the accounts it reads: the thread updates that wait, the matters it follows,
+ * All that Shadow holds for the person from the accounts it reads: the thread updates that wait, the matters it follows,
  * its sources, what it keeps, and what it did. Each row opens its detail, where the person gives feedback.
  */
 export function FollowingPage() {
@@ -99,7 +99,7 @@ export function FollowingPage() {
       <div className="page">
         <div className="page-content">
           {overview && overview.sources.length === 0 ? (
-            <Empty title="Golem reads no account for you" />
+            <Empty title="Shadow reads no account for you" />
           ) : null}
           {waiting.length > 0 ? (
             <PageSection title="Waiting">
@@ -252,10 +252,10 @@ function KeptSection({
   return (
     <PageSection title="Kept">
       <input
-        aria-label="Search what Golem keeps"
+        aria-label="Search what Shadow keeps"
         className="input"
         onChange={(event) => onSearch(event.target.value)}
-        placeholder="Search mail, messages, and notes that Golem keeps"
+        placeholder="Search mail, messages, and notes that Shadow keeps"
         type="search"
         value={search}
       />
@@ -397,7 +397,7 @@ function UpdateDialog({
     >
       <p>{updateState(update)}</p>
       {update.notice ? (
-        <p>Golem will also notify you: {update.notice}</p>
+        <p>Shadow will also notify you: {update.notice}</p>
       ) : null}
       <p className="following-text">{message(update.body)}</p>
       <div className="following-actions">
@@ -507,7 +507,7 @@ function FeedbackDialog({
           className="input multiline"
           maxLength={8000}
           name="quote"
-          placeholder="What should Golem do differently?"
+          placeholder="What should Shadow do differently?"
           rows={3}
         />
       </label>
@@ -553,7 +553,7 @@ function UpdateActions({
     return (
       <div className="following-confirm">
         <p>
-          Golem deletes this update and all it read from{" "}
+          Shadow deletes this update and all it read from{" "}
           {senders.join(", ") || "these sources"}, with its files, and reads
           nothing more from them.
         </p>
@@ -673,7 +673,7 @@ function CheckDialog({
       {detail ? <Sources evidence={detail.evidence} /> : null}
       {detail?.history.map((revision) => (
         <p key={revision.id}>
-          {weekdayTime(revision.at)} · {revision.quote ?? "Golem review"} ·{" "}
+          {weekdayTime(revision.at)} · {revision.quote ?? "Shadow review"} ·{" "}
           {stateLabel(revision.current.state)}
         </p>
       ))}

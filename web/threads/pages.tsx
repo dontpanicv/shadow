@@ -246,7 +246,7 @@ function Thread({
           ))}
           {messages.length + waiting.length === 0 ? (
             <div className="empty">
-              <strong>Ask Golem anything</strong>
+              <strong>Ask Shadow anything</strong>
             </div>
           ) : null}
         </section>
@@ -258,7 +258,9 @@ function Thread({
             running ? () => stopThread(threadId).catch(showError) : undefined
           }
           placeholder={
-            isOrchestrator ? "Message Golem" : `Message #${channel?.name ?? ""}`
+            isOrchestrator
+              ? "Message Shadow"
+              : `Message #${channel?.name ?? ""}`
           }
         />
       </section>

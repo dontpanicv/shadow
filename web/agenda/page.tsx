@@ -38,7 +38,7 @@ const workspaceRoute = getRouteApi("/signed-in/w/$workspaceId");
 /** The names of the workspace's channels, which routine rows show. */
 const ChannelNames = createContext<ReadonlyMap<string, string>>(new Map());
 
-/** What Golem runs for the person and what waits for them, in groups from what needs them to what is paused. */
+/** What Shadow runs for the person and what waits for them, in groups from what needs them to what is paused. */
 export function UpcomingPage() {
   const { workspaceId } = workspaceRoute.useParams();
   const { data: upcoming } = useQuery(upcomingQuery(workspaceId));
@@ -80,7 +80,7 @@ export function UpcomingPage() {
   );
 }
 
-/** The suggestions that wait for the person, above the composer of their Golem. */
+/** The suggestions that wait for the person, above the composer of their Shadow. */
 export function SuggestionCards() {
   const { workspaceId } = workspaceRoute.useParams();
   const suggestions =

@@ -51,7 +51,7 @@ interface CheckRow {
 export interface IntakeSourceStatus {
   id: string;
   name: string;
-  /** Until when Golem has read the account; null before its first read. */
+  /** Until when Shadow has read the account; null before its first read. */
   readAt: number | null;
   error: string | null;
   kept: number;
@@ -61,7 +61,7 @@ const LATER_MESSAGES = 4;
 /** How much of each later message a review reads; a long mail still shows that it answered. */
 const LATER_MESSAGE_CHARS = 2000;
 
-/** Reads the current private evidence and the Golem context that a person can use. */
+/** Reads the current private evidence and the Shadow context that a person can use. */
 export class IntakeRecall {
   constructor(
     private readonly database: Database,
@@ -483,7 +483,7 @@ export class IntakeRecall {
     return this.visible(workspaceId, owner, rows);
   }
 
-  /** Each account that the person lets Golem read: how far Golem read it, its error, and how much it keeps. */
+  /** Each account that the person lets Shadow read: how far Shadow read it, its error, and how much it keeps. */
   sourceStatus(workspaceId: string, owner: User): IntakeSourceStatus[] {
     this.workspaces.requireMember(workspaceId, owner);
     return this.integrations

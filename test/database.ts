@@ -3,7 +3,7 @@ import { openDatabase } from "../src/platform/database.ts";
 
 /**
  * An in-memory database with the columns of better-auth's `organization` and `member` that the application migrations
- * read, since Golem runs better-auth's migrations first. Run `migrate` on it next.
+ * read, since Shadow runs better-auth's migrations first. Run `migrate` on it next.
  */
 export function authDatabase(): Database {
   const database = openDatabase(":memory:");

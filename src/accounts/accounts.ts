@@ -4,7 +4,7 @@ import { HttpError, notFound } from "../platform/errors.ts";
 
 /** The largest profile picture; the apps send a small square. */
 const MAX_PICTURE = 1024 ** 2;
-/** How long Golem waits for Google to send a person's picture. */
+/** How long Shadow waits for Google to send a person's picture. */
 const GOOGLE_TIMEOUT = 10_000;
 
 export interface ProfilePicture {
@@ -14,12 +14,12 @@ export interface ProfilePicture {
 }
 
 /**
- * The pictures people upload for their profile, or that Golem copies once from their Google account. Each picture is a
+ * The pictures people upload for their profile, or that Shadow copies once from their Google account. Each picture is a
  * new row with a new id, so a picture's address never changes and browsers keep it; a new upload or a removal marks
  * the old one deleted.
  */
 export class ProfilePictures {
-  /** The people whose Google picture this run of Golem already tried to copy. */
+  /** The people whose Google picture this run of Shadow already tried to copy. */
   private readonly triedGoogle = new Set<string>();
 
   constructor(
@@ -37,7 +37,7 @@ export class ProfilePictures {
 
   /**
    * Copies the Google picture of each person who never had a picture, or only of `userId`; after a removal, the
-   * person keeps their initial. Golem keeps a copy because the apps show pictures only from Golem.
+   * person keeps their initial. Shadow keeps a copy because the apps show pictures only from Shadow.
    */
   async importGoogle(userId?: string): Promise<void> {
     // better-auth sets `image` only when Google sign-in makes the account; an account that it linked later, as one
@@ -126,7 +126,7 @@ export class ProfilePictures {
   }
 }
 
-/** The `picture` of a Google ID token, which Google sent to Golem itself at sign-in. */
+/** The `picture` of a Google ID token, which Google sent to Shadow itself at sign-in. */
 function pictureClaim(idToken: string | null): string | undefined {
   try {
     const claims = JSON.parse(

@@ -11,7 +11,7 @@ function location(response: Response): string | null {
 }
 
 describe("the web app", () => {
-  let golem: TestApp;
+  let shadow: TestApp;
   let alice: User;
   let aliceCookie: string;
   let bobCookie: string;
@@ -21,31 +21,31 @@ describe("the web app", () => {
 
   beforeAll(async () => {
     await $`bun run build`.quiet();
-    golem = await startTestApp();
-    aliceCookie = await golem.sessionCookie(
-      await golem.signIn("Alice", "alice@example.com")
+    shadow = await startTestApp();
+    aliceCookie = await shadow.sessionCookie(
+      await shadow.signIn("Alice", "alice@example.com")
     );
-    bobCookie = await golem.sessionCookie(
-      await golem.signIn("Bob", "bob@example.com")
+    bobCookie = await shadow.sessionCookie(
+      await shadow.signIn("Bob", "bob@example.com")
     );
-    alice = golem.app.database
+    alice = shadow.app.database
       .query("SELECT id, name, email FROM user WHERE email = ?")
       .get("alice@example.com") as User;
-    const workspace = await golem.app.workspaces.create(alice, "Family");
+    const workspace = await shadow.app.workspaces.create(alice, "Family");
     workspaceId = workspace.id;
-    generalId = golem.app.workspaces.channels(workspaceId, alice)[0]!.id;
-    const summary = await golem.app.threads.create(
+    generalId = shadow.app.workspaces.channels(workspaceId, alice)[0]!.id;
+    const summary = await shadow.app.threads.create(
       workspaceId,
       alice,
       generalId,
       "Plan the trip"
     );
-    thread = golem.app.workspaces
+    thread = shadow.app.workspaces
       .allThreadsIn(workspaceId)
       .find((candidate) => candidate.id === summary.id)!;
   });
 
-  afterAll(() => golem.close());
+  afterAll(() => shadow.close());
 
   test("every page of the app is the app's page, which the browser checks every time; its files stay for good", async () => {
     for (const path of [
@@ -55,7 +55,7 @@ describe("the web app", () => {
       "/workspaces/new",
       `/w/${workspaceId}/t/${thread.id}`,
     ]) {
-      const page = await golem.call(path);
+      const page = await shadow.call(path);
       expect([path, page.status]).toEqual([path, 200]);
       expect(page.headers.get("cache-control")).toBe("no-cache");
       const policy = page.headers.get("content-security-policy")!;
@@ -65,33 +65,33 @@ describe("the web app", () => {
       const html = await page.text();
       expect(html).toContain('<div id="root"></div>');
       const script = /src="(\/app\/[^"]+\.js)"/.exec(html)![1]!;
-      const file = await golem.call(script, {
+      const file = await shadow.call(script, {
         headers: { "accept-encoding": "gzip, br" },
       });
       expect(file.headers.get("cache-control")).toContain("immutable");
       expect(file.headers.get("content-encoding")).toBe("gzip");
     }
-    expect((await golem.call("/nothing-here")).status).toBe(404);
-    expect((await golem.call("/app/..%2F..%2Fpackage.json")).status).toBe(404);
+    expect((await shadow.call("/nothing-here")).status).toBe(404);
+    expect((await shadow.call("/app/..%2F..%2Fpackage.json")).status).toBe(404);
   });
 
-  test("the JSON API takes the session cookie only from Golem's own origin", async () => {
-    const me = await golem.call("/api/v1/me", {
+  test("the JSON API takes the session cookie only from Shadow's own origin", async () => {
+    const me = await shadow.call("/api/v1/me", {
       headers: { cookie: aliceCookie },
     });
     expect(await me.json()).toMatchObject({ user: { name: "Alice" } });
     const create = (origin: string) =>
-      golem.call(`/api/v1/workspaces/${workspaceId}/channels`, {
+      shadow.call(`/api/v1/workspaces/${workspaceId}/channels`, {
         body: { name: `from-${new URL(origin).hostname.split(".")[0]}` },
         headers: { cookie: aliceCookie, origin },
       });
     expect((await create("https://evil.example")).status).toBe(403);
-    expect((await create("http://golem.test")).status).toBe(200);
-    expect((await golem.call("/api/v1/me")).status).toBe(401);
+    expect((await create("http://shadow.test")).status).toBe(200);
+    expect((await shadow.call("/api/v1/me")).status).toBe(401);
   });
 
   test("an artifact link runs the artifact in a sandbox, for anyone when public and for members otherwise", async () => {
-    const artifact = golem.app.artifacts.create(thread, generalId, {
+    const artifact = shadow.app.artifacts.create(thread, generalId, {
       title: "Trip <dates>",
       html: "<!doctype html><html><head></head><body>Vote</body></html>",
       visibility: "public",
@@ -99,7 +99,7 @@ describe("the web app", () => {
     });
     const link = `/a/${artifact.id}`;
 
-    const opened = await golem.call(link);
+    const opened = await shadow.call(link);
     const page = await opened.text();
     expect(page).toContain("<title>Trip &lt;dates&gt;</title>");
     expect(page).toContain(
@@ -112,11 +112,11 @@ describe("the web app", () => {
       'sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"'
     );
     const visitor = cookies(opened);
-    expect(visitor).toStartWith("golem-visitor=");
+    expect(visitor).toStartWith("shadow-visitor=");
     expect(opened.headers.get("set-cookie")).toContain("Path=/a/");
     expect(opened.headers.get("set-cookie")).toContain("HttpOnly");
 
-    const content = await golem.call(`${link}/content`);
+    const content = await shadow.call(`${link}/content`);
     const policy = content.headers.get("content-security-policy")!;
     expect(policy).toStartWith("sandbox allow-scripts");
     expect(policy).not.toContain("allow-same-origin");
@@ -124,14 +124,14 @@ describe("the web app", () => {
     expect(policy).toContain("connect-src 'none'");
     expect(page).toContain("new MessageChannel()");
     const text = await content.text();
-    expect(text).toContain("window.golem = golem");
+    expect(text).toContain("window.shadow = shadow");
     expect(text).toContain("event.ports");
 
     const call = (body: unknown, headers: Record<string, string>) =>
-      golem.call(`${link}/rpc`, { body, headers });
+      shadow.call(`${link}/rpc`, { body, headers });
     const me = await call(
       { op: "me", args: {} },
-      { cookie: visitor, origin: "http://golem.test" }
+      { cookie: visitor, origin: "http://shadow.test" }
     );
     expect(await me.json()).toMatchObject({
       result: { name: null, member: false },
@@ -146,18 +146,18 @@ describe("the web app", () => {
     ).toBe(403);
     expect((await call({ op: "me", args: {} }, {})).status).toBe(403);
 
-    golem.app.artifacts.setVisibility(artifact.id, alice, "members");
+    shadow.app.artifacts.setVisibility(artifact.id, alice, "members");
     // The app's sign-in page comes back to the artifact.
-    expect(location(await golem.call(link))).toBe(`/login?next=${link}`);
-    expect((await golem.call(`${link}/content`)).status).toBe(404);
-    const as = (cookie: string) => golem.call(link, { headers: { cookie } });
+    expect(location(await shadow.call(link))).toBe(`/login?next=${link}`);
+    expect((await shadow.call(`${link}/content`)).status).toBe(404);
+    const as = (cookie: string) => shadow.call(link, { headers: { cookie } });
     expect((await as(bobCookie)).status).toBe(404);
     expect((await as(aliceCookie)).status).toBe(200);
   });
 
   test("the public host serves only public artifacts at /<name>, and nothing else", async () => {
     const make = (visibility: "public" | "members") =>
-      golem.app.artifacts.create(thread, generalId, {
+      shadow.app.artifacts.create(thread, generalId, {
         title: "Share",
         html: "<p>Hi</p>",
         visibility,
@@ -165,10 +165,10 @@ describe("the web app", () => {
       });
     const open = make("public");
     const closed = make("members");
-    expect(open.url).toBe(`http://share.golem.test/${open.id}`);
-    expect(closed.url).toBe(`http://golem.test/a/${closed.id}`);
+    expect(open.url).toBe(`http://share.shadow.test/${open.id}`);
+    expect(closed.url).toBe(`http://shadow.test/a/${closed.id}`);
     const share = (path: string, init: RequestInit = {}) =>
-      golem.handler(new Request(`http://share.golem.test${path}`, init));
+      shadow.handler(new Request(`http://share.shadow.test${path}`, init));
 
     const page = await share(`/${open.id}`);
     expect(page.status).toBe(200);
@@ -191,11 +191,11 @@ describe("the web app", () => {
         },
         body: JSON.stringify({ op: "me", args: {} }),
       });
-    expect((await call("http://share.golem.test")).status).toBe(200);
-    expect((await call("http://golem.test")).status).toBe(403);
+    expect((await call("http://share.shadow.test")).status).toBe(200);
+    expect((await call("http://shadow.test")).status).toBe(403);
 
     const script = /src="(\/app\/[^"]+\.js)"/.exec(
-      await (await golem.call("/")).text()
+      await (await shadow.call("/")).text()
     )![1]!;
     for (const path of [
       `/${closed.id}`,
@@ -222,61 +222,61 @@ describe("the web app", () => {
         })
       ).status
     ).toBe(404);
-    expect((await golem.call(`/${open.id}`)).status).toBe(404);
-    expect((await golem.call(`/a/${open.id}`)).status).toBe(200);
-    golem.app.artifacts.delete(open.id, alice);
-    golem.app.artifacts.delete(closed.id, alice);
+    expect((await shadow.call(`/${open.id}`)).status).toBe(404);
+    expect((await shadow.call(`/a/${open.id}`)).status).toBe(200);
+    shadow.app.artifacts.delete(open.id, alice);
+    shadow.app.artifacts.delete(closed.id, alice);
   });
 
   test("a client that tries many artifact links that do not exist waits", async () => {
     const from = (address: string) => ({ "x-forwarded-for": address });
     for (let miss = 0; miss < 20; miss += 1) {
-      const response = await golem.call(`/a/amber-guess${miss}`, {
+      const response = await shadow.call(`/a/amber-guess${miss}`, {
         headers: from("203.0.113.7"),
       });
       expect(response.status).toBe(404);
     }
-    const [artifact] = golem.app.artifacts.inPlace(
+    const [artifact] = shadow.app.artifacts.inPlace(
       workspaceId,
       generalId,
       alice
     );
-    const refused = await golem.call(`/a/${artifact!.id}/content`, {
+    const refused = await shadow.call(`/a/${artifact!.id}/content`, {
       headers: from("203.0.113.7"),
     });
     expect(refused.status).toBe(429);
     expect(
       (
-        await golem.call(`/a/${artifact!.id}/rpc`, {
+        await shadow.call(`/a/${artifact!.id}/rpc`, {
           body: { op: "me", args: {} },
           headers: from("203.0.113.7"),
         })
       ).status
     ).toBe(429);
     expect(
-      (await golem.call("/a/amber-guess", { headers: from("203.0.113.8") }))
+      (await shadow.call("/a/amber-guess", { headers: from("203.0.113.8") }))
         .status
     ).toBe(404);
     const large = (address: string) =>
-      golem.call("/a/amber-guess/rpc", {
+      shadow.call("/a/amber-guess/rpc", {
         body: { op: "me", args: { padding: "x".repeat(2 * 1024 ** 2) } },
         headers: from(address),
       });
     // An IPv6 client can pick any address of its /48 network, so the network counts.
     for (let miss = 0; miss < 20; miss += 1) {
-      await golem.call(`/a/amber-guess${miss}`, {
+      await shadow.call(`/a/amber-guess${miss}`, {
         headers: from(`2001:db8:7:${miss}::1`),
       });
     }
     expect(
       (
-        await golem.call("/a/amber-guess", {
+        await shadow.call("/a/amber-guess", {
           headers: from("2001:db8:7:ff::2"),
         })
       ).status
     ).toBe(429);
     // A members link tells a signed-out client that its name exists, so it counts too.
-    const members = golem.app.artifacts.create(thread, generalId, {
+    const members = shadow.app.artifacts.create(thread, generalId, {
       title: "Members",
       html: "<p>M</p>",
       requestKey: "web-members-miss",
@@ -284,33 +284,33 @@ describe("the web app", () => {
     for (let miss = 0; miss < 20; miss += 1) {
       expect(
         (
-          await golem.call(`/a/${members.id}`, {
+          await shadow.call(`/a/${members.id}`, {
             headers: from("203.0.113.30"),
           })
         ).status
       ).toBe(303);
     }
     expect(
-      (await golem.call(`/a/${members.id}`, { headers: from("203.0.113.30") }))
+      (await shadow.call(`/a/${members.id}`, { headers: from("203.0.113.30") }))
         .status
     ).toBe(429);
     // A full limiter pushes out its oldest clients only: the client that waits, which came later, still waits.
     for (let client = 0; client < 9998; client += 1) {
-      await golem.call("/a/amber-guess", {
+      await shadow.call("/a/amber-guess", {
         headers: from(`198.18.${Math.floor(client / 256)}.${client % 256}`),
       });
     }
     expect(
-      (await golem.call("/a/amber-guess", { headers: from("203.0.113.30") }))
+      (await shadow.call("/a/amber-guess", { headers: from("203.0.113.30") }))
         .status
     ).toBe(429);
-    golem.app.artifacts.delete(members.id, alice);
+    shadow.app.artifacts.delete(members.id, alice);
     // A body that is too large is refused before the lookup, so it is not a miss.
     for (let call = 0; call < 20; call += 1) {
       expect((await large("203.0.113.9")).status).toBe(413);
     }
     expect(
-      (await golem.call("/a/amber-guess", { headers: from("203.0.113.9") }))
+      (await shadow.call("/a/amber-guess", { headers: from("203.0.113.9") }))
         .status
     ).toBe(404);
   });
@@ -326,38 +326,38 @@ describe("the web app", () => {
   });
 
   test("assets come from the public folder only", async () => {
-    const styles = await golem.call("/assets/styles.css");
+    const styles = await shadow.call("/assets/styles.css");
     expect(styles.status).toBe(200);
     expect(await styles.text()).toContain("{");
-    expect((await golem.call("/assets/missing.css")).status).toBe(404);
-    expect((await golem.call("/assets/..%2Fpackage.json")).status).toBe(404);
+    expect((await shadow.call("/assets/missing.css")).status).toBe(404);
+    expect((await shadow.call("/assets/..%2Fpackage.json")).status).toBe(404);
   });
 
   test("sign out ends the session", async () => {
-    const response = await golem.call("/api/auth/sign-out", {
+    const response = await shadow.call("/api/auth/sign-out", {
       body: {},
-      headers: { cookie: bobCookie, origin: "http://golem.test" },
+      headers: { cookie: bobCookie, origin: "http://shadow.test" },
     });
     expect(response.status).toBe(200);
     expect(response.headers.getSetCookie().join()).toContain(
       "better-auth.session_token=;"
     );
     expect(
-      (await golem.call("/api/v1/me", { headers: { cookie: bobCookie } }))
+      (await shadow.call("/api/v1/me", { headers: { cookie: bobCookie } }))
         .status
     ).toBe(401);
   });
 });
 
 describe("the ChatGPT device login", () => {
-  let golem: TestApp;
+  let shadow: TestApp;
   let token: string;
   const finish = Promise.withResolvers<OAuthCredential>();
 
   beforeAll(async () => {
-    golem = await startTestApp();
+    shadow = await startTestApp();
     // The test provider signs in only with a device code, as ChatGPT does.
-    const auth = golem.faux.provider.auth as {
+    const auth = shadow.faux.provider.auth as {
       apiKey?: unknown;
       oauth?: unknown;
     };
@@ -384,19 +384,19 @@ describe("the ChatGPT device login", () => {
       refresh: async (credential: OAuthCredential) => credential,
       toAuth: async () => ({}),
     };
-    token = await golem.signIn("Alice", "alice@example.com");
+    token = await shadow.signIn("Alice", "alice@example.com");
   });
 
-  afterAll(() => golem.close());
+  afterAll(() => shadow.close());
 
   test("gives the code until the login finishes, then the models", async () => {
     const status = async () =>
-      (await (await golem.call("/api/v1/llm", { token })).json()) as {
+      (await (await shadow.call("/api/v1/llm", { token })).json()) as {
         connected: boolean;
         login: { userCode: string; verificationUri: string } | null;
       };
     expect(await status()).toMatchObject({ connected: false, login: null });
-    await golem.call("/api/v1/llm/login", { method: "POST", token });
+    await shadow.call("/api/v1/llm/login", { method: "POST", token });
     expect(await status()).toMatchObject({
       connected: false,
       login: {
@@ -414,7 +414,7 @@ describe("the ChatGPT device login", () => {
     expect(await until(status, (llm) => llm.connected)).toMatchObject({
       login: null,
     });
-    await golem.call("/api/v1/llm/logout", { method: "POST", token });
+    await shadow.call("/api/v1/llm/logout", { method: "POST", token });
     expect(await status()).toMatchObject({ connected: false });
   });
 });

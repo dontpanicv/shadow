@@ -22,10 +22,10 @@ function fakeCli(output = "✓ Example Domain") {
 }
 
 describe("Browser", () => {
-  test("runs the commands in the thread's session under Golem's policy", async () => {
+  test("runs the commands in the thread's session under Shadow's policy", async () => {
     const cli = fakeCli();
     const result = await new Browser(cli.run).browse(
-      "golem-w-1",
+      "shadow-w-1",
       [
         ["open", "example.com"],
         ["snapshot", "-i"],
@@ -34,7 +34,7 @@ describe("Browser", () => {
     );
     expect(result).toEqual({ text: "✓ Example Domain", screenshot: null });
     const [call] = cli.calls;
-    expect(call!.args.slice(0, 2)).toEqual(["--session", "golem-w-1"]);
+    expect(call!.args.slice(0, 2)).toEqual(["--session", "shadow-w-1"]);
     expect(call!.args).toContain("--content-boundaries");
     expect(call!.args.at(-1)).toBe("batch");
     expect(call!.args[call!.args.indexOf("--action-policy") + 1]).toEndWith(
@@ -70,7 +70,7 @@ describe("Browser", () => {
     const sessions = cli.calls.map((call) => call.args[1]!);
     expect(new Set(sessions).size).toBe(3);
     for (const session of sessions) {
-      expect(session).toMatch(/^golem-[0-9a-f]{24}$/);
+      expect(session).toMatch(/^shadow-[0-9a-f]{24}$/);
     }
   });
 
@@ -190,7 +190,7 @@ describe("the egress proxy", () => {
   test("Chrome reaches no loopback address, by address or by name", async () => {
     seen.length = 0;
     const browser = new Browser();
-    const session = `golem-test-${crypto.randomUUID()}`;
+    const session = `shadow-test-${crypto.randomUUID()}`;
     try {
       const { text } = await browser.browse(
         session,
@@ -213,7 +213,7 @@ describe("the egress proxy", () => {
   }, 60_000);
 
   test("download refuses a local address and a redirect to one, and keeps the file it may reach", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "golem-download-"));
+    const directory = await mkdtemp(join(tmpdir(), "shadow-download-"));
     const destination = join(directory, "file");
     try {
       await expect(

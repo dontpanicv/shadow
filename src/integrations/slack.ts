@@ -641,7 +641,7 @@ export function observedSlackMessage(
 
 /**
  * Runs slackcli with a person's session, in a home of its own for each command, so it never uses the sessions of this
- * machine's user. The session is slackcli's `workspaces.json`, which Golem keeps encrypted.
+ * machine's user. The session is slackcli's `workspaces.json`, which Shadow keeps encrypted.
  */
 class SlackCli {
   constructor(private readonly binary: string) {}
@@ -724,7 +724,7 @@ class SlackCli {
   private async inHome<Result>(
     use: (home: string) => Promise<Result>
   ): Promise<Result> {
-    const home = mkdtempSync(join(tmpdir(), "golem-slack-"));
+    const home = mkdtempSync(join(tmpdir(), "shadow-slack-"));
     try {
       mkdirSync(join(workspacesOf(home), ".."), {
         recursive: true,

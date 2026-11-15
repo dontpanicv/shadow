@@ -87,7 +87,7 @@ export class Egress {
       });
       server.on("error", reject);
       server.listen(0, "127.0.0.1", () => {
-        // It must not keep Golem or a test from ending.
+        // It must not keep Shadow or a test from ending.
         server.unref();
         resolve((server.address() as { port: number }).port);
       });
@@ -202,7 +202,7 @@ export class Egress {
     const address = await resolvePublic(host, this.allowed);
     return new Promise((resolve, reject) => {
       const socket = connect({ host: address, port }, () => resolve(socket));
-      // It stays: an error before the pipe takes the socket must not end Golem; one after it is a no-op.
+      // It stays: an error before the pipe takes the socket must not end Shadow; one after it is a no-op.
       socket.on("error", reject);
     });
   }

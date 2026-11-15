@@ -17,7 +17,7 @@ export interface EntityState {
 
 /**
  * The home's Home Assistant through its REST API (https://developers.home-assistant.io/docs/api/rest), with a
- * long-lived access token of a Home Assistant user, at the address of the home's own server. Golem calls that address
+ * long-lived access token of a Home Assistant user, at the address of the home's own server. Shadow calls that address
  * itself, also on a private network, because a person, not an agent, gave it. Templates need an administrator.
  */
 export function homeAssistantConnector(
@@ -72,7 +72,7 @@ export function homeAssistantConnector(
     guide: [
       "In Home Assistant, open the profile of an administrator › **Security** › **Long-lived access tokens**, click **Create token**, and copy it.",
       "Click **Add credential**. Type the name of the home as the label, the address of Home Assistant, such as `http://homeassistant.local:8123`, and paste the token.",
-      "The Golem machine must reach that address, for example over your VPN.",
+      "The Shadow machine must reach that address, for example over your VPN.",
     ],
     address: true,
     tools: [

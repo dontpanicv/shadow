@@ -212,7 +212,7 @@ stays there when the thread is settled. The side panel of a thread shows the art
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/artifacts-dark.svg">
-  <img alt="A member opens the app's host, and anyone with a link opens a.example.com. Both hosts are on Cloudflare and reach the server through an outbound cloudflared tunnel; the public host passes only artifact paths and answers 404 to the rest. The server listens on 127.0.0.1:3000, checks who may open the artifact, and shows it in a sandboxed page. The page keeps its data through the golem runtime in golem.sqlite, where the thread agent writes the HTML." src="docs/assets/artifacts-light.svg">
+  <img alt="A member opens the app's host, and anyone with a link opens a.example.com. Both hosts are on Cloudflare and reach the server through an outbound cloudflared tunnel; the public host passes only artifact paths and answers 404 to the rest. The server listens on 127.0.0.1:3000, checks who may open the artifact, and shows it in a sandboxed page. The page keeps its data through the shadow runtime in shadow.sqlite, where the thread agent writes the HTML." src="docs/assets/artifacts-light.svg">
 </picture>
 
 - **Members or public.** A new artifact is for members: only signed-in people who can see its channel open it, so an
@@ -220,15 +220,15 @@ stays there when the thread is settled. The side panel of a thread shows the art
   with its link opens it, without an account, such as a customer or a candidate. A link is four words, such as
   `amber-fox-lake-moss`: easy to know again, and too many to guess. A name is never given out again, also after a
   delete.
-- **Data without a backend.** The page keeps data through `golem`, a small runtime that Shadow puts at its start:
-  `golem.mine` for the records of one visitor, `golem.shared` for the records that everybody shares, and
-  `golem.everyone` to list the records of all visitors, such as the answers of a poll. Visitors give their name with
-  `golem.setName`. The records are rows in `golem.sqlite`; agents read and change them with `artifacts_data` and
+- **Data without a backend.** The page keeps data through `shadow`, a small runtime that Shadow puts at its start:
+  `shadow.mine` for the records of one visitor, `shadow.shared` for the records that everybody shares, and
+  `shadow.everyone` to list the records of all visitors, such as the answers of a poll. Visitors give their name with
+  `shadow.setName`. The records are rows in `shadow.sqlite`; agents read and change them with `artifacts_data` and
   `artifacts_set_data`, and the side panel shows them under **Data**.
 - **A sandbox, never Shadow's origin.** The HTML runs in a frame without `allow-same-origin`, so it cannot read
   Shadow's cookies or call Shadow's API. Its content policy lets scripts come only from three public CDNs (jsDelivr,
   unpkg, and cdnjs), and styles and fonts also from Google Fonts. It blocks every network request
-  (`connect-src 'none'`), so data goes only through `golem`. Shadow serves a page that a person or an agent wrote only
+  (`connect-src 'none'`), so data goes only through `shadow`. Shadow serves a page that a person or an agent wrote only
   from its own `content` address, never from a path of the app.
 - **The public host.** Public links use their own host, such as `a.example.com`, on the same Cloudflare Tunnel as
   Shadow. Three layers keep the rest of Shadow private: the tunnel lets through only `/<name>`, `/<name>/content`, and
@@ -281,10 +281,10 @@ person's inbox in the app.
 git clone https://github.com/dontpanicv/shadow.git && cd shadow
 bun install
 bunx --bun agent-browser install   # Chrome for the agents' browser, if Google Chrome is not installed
-bun start                          # makes config/golem.toml on the first start, then stops
+bun start                          # makes config/shadow.toml on the first start, then stops
 ```
 
-Fill in `config/golem.toml` and start Shadow again:
+Fill in `config/shadow.toml` and start Shadow again:
 
 ```toml
 base_url = "https://shadow.example.com"
@@ -298,16 +298,16 @@ client_secret = "…"
 [google-sign-in.md](google-sign-in.md) shows how to make the Google client. Then sign in, connect ChatGPT in
 Settings, and add your colleagues in Workspace settings. Each person adds their own accounts in their Settings.
 
-Shadow keeps everything in two folders ([docs/data.md](docs/data.md)). `GOLEM_CONFIG` and `GOLEM_DATA` move them.
+Shadow keeps everything in two folders ([docs/data.md](docs/data.md)). `SHADOW_CONFIG` and `SHADOW_DATA` move them.
 
-- `config/`: `golem.toml` and `secret.key`. Keep a copy of it safe and apart from the data backups.
+- `config/`: `shadow.toml` and `secret.key`. Keep a copy of it safe and apart from the data backups.
 - `data/`: the database, the threads, the files, the search index and its model, and the logs. Back it up offsite.
 
 ### The recommended deployment: a Mac mini behind a Cloudflare Tunnel
 
 This setup opens no port on your router and keeps the server off the internet:
 
-1. **Shadow listens only on `127.0.0.1:3000`**, which is the default `host` in `config/golem.toml`.
+1. **Shadow listens only on `127.0.0.1:3000`**, which is the default `host` in `config/shadow.toml`.
 2. **`cloudflared` connects out to Cloudflare** and brings the traffic for `shadow.example.com` to `127.0.0.1:3000`.
    Cloudflare holds the TLS certificate. There is no open port, no dynamic DNS, and no reverse proxy to keep up to
    date.
@@ -327,16 +327,16 @@ token in `config/share-tunnel.token`:
 Then install both services, which start at login and restart when they stop:
 
 ```sh
-scripts/install-service.sh         # Shadow, as the LaunchAgent dev.golem.server; logs in data/logs/golem.log
-scripts/install-share-tunnel.sh    # cloudflared, as the LaunchAgent dev.golem.share
+scripts/install-service.sh         # Shadow, as the LaunchAgent dev.shadow.server; logs in data/logs/shadow.log
+scripts/install-share-tunnel.sh    # cloudflared, as the LaunchAgent dev.shadow.share
 ```
 
-Set `share_url = "https://a.example.com"` in `config/golem.toml`. In the Cloudflare zone, turn off Email
+Set `share_url = "https://a.example.com"` in `config/shadow.toml`. In the Cloudflare zone, turn off Email
 Obfuscation, because it breaks the app's content policy, and do not cache the Shadow host except `/app/` and
 `/assets/`. `sudo scripts/install-service.sh --daemon` runs Shadow from boot, before anyone logs in.
 
 To update: `git pull && bun install`, then the restart command that `install-service.sh` printed, such as
-`launchctl kickstart -k gui/$(id -u)/dev.golem.server`. Shadow builds the web app when it starts.
+`launchctl kickstart -k gui/$(id -u)/dev.shadow.server`. Shadow builds the web app when it starts.
 
 ### Let your agent set it up
 
@@ -349,17 +349,17 @@ Set up Shadow (https://github.com/dontpanicv/shadow) on this Mac as a self-hoste
 2. Check that this is a Mac with Apple silicon. Install what is missing with Homebrew: bun, ffmpeg, poppler,
    tesseract, whisper-cpp, dicklesworthstone/tap/dcg, and cloudflared.
 3. Clone the repository to ~/shadow, and run `bun install` and `bunx --bun agent-browser install`.
-4. Run `bun start` once, so Shadow writes config/golem.toml, and stop it.
+4. Run `bun start` once, so Shadow writes config/shadow.toml, and stop it.
 5. Ask me for: the Shadow hostname (such as shadow.example.com), the artifact hostname (such as a.example.com),
    and the Google emails of the team, the owner first. Write base_url, allowed_emails, and share_url into
-   config/golem.toml. Keep host = "127.0.0.1".
+   config/shadow.toml. Keep host = "127.0.0.1".
 6. Guide me through the Google OAuth client of google-sign-in.md, with the redirect URI
-   https://<shadow hostname>/api/auth/callback/google, and write client_id and client_secret into config/golem.toml.
+   https://<shadow hostname>/api/auth/callback/google, and write client_id and client_secret into config/shadow.toml.
    I do the steps in the Google Cloud console myself.
 7. Guide me to make a Cloudflare Tunnel with the two public hostnames of the README (the artifact host with its
    path rule, and a 404 for everything else), and to save its token in config/share-tunnel.token.
 8. Run scripts/install-service.sh and scripts/install-share-tunnel.sh. Check that https://<shadow hostname>
-   opens Shadow and that data/logs/golem.log shows no requirement that is missing.
+   opens Shadow and that data/logs/shadow.log shows no requirement that is missing.
 9. Tell me to sign in, connect ChatGPT in Settings, and add the team in Workspace settings.
 
 Never print, commit, or send the secrets in config/. Stop and ask me before any step that you cannot undo.
@@ -384,8 +384,6 @@ bun run lint       # Ultracite (Biome); `bun run format` fixes what it can
 - `.claude/skills/` has the agent skills of this repository, such as
   [Stageshow](https://github.com/benjitaylor/skills) for product demos. The diagrams are made with
   [Archify](https://github.com/tt-a1i/archify) from `docs/assets/*.archify.json`.
-- The code, the config file, and the services still use Shadow's earlier name, Golem: `config/golem.toml`,
-  `GOLEM_CONFIG`, `GOLEM_DATA`, the `dev.golem.*` LaunchAgents, and the `golem` runtime of artifacts.
 
 ## Credits
 

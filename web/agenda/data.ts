@@ -9,7 +9,7 @@ import type {
   Upcoming,
 } from "../app/types.ts";
 
-/** What Golem runs for the person and what waits for them. */
+/** What Shadow runs for the person and what waits for them. */
 export function upcomingQuery(workspaceId: string) {
   return queryOptions({
     queryKey: ["workspaces", workspaceId, "upcoming"],

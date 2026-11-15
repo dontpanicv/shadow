@@ -12,7 +12,7 @@ import type { User } from "../platform/auth.ts";
 import type { ThreadRef, ThreadSummary } from "../workspaces/workspaces.ts";
 import type { Artifact } from "./artifacts.ts";
 
-let golem: TestApp;
+let shadow: TestApp;
 let alice: User;
 let eve: User;
 let thread: ThreadRef & ThreadSummary;
@@ -24,29 +24,29 @@ let nextCall: { name: string; args: JsonObject } | null = null;
 const POLL = `<!doctype html><html><head><title>Trip</title></head><body><button id="vote">15 Dec</button></body></html>`;
 
 beforeAll(async () => {
-  golem = await startTestApp();
+  shadow = await startTestApp();
   alice = await userOf("Alice", "alice@example.com");
   eve = await userOf("Eve", "eve@example.com");
-  const workspaceId = (await golem.app.workspaces.create(alice, "Family")).id;
-  const channel = golem.app.workspaces.createChannel(
+  const workspaceId = (await shadow.app.workspaces.create(alice, "Family")).id;
+  const channel = shadow.app.workspaces.createChannel(
     workspaceId,
     alice,
     "trips"
   );
-  golem.faux.setResponses(Array.from({ length: 40 }, () => agent));
-  const summary = await golem.app.threads.create(
+  shadow.faux.setResponses(Array.from({ length: 40 }, () => agent));
+  const summary = await shadow.app.threads.create(
     workspaceId,
     alice,
     channel.id,
     "Plan the trip"
   );
-  thread = golem.app.workspaces.thread(summary.id, alice);
+  thread = shadow.app.workspaces.thread(summary.id, alice);
 });
-afterAll(() => golem.close());
+afterAll(() => shadow.close());
 
 async function userOf(name: string, email: string): Promise<User> {
-  await golem.signIn(name, email);
-  const { internalAdapter } = await golem.app.auth.$context;
+  await shadow.signIn(name, email);
+  const { internalAdapter } = await shadow.app.auth.$context;
   const { user } = (await internalAdapter.findUserByEmail(email))!;
   return { id: user.id, name: user.name, email: user.email };
 }
@@ -83,7 +83,7 @@ async function useTool(
 ): Promise<string> {
   const before = toolResults.length;
   nextCall = { name, args };
-  await golem.app.threads.send(threadId, alice, `Use ${name}`);
+  await shadow.app.threads.send(threadId, alice, `Use ${name}`);
   await until(
     async () => toolResults.length,
     (count) => count > before
@@ -92,7 +92,7 @@ async function useTool(
 }
 
 function onlyArtifact(): Artifact {
-  const artifacts = golem.app.artifacts.inPlace(
+  const artifacts = shadow.app.artifacts.inPlace(
     thread.workspaceId,
     thread.channelId,
     alice
@@ -112,7 +112,7 @@ test("an agent makes an artifact in its thread, changes it, and reads and writes
     title: "Trip dates",
     visibility: "members",
     visitors: 0,
-    url: `http://golem.test/a/${artifact.id}`,
+    url: `http://shadow.test/a/${artifact.id}`,
   });
   expect(artifact.id).toMatch(/^[a-z]+(-[a-z]+){3}$/);
   expect(new Set(artifact.id.split("-")).size).toBe(4);
@@ -125,7 +125,7 @@ test("an agent makes an artifact in its thread, changes it, and reads and writes
       replace: "16 Dec",
     })
   ).toContain("Changed the artifact.");
-  expect(golem.app.artifacts.html(artifact.id)).toContain("16 Dec");
+  expect(shadow.app.artifacts.html(artifact.id)).toContain("16 Dec");
   expect(
     await useTool("artifacts_edit", {
       id: artifact.id,
@@ -156,7 +156,7 @@ test("an agent makes an artifact in its thread, changes it, and reads and writes
 });
 
 test("visitors keep their own data, read everyone's, and only members change shared data", () => {
-  const { artifacts } = golem.app;
+  const { artifacts } = shadow.app;
   const { id } = onlyArtifact();
   const grandma = { token: "grandma-browser" };
   const uncle = { token: "uncle-browser" };
@@ -263,7 +263,7 @@ test("visitors keep their own data, read everyone's, and only members change sha
 });
 
 test("a members artifact is only for members, and people delete its records, its data, and it", () => {
-  const { artifacts } = golem.app;
+  const { artifacts } = shadow.app;
   const { id } = onlyArtifact();
   artifacts.setVisibility(id, alice, "members");
   expect(() => artifacts.open(id, { token: "grandma-browser" })).toThrow(
@@ -293,7 +293,7 @@ test("a members artifact is only for members, and people delete its records, its
   expect(() => artifacts.open(id, { user: alice })).toThrow("Not found");
   // Nothing is removed: the artifact, its records, and its visitors stay, marked deleted.
   const kept = (table: string, column: string) =>
-    golem.app.database
+    shadow.app.database
       .query(
         `SELECT count(*) AS count, count(deleted_at) AS deleted FROM ${table} WHERE ${column} = ?`
       )
@@ -307,14 +307,14 @@ test("a members artifact is only for members, and people delete its records, its
   expect(visitors.deleted).toBe(visitors.count);
   // The name stays taken, so that an old link never opens a new artifact.
   expect(
-    golem.app.database
+    shadow.app.database
       .query("SELECT id FROM artifact_name WHERE id = ?")
       .get(id)
   ).toEqual({ id });
 });
 
 test("an artifact keeps a limited number of visitors and bytes, and gets them back when its data is cleared", () => {
-  const { artifacts, database } = golem.app;
+  const { artifacts, database } = shadow.app;
   const { id } = artifacts.create(thread, thread.channelId, {
     title: "Busy",
     html: "<p>Busy</p>",
@@ -380,7 +380,7 @@ test("an artifact keeps a limited number of visitors and bytes, and gets them ba
 });
 
 test("the content policy and the runtime start every page, before any of the agent's HTML", () => {
-  const { artifacts } = golem.app;
+  const { artifacts } = shadow.app;
   const make = (html: string) =>
     artifacts.create(thread, thread.channelId, {
       title: "Page",
@@ -398,7 +398,7 @@ test("the content policy and the runtime start every page, before any of the age
     const page = artifacts.content(make(html));
     expect(page).toStartWith(start);
     expect(page.match(/<!doctype/gi)).toHaveLength(1);
-    expect(page).toContain("window.golem = golem");
+    expect(page).toContain("window.shadow = shadow");
     expect(page).toEndWith(html.replace(/^<!doctype html>/i, ""));
   }
   const policy = artifacts.content(make("<p>Hi</p>"));
@@ -421,7 +421,7 @@ test("the content policy and the runtime start every page, before any of the age
 });
 
 test("an artifact belongs to its channel: other threads see it after its thread is settled, and it goes with a merge", async () => {
-  const { artifacts, threads, workspaces } = golem.app;
+  const { artifacts, threads, workspaces } = shadow.app;
   const workspaceId = (await workspaces.create(alice, "Kitchen")).id;
   const recipes = workspaces.createChannel(workspaceId, alice, "recipes");
   const made = await threads.create(
@@ -470,7 +470,7 @@ test("an artifact belongs to its channel: other threads see it after its thread 
 });
 
 test("the orchestrator's artifacts belong to the workspace, and an agent puts one in a channel it names", async () => {
-  const { artifacts, threads } = golem.app;
+  const { artifacts, threads } = shadow.app;
   const orchestrator = await threads.orchestrator(thread.workspaceId, alice);
   await useTool(
     "artifacts_create",

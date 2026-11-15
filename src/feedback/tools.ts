@@ -5,7 +5,7 @@ import type { Threads } from "../threads/threads.ts";
 import type { Workspaces } from "../workspaces/workspaces.ts";
 import type { FeedbackReports } from "./feedback.ts";
 
-/** The agent tool that reports a problem with Golem itself to the server's owner. */
+/** The agent tool that reports a problem with Shadow itself to the server's owner. */
 export function feedbackTools(
   feedback: Pick<FeedbackReports, "report">,
   workspaces: Pick<Workspaces, "threadOf">,
@@ -16,7 +16,7 @@ export function feedbackTools(
     defineTool({
       name: "feedback_report",
       description:
-        "Tell the developers of Golem about Golem itself: a tool that failed or answered wrong (error), a tool or capability you needed that does not exist (missing), or an easier or faster way to do the task (better). Describe Golem, not the person: no names, messages, or personal data. Report once, then continue the task. A website that blocks the browser with a bot check is no fault of Golem: do not report it.",
+        "Tell the developers of Shadow about Shadow itself: a tool that failed or answered wrong (error), a tool or capability you needed that does not exist (missing), or an easier or faster way to do the task (better). Describe Shadow, not the person: no names, messages, or personal data. Report once, then continue the task. A website that blocks the browser with a bot check is no fault of Shadow: do not report it.",
       parameters: Type.Object({
         kind: Type.Union(
           [
@@ -41,7 +41,7 @@ export function feedbackTools(
         const person = await threads.requester(workspaceId, api.conversationId);
         feedback.report(workspaceId, {
           ...args,
-          id: randomUUIDv5(`golem:${workspaceId}:${api.taskId}`, "url"),
+          id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
           threadId: thread?.id ?? null,
           personId: person?.id ?? null,
         });

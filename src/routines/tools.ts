@@ -29,7 +29,7 @@ export function routineTools(
   const scriptHelp = `A script is JavaScript that runs in a sandbox at the start of every run, before an agent sees anything. It is the body of an async function: it calls tools as \`await tools.<name>(args)\`, keeps JSON values between runs with \`store(key, value)\` and \`load(key)\` (only a run that succeeds saves them), and returns what is new. It has no fetch, timers, or modules. When it returns nothing (undefined, null, or an empty array) and prints nothing, the run ends quietly, at no cost. Otherwise the agent of the routine's thread gets what it returned and printed, with the instructions. Each run starts with only its current input; use the script store and archive IDs for progress, and read earlier thread messages only when needed. During a run, routines_test_script reads the current run's proposed store; it does not commit it. Use a script for work that is the same every time, such as collecting new items since the last run; leave it out when the work needs judgement from the start. The tools scripts can call:\n${declarations}`;
   const scheduleHelp = `A cron expression in ${zone} time: minute hour day-of-month month day-of-week, such as "0 7 * * 1-5" for weekdays at 7:00. A routine runs at most every 15 minutes.`;
   const placeHelp =
-    "The name of a place from the person's Settings, in place of a schedule: the routine runs each time the person arrives or leaves, as their iPhone tells Golem";
+    "The name of a place from the person's Settings, in place of a schedule: the routine runs each time the person arrives or leaves, as their iPhone tells Shadow";
   const placeParameters = {
     place: Type.Optional(Type.String({ description: placeHelp })),
     event: Type.Optional(
@@ -182,8 +182,8 @@ export function routineTools(
           place: placeOf(args, requester?.id ?? null),
           instructions: args.instructions,
           script: args.script,
-          id: randomUUIDv5(`golem:${workspaceId}:${api.taskId}`, "url"),
-          createdBy: requester?.id ?? "golem",
+          id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
+          createdBy: requester?.id ?? "shadow",
         });
         return {
           output: [
@@ -230,7 +230,7 @@ export function routineTools(
             ...changes,
             place: placeOf({ place, event, person }, requester?.id ?? null),
           },
-          requester?.id ?? "golem"
+          requester?.id ?? "shadow"
         );
         return {
           output: [

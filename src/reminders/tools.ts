@@ -140,7 +140,7 @@ export function reminderTools(
     defineTool({
       name: "reminders_create",
       description:
-        "Schedule one reminder for one exact future date and time, or for when the recipient arrives at or leaves a place; their iPhone tells Golem. A place reminder can have a window: from, such as 'when I get to work on Monday', and until, when it fires anyway, such as 'next time I am at the shop this week'. 'At 18:00 if I am home, else when I get home' is arrive home from 18:00. Make one reminder for one request, with no helper reminders or threads. Use a routine for repeated work. Give the recipient's name when it is not the person who asked. For one specific public place that reminders_places does not have, such as one shop, use reminders_search_points_of_interest. Confirm the saved time or place in your answer.",
+        "Schedule one reminder for one exact future date and time, or for when the recipient arrives at or leaves a place; their iPhone tells Shadow. A place reminder can have a window: from, such as 'when I get to work on Monday', and until, when it fires anyway, such as 'next time I am at the shop this week'. 'At 18:00 if I am home, else when I get home' is arrive home from 18:00. Make one reminder for one request, with no helper reminders or threads. Use a routine for repeated work. Give the recipient's name when it is not the person who asked. For one specific public place that reminders_places does not have, such as one shop, use reminders_search_points_of_interest. Confirm the saved time or place in your answer.",
       parameters: Type.Object({
         text,
         at,
@@ -173,7 +173,7 @@ export function reminderTools(
             timeZone: args.timeZone,
             ...whenOf(args, recipientId, asker?.id ?? null),
             createdBy: asker?.id ?? null,
-            id: randomUUIDv5(`golem:${workspaceId}:${api.taskId}`, "url"),
+            id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
           }
         );
         return { output: [{ type: "text", text: describe(created) }] };
@@ -234,7 +234,7 @@ export function reminderTools(
     defineTool({
       name: "reminders_create_at_point_of_interest",
       description:
-        "Remind the person who asks when they arrive at or leave one specific public place from reminders_search_points_of_interest; their phone tells Golem. It is only for their own reminder. Say the place's name and street in your answer.",
+        "Remind the person who asks when they arrive at or leave one specific public place from reminders_search_points_of_interest; their phone tells Shadow. It is only for their own reminder. Say the place's name and street in your answer.",
       parameters: Type.Object({
         text,
         pointOfInterest: Type.String({
@@ -270,7 +270,7 @@ export function reminderTools(
             timeZone: args.timeZone,
             ...atPlace(id, args),
             createdBy: asker.id,
-            id: randomUUIDv5(`golem:${workspaceId}:${api.taskId}`, "url"),
+            id: randomUUIDv5(`shadow:${workspaceId}:${api.taskId}`, "url"),
           }
         );
         return { output: [{ type: "text", text: describe(created) }] };

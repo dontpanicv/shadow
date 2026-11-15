@@ -1,8 +1,8 @@
-# Golem components
+# Shadow components
 
 The look is Ember: black, white, and one accent, square corners, pixel icons, and a 1 pt dither. Every value lives in
 `tokens.json`; layouts and motion are measured from Linear's light and dark themes (Inter 4.1, the same font file).
-`accent` is the only color of Golem; `gold` takes its value and marks steps and what waits for a person. Golem's logo
+`accent` is the only color of Shadow; `gold` takes its value and marks steps and what waits for a person. Shadow's logo
 is a badge whose right half is its shadow.
 Every component exists on the web (`public/styles.css`, `web/ui/`) and looks like Linear's web app. Native selects and
 pickers are never used; menus, selects, switches, and checkboxes are our own.
@@ -12,7 +12,7 @@ pickers are never used; menus, selects, switches, and checkboxes are our own.
 - Inter Variable for body text, Geist Mono for times, counts, and values (Markdown bold inside an agent's reply is
   Inter `semibold`, `text`), Geist Mono `fontSize.label` in capitals for section labels. All three are in the
   repository (`public/fonts/`): the app's content policy loads
-  fonts only from Golem. Inter line height `normal` for controls, `font-display: block`. Pages link styles and scripts with a hash
+  fonts only from Shadow. Inter line height `normal` for controls, `font-display: block`. Pages link styles and scripts with a hash
   of their content, and the server keeps them and the font in the browser for good, so text never paints in a
   fallback font first.
 - Text: `text` for titles and values, `textSecondary` for controls and body, `textTertiary` for descriptions,
@@ -133,8 +133,8 @@ Used by the workspace switcher and action menus.
 
 ## Sidebar
 
-- 244 wide on the canvas, 12 px side padding. It starts with Golem, with no workspace name above it. Golem's icon is
-  its face in one color (`golem`): the logo with its marks cut out, 16 cells across, 1 px a cell.
+- 244 wide on the canvas, 12 px side padding. It starts with Shadow, with no workspace name above it. Shadow's icon is
+  its face in one color (`shadow`): the logo with its marks cut out, 16 cells across, 1 px a cell.
 - Item: 28 high, 1 px apart, padding 0 × 9 × 0 × 8, `radius.md`, a 14 px icon 6 px before the label,
   `fontSize.md` `medium` `textTertiary`. Hover: `fillHover` at once and `text` in 150 ms. Current: `fillActive`, `text`.
   Count: `fontSize.xs` `book`. A channel with an emoji shows it in place of the `#` icon, `fontSize.sm`, centered in
@@ -176,14 +176,14 @@ Used by the workspace switcher and action menus.
 - An integration is one card. Its first row has the name and the count of accounts, and at the right its actions as
   small buttons: Client (for the server's owner, when it has one), then the way to connect (Connect, Link number, or
   Add credential), then the info button of its guide. Each credential is a compact row under it. On a narrow page the
-  buttons wrap under the name. Under each of the person's own credentials of an integration that Golem can read for
+  buttons wrap under the name. Under each of the person's own credentials of an integration that Shadow can read for
   them, a compact row with the `check` icon, "Read for me", and its switch.
 - Places: a compact row per place with its name and its radius and Shared or Private, then the Private switch and the
   change and remove icon buttons. Add place opens a dialog: the Name field; the Address field, where Enter or Return
-  moves the map to the address (it asks OpenStreetMap's search through Golem); a map `size.map` high with `radius.md`
+  moves the map to the address (it asks OpenStreetMap's search through Shadow); a map `size.map` high with `radius.md`
   and a 0.5 px `border`; and a Radius select. The pin stays in the middle of the map, which moves under it, so a
   place always has one: a 16 px `accent` circle with a 2 px `onAccent` ring. The place's circle is `accent`, 1.5 px,
-  filled at 12 %. The map is OpenStreetMap through Golem, with only "© OpenStreetMap".
+  filled at 12 %. The map is OpenStreetMap through Shadow, with only "© OpenStreetMap".
 - A text field for long text, such as the workspace's facts, fills the card with 16 px padding, min 160 high, a 1.5
   line height, and its Save button at the bottom right.
 - Text in a section, such as a channel summary: `fontSize.md` `textSecondary` on a 22 px line, with its line breaks.
@@ -197,11 +197,11 @@ Used by the workspace switcher and action menus.
 - Avatar: a 24 px square with the person's profile picture, cropped to fill it; without one, the first letter of their
   name on an `accent` tile, in the 5 × 7 pixel letters of `letter` in `tokens.json`, 2 pt a pixel, in `onAccent`, whose
   bottom right corner dissolves into `canvas`.
-- Golem's logo: one drawing everywhere, `logo` in `scripts/icon.ts`. An 8 × 8 white face with black marks and a solid
+- Shadow's logo: one drawing everywhere, `logo` in `scripts/icon.ts`. An 8 × 8 white face with black marks and a solid
   `accent` forehead mark that dissolves to the right through interleaved-gradient noise. One noise cell is 1 pt at the
   size where it shows, also on a home screen, where a finer grain blurs into a gradient. It has one expression. On a
   transparent tile; in light, on a black tile, so the white face stays apart from a white surface. An avatar is
-  24 pt, the sign-in 48 pt, and an empty state 96 pt. `golem` is the same logo in one color.
+  24 pt, the sign-in 48 pt, and an empty state 96 pt. `shadow` is the same logo in one color.
 
 ## Lists
 
@@ -211,7 +211,7 @@ Used by the workspace switcher and action menus.
 
 ## Inbox
 
-- The sidebar's Inbox item, after Golem, shows the unread count. The page lists notifications newest first as search
+- The sidebar's Inbox item, after Shadow, shows the unread count. The page lists notifications newest first as search
   rows: an icon (the thread's, or `hash` for a channel), the title, the text in `textTertiary`, the day, and a
   `size.dot` `accent` dot while unread. A click reads it and opens its thread or channel. The header's check button
   reads them all.
@@ -227,9 +227,9 @@ Used by the workspace switcher and action menus.
 - Suggestion: a compact row with its kind's icon, the name, when it runs, and secondary Decline and primary Accept
   buttons. In the person's orchestrator the waiting suggestions sit in one card over the composer, as wide as it.
 
-## What Golem learned and Usage
+## What Shadow learned and Usage
 
-- What Golem learned is a Settings section: a sub-heading (`fontSize.sm` `medium` `textTertiary`, 16 px in) per person
+- What Shadow learned is a Settings section: a sub-heading (`fontSize.sm` `medium` `textTertiary`, 16 px in) per person
   ("About Anna") and per channel, each over a card of compact rows with the text, a 14 px `lock` for a private entry,
   and edit and delete icon buttons at the right. Edit turns the text into a field in place: Enter saves, Escape stops.
 - Usage is a Settings section: rows for tokens, cost at API prices, and cache rate, then a bar for each of the last 30
@@ -239,9 +239,9 @@ Used by the workspace switcher and action menus.
 ## Conversation
 
 - Message: avatar, then the author in `medium` `text` and the time in `fontSize.sm` `textQuaternary`; the text in
-  `fontSize.lg` `book` `textSecondary` on a 1.6 line with −0.1 px letter spacing and its line breaks. A turn of Golem
-  that the answer of another thread started, such as the result of work that Golem asked that thread for, continues
-  Golem's message before it: no avatar, author, or time, 12 px under it, and its work summary says "From <thread>".
+  `fontSize.lg` `book` `textSecondary` on a 1.6 line with −0.1 px letter spacing and its line breaks. A turn of Shadow
+  that the answer of another thread started, such as the result of work that Shadow asked that thread for, continues
+  Shadow's message before it: no avatar, author, or time, 12 px under it, and its work summary says "From <thread>".
 - Work log: between the meta and the text of an agent's answer, what the agent did before it. A summary in
   `fontSize.md` `textTertiary` with tabular numbers, "Working for 12s" counting up each second while it works, then
   "Worked for 14s", or "Stopped after 14s" when someone stopped it, with a disclosure arrow that turns 90° when open;
@@ -256,10 +256,10 @@ Used by the workspace switcher and action menus.
   spinner and a shimmer lead the summary, and the step it is at follows in `textQuaternary` after a "·": the tool's
   name, "Thinking", or "Writing". Once done, one step pixel for each tool call (the last 24) follows the arrow, 2 px
   apart.
-- Golem's avatar on an answer is the logo. The work log, the spinner, and an approval say how the work goes.
+- Shadow's avatar on an answer is the logo. The work log, the spinner, and an approval say how the work goes.
 - Working spinner: four 4 px `accent` squares, 1 px apart, that light in turn clockwise each 0.25 s, after a thread in
   the sidebar, in a channel's thread list, and after each thread link while that thread's agent works.
-- Shimmer: the words Golem is at now, in `textTertiary` with a light of `text` running over them every 2.2 s.
+- Shimmer: the words Shadow is at now, in `textTertiary` with a light of `text` running over them every 2.2 s.
 - Stop: while the agent works and the composer is empty, the composer's send button is Stop, with a stop icon. With
   text or files in the composer, it is Send again, with a steer icon (`arrow.turn.left.up`) and "Steer". Stop also
   stops the threads the agent asked for something, which still work on that message.

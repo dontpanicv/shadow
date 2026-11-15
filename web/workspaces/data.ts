@@ -189,8 +189,8 @@ export function setSettled(
   });
 }
 
-const OPENED = "golem-opened";
-const OPEN_CHANNELS = "golem-open-channels";
+const OPENED = "shadow-opened";
+const OPEN_CHANNELS = "shadow-open-channels";
 
 /** The ids of the channels whose threads this browser shows in the sidebar; the others start folded. */
 export function openChannels(): string[] {

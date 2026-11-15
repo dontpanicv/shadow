@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 async function open(): Promise<Learned> {
-  const directory = await mkdtemp(join(tmpdir(), "golem-learned-"));
+  const directory = await mkdtemp(join(tmpdir(), "shadow-learned-"));
   directories.push(directory);
   return new Learned(join(directory, "memory.sqlite"));
 }

@@ -19,7 +19,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 const SOURCES: Record<UsageSource, string> = {
   thread: "Channel threads",
-  orchestrator: "Golem",
+  orchestrator: "Shadow",
   routine: "Routines",
   reminder: "Reminders",
   intake: "Accounts",

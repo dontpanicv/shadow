@@ -67,7 +67,7 @@ export const llmApiRoutes: readonly Route[] = [
             ...row,
             name: row.userId
               ? (names.get(row.userId) ?? "Former member")
-              : "Golem",
+              : "Shadow",
           })) ?? null,
       });
     }),
