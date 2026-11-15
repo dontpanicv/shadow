@@ -598,16 +598,21 @@ export class Integrations {
 
   /** Completes the sign-in that the provider returned to Shadow. */
   async finishCallback(user: User, address: string): Promise<string> {
-    const state = new URL(address).searchParams.get("state") ?? "";
-    const pending = this.signIns.get(state);
+    const { search } = new URL(address);
+    const pending = this.signIns.get(
+      new URLSearchParams(search).get("state") ?? ""
+    );
     if (!pending) {
       throw new HttpError(400, "This sign-in has expired");
     }
+    // Behind a proxy the request address is not the public one, so the callback keeps only its query.
+    const callback = new URL(pending.provider.redirectUrl);
+    callback.search = search;
     await this.finishConnect(
       pending.companyId,
       user,
       pending.connector.id,
-      address
+      callback.href
     );
     return pending.connector.name;
   }

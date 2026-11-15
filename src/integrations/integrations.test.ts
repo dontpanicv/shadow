@@ -213,8 +213,8 @@ test("people connect an MCP server by signing in, and agents get its tools", asy
   expect(page.searchParams.get("resource")).toBe(`${page.origin}/mcp`);
   expect(page.searchParams.get("code_challenge_method")).toBe("S256");
   const state = page.searchParams.get("state")!;
-  // The provider returns the browser to Shadow.
-  const address = `http://localhost:3000/api/v1/integrations/callback?code=code-1&state=${state}`;
+  // The provider returns the browser to Shadow, whose proxy gives the request another address.
+  const address = `http://127.0.0.1:3001/api/v1/integrations/callback?code=code-1&state=${state}`;
 
   await expect(
     integrations.finishConnect(
