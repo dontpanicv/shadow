@@ -496,6 +496,10 @@ Future checks run from durable times, even without new messages. Before a no-rep
 coverage and related replies. Passive filing starts no thread turn. Useful thread reviews can run silently. A useful development is posted
 in its existing subject thread, as a visible Shadow message with attached source files; no agent starts on it, and
 the thread's agent works only when a person asks there.
+Each person chooses which of their own accounts Shadow reads. Gmail uses Google's MCP server to read new mail and sent
+replies; Plaud reads recording summaries; personal Slack reads direct messages, the person's own messages and mentions,
+and replies in those threads. Company Slack history alone does not create a person's Following checks. Each person's
+evidence, checks, and morning review use only that person's watched accounts.
 When no thread matches a useful development, Shadow starts a subject thread in one of the person's own private
 channels. If none fits, Shadow creates a private channel and its first thread. Invitations and tickets can start these threads.
 Channel names cover lasting subjects; thread titles name specific matters. The normal agent can search connected

@@ -691,7 +691,7 @@ test("all Google MCP servers use Shadow’s configured sign-in client", async ()
   expect(services.list(companyId, notOwner)).toHaveLength(6);
   for (const service of services.list(companyId, notOwner)) {
     expect(service.client?.clientId).toBe("workspace-client");
-    expect(service.watchable).toBe(false);
+    expect(service.watchable).toBe(service.id === "google");
   }
 });
 

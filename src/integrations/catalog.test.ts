@@ -43,6 +43,7 @@ test("the catalog has the work integrations and all six Google MCP servers", () 
     expect(byId[id]!.clientKey).toBe("google");
   }
   expect(byId.google_calendar!.hiddenTools).toContain("respond_to_event");
+  expect(byId.google!.watch).toBeDefined();
 });
 
 test("an MCP tool's name is one that codemode can write, with the connector's prefix once", () => {
