@@ -412,4 +412,9 @@ test("a person's channels are those where they wrote or a message mentions them"
   expect(await involved(alice)).toEqual(["random", "support"]);
   // Bob has no Slack account with his email.
   expect(await involved(bob)).toEqual([]);
+  // The morning review comes at 08:00 in the time zone of the person's Slack profile.
+  expect(await bot.timeZoneOf(company.id, "alice@example.com")).toBe(
+    "Asia/Bangkok"
+  );
+  expect(await bot.timeZoneOf(company.id, bob.email)).toBeNull();
 });

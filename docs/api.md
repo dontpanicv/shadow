@@ -506,7 +506,7 @@ When no thread matches a useful development, Shadow starts a subject thread in o
 channels. If none fits, Shadow creates a private channel and its first thread. Invitations and tickets can start these threads.
 Channel names cover lasting subjects; thread titles name specific matters. The normal agent can search connected
 accounts for older related sources. No background worker thread is made. Nonurgent developments wait for the person's morning
-review in the 08:00 Europe/Prague hour: one plan groups them by matter, drops what is handled or stale, posts one
+review in the 08:00 hour of the person's Slack time zone, else the server's: one plan groups them by matter, drops what is handled or stale, posts one
 message to each thread with what it asks of the person, nudges each open ask that is still unsolved every 2 days in the morning summary, and
 sends one summary of the matters with an ask or a deadline to the person's own thread with a notification (see `docs/proactive.md`). One urgent delivery group belongs to one person and one subject thread. Stable request ids
 prevent duplicate review messages, runs, and notices. A resolved check cancels queued reviews. A `QUIET` answer sends

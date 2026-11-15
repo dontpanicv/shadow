@@ -12,6 +12,8 @@ export interface SlackUser {
   readonly id?: string;
   readonly name?: string;
   readonly real_name?: string;
+  /** The person's time zone in their Slack profile, such as Asia/Bangkok. */
+  readonly tz?: string;
   readonly profile?: {
     readonly real_name?: string;
     readonly display_name?: string;

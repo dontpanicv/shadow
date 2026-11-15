@@ -216,7 +216,9 @@ export async function createApp(
     llm,
     audit,
     notifications,
-    reminders
+    reminders,
+    // The Slack bot is made below; the review asks it only once Shadow runs.
+    (companyId, email) => slackBot.timeZoneOf(companyId, email)
   );
   // The Slack bot works for no person; the files of a channel take the member that background work acts as.
   const slackBot = new SlackBot(

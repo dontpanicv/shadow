@@ -139,8 +139,14 @@ export class SlackBot {
   private readonly timers: ReturnType<typeof setInterval>[] = [];
   private readonly stopping = new AbortController();
   private readonly connectTo: ((url: string) => SocketLike) | undefined;
-  /** The Slack name of each email, `<company id>/<email>`; null for an email that has no Slack account. */
-  private readonly slackNames = new Map<string, string | null>();
+  /**
+   * The Slack user of each email, `<company id>/<email>`, and when Slack gave it; null for an email that has no Slack
+   * account. A person who travels changes their time zone, so a lookup holds for 6 hours.
+   */
+  private readonly slackUsers = new Map<
+    string,
+    { readonly user: SlackUser | null; readonly at: number }
+  >();
   private surface: SlackSurfacePort | null = null;
 
   constructor(
@@ -217,14 +223,37 @@ export class SlackBot {
       .map((channel) => channel.id);
   }
 
-  /** The name that the kept messages give the Slack user with this email; Slack's users.lookupByEmail names them once. */
+  /**
+   * The time zone of the person with this email, as their Slack profile gives it, such as Asia/Bangkok; null without a
+   * bot, without a Slack account, or when Slack does not answer.
+   */
+  async timeZoneOf(companyId: string, email: string): Promise<string | null> {
+    const row = this.row(companyId);
+    const user = row
+      ? await this.slackUser(companyId, row, email).catch(() => null)
+      : null;
+    return user?.tz ?? null;
+  }
+
+  /** The name that the kept messages give the Slack user with this email. */
   private async slackName(
     companyId: string,
     row: BotRow,
     email: string
   ): Promise<string | null> {
+    const user = await this.slackUser(companyId, row, email);
+    return user ? slackPersonName(user, "") : null;
+  }
+
+  /** The Slack user with this email, from Slack's users.lookupByEmail at most every 6 hours. */
+  private async slackUser(
+    companyId: string,
+    row: BotRow,
+    email: string
+  ): Promise<SlackUser | null> {
     const key = `${companyId}/${email.toLowerCase()}`;
-    if (!this.slackNames.has(key)) {
+    const known = this.slackUsers.get(key);
+    if (!known || Date.now() - known.at > 6 * 60 * 60_000) {
       const { user } = (await this.api
         .call(
           this.secrets.decrypt(row.token),
@@ -238,9 +267,9 @@ export class SlackBot {
           }
           throw error;
         })) as { user?: SlackUser };
-      this.slackNames.set(key, user ? slackPersonName(user, "") : null);
+      this.slackUsers.set(key, { user: user ?? null, at: Date.now() });
     }
-    return this.slackNames.get(key) ?? null;
+    return this.slackUsers.get(key)!.user;
   }
 
   /**

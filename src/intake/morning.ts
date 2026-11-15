@@ -11,6 +11,8 @@ import {
 export interface MorningInput {
   owner: string;
   now: number;
+  /** The owner's time zone, such as their Slack profile gives it; the company's when not given. */
+  timeZone?: string;
   updates: {
     id: string;
     /** The thread it waits for, or null for a proposed new thread. */
@@ -86,8 +88,8 @@ export async function planMorning(
     MORNING_SYSTEM,
     JSON.stringify({
       ...input,
-      currentTime: localTime(input.now),
-      timeZone: timeZone(),
+      currentTime: localTime(input.now, input.timeZone),
+      timeZone: input.timeZone ?? timeZone(),
     })
   );
   const plan = validateMorningPlan(

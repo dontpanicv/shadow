@@ -26,9 +26,9 @@ export function localTime(time: number, zone = timeZone()): string {
   return `${local.year}-${local.month}-${local.day}T${local.hour}:${local.minute}${offset < 0 ? "-" : "+"}${hours}:${minutes}`;
 }
 
-/** The company's calendar day of a time, as YYYY-MM-DD. */
-export function localDay(time: number): string {
-  const local = wallClock(time, timeZone());
+/** The company's calendar day of a time, as YYYY-MM-DD; `zone` for a person in another time zone. */
+export function localDay(time: number, zone = timeZone()): string {
+  const local = wallClock(time, zone);
   return `${local.year}-${local.month}-${local.day}`;
 }
 
@@ -38,9 +38,9 @@ export function localClock(time: number): string {
   return `${local.hour}:${local.minute}`;
 }
 
-/** The hour of the company's clock, 0 to 23. */
-export function localHour(time: number): number {
-  return Number(wallClock(time, timeZone()).hour);
+/** The hour of the company's clock, 0 to 23; `zone` for a person in another time zone. */
+export function localHour(time: number, zone = timeZone()): number {
+  return Number(wallClock(time, zone).hour);
 }
 
 /** `days` calendar days after `at`, at the same time of the company's clock, also across daylight-saving changes. */

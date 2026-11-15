@@ -58,7 +58,7 @@ addresses, or code and data from employers or clients.
   the person's private channels. Shadow is the
   person's second brain, not their worker: no source starts an agent, and an agent does research, analysis, or a draft
   only when a person asks. An urgent development is posted at once. The others wait for the person's one morning
-  review in the 08:00 hour, which groups them by matter, posts one message to each thread with what it asks of the
+  review in the 08:00 hour of the person's Slack time zone, which groups them by matter, posts one message to each thread with what it asks of the
   person, keeps a check of each ask that the morning summary nudges every 2 days until it is handled or the person
   says it is done, rejected, or someone else's, and sends the person one summary with a notification. Another notification needs a separate supported reason and a fresh
   source check; useful answers alone never notify. No separate worker thread is made. Code selects personally relevant Slack

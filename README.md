@@ -97,7 +97,7 @@ evidence before it decides whether you need to know. An acknowledgement does not
 without a date gets an internal review, with no claim that a deadline was missed.
 
 - **Urgent developments** are posted at once.
-- **The others wait for the morning review** in the 08:00 hour (Europe/Prague). One plan groups them by matter, posts
+- **The others wait for the morning review** in the 08:00 hour of the person's time zone, as their Slack profile gives it, else the server's. One plan groups them by matter, posts
   one message to each thread, and sends you one summary with a notification.
 - **A separate notification** needs exact source evidence: you asked for it, an awaited reply needs attention, a
   stated time arrived, or preparation helps now. Shadow checks the latest source first. Normal messages, mentions,

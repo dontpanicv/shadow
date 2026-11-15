@@ -19,6 +19,7 @@ import {
   localDay,
   localHour,
   localTime,
+  timeZone,
 } from "../platform/time.ts";
 import type { Reminders } from "../reminders/reminders.ts";
 import type { Indexer } from "../search/search.ts";
@@ -147,7 +148,12 @@ export class Intake {
     private readonly llm: IntakeLlm,
     readonly audit: Audit,
     private readonly notifications: Pick<Notifications, "notify">,
-    private readonly reminders: Pick<Reminders, "list">
+    private readonly reminders: Pick<Reminders, "list">,
+    /** The time zone of a person by their email, such as Slack gives it; null for the company's. */
+    private readonly timeZoneOf: (
+      companyId: string,
+      email: string
+    ) => Promise<string | null>
   ) {
     this.recall = new IntakeRecall(
       database,
@@ -1038,7 +1044,6 @@ export class Intake {
         "SELECT * FROM intake_delivery WHERE cancelled_at IS NULL AND delivered_at IS NULL ORDER BY created_at"
       )
       .all() as Delivery[];
-    const hour = localHour(now);
     const claimed = new Set([...this.claims.values()].flat());
     const allowed = pending.filter(
       (delivery) =>
@@ -1047,16 +1052,24 @@ export class Intake {
         this.deliveryAllowed(delivery) &&
         !this.backingOff(delivery.company_id, delivery.owner_id, now)
     );
-    // The brief updates wait for the person's one morning review in the 08:00 hour; the others go now.
-    if (hour === 8) {
-      const brief = Map.groupBy(
-        allowed.filter((delivery) => delivery.attention === "brief"),
-        (delivery) => `${delivery.company_id}:${delivery.owner_id}`
-      );
-      // Also for a person with nothing waiting, whose summary an earlier try may not have sent.
-      for (const person of enabled) {
-        const [companyId, ownerId] = person.split(":") as [string, string];
-        await this.morning(companyId, ownerId, brief.get(person) ?? [], now);
+    // The brief updates wait for the person's one morning review in the 08:00 hour of their own time zone; the others
+    // go now.
+    const brief = Map.groupBy(
+      allowed.filter((delivery) => delivery.attention === "brief"),
+      (delivery) => `${delivery.company_id}:${delivery.owner_id}`
+    );
+    // Also for a person with nothing waiting, whose summary an earlier try may not have sent.
+    for (const person of enabled) {
+      const [companyId, ownerId] = person.split(":") as [string, string];
+      const zone = await this.zoneOf(companyId, ownerId);
+      if (localHour(now, zone) === 8) {
+        await this.morning(
+          companyId,
+          ownerId,
+          brief.get(person) ?? [],
+          now,
+          zone
+        );
       }
     }
     const eligible = allowed.filter(
@@ -1112,10 +1125,11 @@ export class Intake {
     companyId: string,
     ownerId: string,
     deliveries: Delivery[],
-    now: number
+    now: number,
+    zone: string
   ): Promise<void> {
     const owner = this.owner(companyId, ownerId);
-    const day = localDay(now);
+    const day = localDay(now, zone);
     const doneKey = `intake.morning:${companyId}:${ownerId}`;
     const trace = `morning:${companyId}:${ownerId}:${day}`;
     // Its own back-off: a failing plan never holds back the person's urgent updates.
@@ -1149,7 +1163,8 @@ export class Intake {
             waiting,
             nudges,
             owner,
-            now
+            now,
+            zone
           );
           const plan = await this.morningPlan(
             trace,
@@ -1192,12 +1207,29 @@ export class Intake {
     }
   }
 
+  /** The person's own time zone, else the company's: Slack's may be missing or one that this machine does not know. */
+  private async zoneOf(companyId: string, ownerId: string): Promise<string> {
+    const owner = this.owner(companyId, ownerId);
+    const zone = owner
+      ? await this.timeZoneOf(companyId, owner.email).catch(() => null)
+      : null;
+    try {
+      return zone
+        ? new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions()
+            .timeZone
+        : timeZone();
+    } catch {
+      return timeZone();
+    }
+  }
+
   private async morningInput(
     companyId: string,
     deliveries: Delivery[],
     nudges: FutureCheck[],
     owner: User,
-    now: number
+    now: number,
+    zone: string
   ): Promise<MorningInput> {
     const originals = this.deliveryEvidence(deliveries, owner);
     const targets = [
@@ -1235,6 +1267,7 @@ export class Intake {
     return {
       owner: owner.name,
       now,
+      timeZone: zone,
       updates: deliveries.map((delivery) => {
         const subject = delivery.subject
           ? (JSON.parse(delivery.subject) as Assessment)

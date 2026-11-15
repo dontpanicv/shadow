@@ -43,7 +43,7 @@ They do not need to maintain a task list or set a routine for each expected repl
    source as a file, and supported attachments to the existing subject thread. No agent starts on it: Shadow is the
    person's second brain, not their worker, and the thread's agent works only when the person asks there. Normal
    filing stays silent. Nonurgent changes wait for the person's morning review (`src/intake/morning.ts`), once a day in
-   the 08:00 Europe/Prague hour. Shadow reads their source accounts again, then one model call plans all of the
+   the 08:00 hour of the person's time zone, as their Slack profile gives it, else the server's. Shadow reads their source accounts again, then one model call plans all of the
    person's waiting updates together: it groups them by matter, puts each matter into its existing thread or one new
    thread, and drops what the newest sources show handled or stale. For each source it reads what came after it in that
    conversation, with the owner's replies, under a limit per conversation. Each matter gets one Shadow message with its

@@ -66,6 +66,8 @@ async function setup(
     learned?: (ownerId: string) => LearnedItem[];
     /** Fails a post to a thread, as when the conversation is not reachable. */
     postFails?: (threadId: string) => boolean;
+    /** The owner's time zone, as their Slack profile gives it. */
+    timeZone?: string;
   } = {}
 ) {
   app = await startTestApp();
@@ -343,7 +345,8 @@ async function setup(
       },
       new Audit(join(app.dataDirectory, "test-audit.sqlite")),
       app.app.notifications,
-      { list: () => (options.reminders?.(owner.id) ?? []) as never }
+      { list: () => (options.reminders?.(owner.id) ?? []) as never },
+      async () => options.timeZone ?? null
     );
   intake = create();
   return {
@@ -1250,6 +1253,44 @@ test("the morning review posts one message to the thread without an agent run, t
   await intake.tick(Date.parse("2026-10-02T08:01:00+02:00"));
   expect(run.posts).toHaveLength(2);
   expect(run.plans).toHaveLength(1);
+});
+
+test("the morning review comes in the 08:00 hour of the owner's own time zone, as Slack gives it", async () => {
+  const run = await setup({
+    timeZone: "Asia/Bangkok",
+    decide: (input) =>
+      input.newEvidenceIds.map((id) => ({
+        ...proposedSubject(input, "OpenSearch logs"),
+        evidence: [id],
+      })),
+    plan: (input) => ({
+      summary: "One matter today",
+      matters: [
+        {
+          updates: input.updates.map((update) => update.id),
+          threadId: null,
+          title: "OpenSearch incident",
+          ...newThreadPlace(input),
+          message: "Francisco sent the logs [1].",
+          ask: "Reply to Francisco about the logs",
+          due: null,
+          line: "Francisco sent the OpenSearch logs",
+        },
+      ],
+      dropped: [],
+      closed: [],
+    }),
+  });
+  run.items([item("logs", "Here are the Docker logs.", false, START)]);
+  await intake.tick(START);
+  // 08:00 in Prague is 13:00 in Bangkok: no review.
+  await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
+  expect(run.plans).toHaveLength(0);
+  // 08:00 in Bangkok.
+  await intake.tick(Date.parse("2026-10-03T08:00:00+07:00"));
+  expect(run.plans).toHaveLength(1);
+  expect(run.plans[0]!.timeZone).toBe("Asia/Bangkok");
+  expect(run.posts.at(-1)!.text).toContain("One matter today");
 });
 
 test("the morning review puts the updates of one matter into one new thread, starts no agent, and nudges what it asks every 2 days until it is handled", async () => {

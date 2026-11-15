@@ -134,7 +134,10 @@ export function fakeSlack() {
           );
           return Response.json(
             id
-              ? { ok: true, user: { id, real_name: slack.users[id] } }
+              ? {
+                  ok: true,
+                  user: { id, real_name: slack.users[id], tz: "Asia/Bangkok" },
+                }
               : { ok: false, error: "users_not_found" }
           );
         }
