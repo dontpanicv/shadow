@@ -130,8 +130,8 @@ addresses, or code and data from employers or clients.
 - How Shadow talks (voice, length, humor) is only in `SOUL` in `src/threads/threads.ts`, the first section of every
   agent's prompt; `INSTRUCTIONS` and the task texts say how it works and never set a tone.
 - Only connector tools with an `approval` or in `approvedTools` wait for a person. All web traffic of agents goes through `Egress`
-  (`src/platform/egress.ts`), never a plain `fetch`. Only the work computers (`src/computer/`), VMs with their own
-  network, reach the web without it; `scripts/install-computer-firewall.sh` keeps them off private addresses.
+  (`src/platform/egress.ts`), never a plain `fetch`. Only the work computer (`src/computer/`), one VM with its own
+  network, reaches the web without it; `scripts/install-computer-firewall.sh` keeps it off private addresses.
 
 ## Design System
 

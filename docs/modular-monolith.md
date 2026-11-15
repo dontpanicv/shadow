@@ -31,7 +31,7 @@ src/
 ├── artifacts/               The pages and small apps agents make for a channel, their link pages, and their data
 ├── browser/                 The headless Chrome of each thread and person, which agents visit websites with
 ├── sources/                 The company's git repositories that agents read, kept current from their remotes
-├── computer/                The macOS work computer of each person, a VM that agents run commands and apps on
+├── computer/                The one macOS work computer, a VM that all agents run commands and apps on
 ├── notifications/           Each person's inbox
 ├── threads/                 One Pi Durable session per company, a conversation per thread, the agent tools, and the
 │                            files of each channel

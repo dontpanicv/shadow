@@ -254,10 +254,10 @@ stays there when the thread is settled. The side panel of a thread shows the art
   [agent-browser](https://github.com/vercel-labs/agent-browser). They search the web with ChatGPT's own search,
   because search engines block a headless browser. All their web traffic goes through one egress that blocks the
   server, the office network, and private addresses.
-- **Work computer.** Each person has a macOS VM on the server, made with Vercel's
-  [agent-desktop](https://agent-browser.dev/desktop/sandboxes/macos), where agents run commands and apps: convert
-  documents and PDFs, pack and unpack archives, and work with pictures and audio. [docs/computer.md](docs/computer.md)
-  has the setup.
+- **Work computer.** All agents share one macOS VM on the server, made with Vercel's
+  [agent-desktop](https://agent-browser.dev/desktop/sandboxes/macos), where they run commands, untrusted code, and
+  apps: convert documents and PDFs, pack and unpack archives, and work with pictures and audio.
+  [docs/computer.md](docs/computer.md) has the setup.
 - **Routines and reminders.** Ask in plain words: "check the support queue every morning", "remind me on Friday to
   send the invoice". A routine is a schedule, instructions, and an optional script that collects what is new; when the
   script finds nothing, the run ends without the model. A reminder comes at a time.
@@ -313,7 +313,7 @@ client_secret = "…"
 To let agents read the company's code and product docs, list its git repositories. Shadow keeps a copy of each in
 `data/sources/` and pulls it every 10 minutes, so a release reaches the agents within minutes. Agents search and read
 the copies with the `sources_` tools, get the `SKILL.md` files of the `skills` folders as skills, and find the copies
-on their work computer in `/Volumes/My Shared Files/sources`. A restart picks up a changed list.
+on the work computer in `/Volumes/My Shared Files/sources`. A restart picks up a changed list.
 
 ```toml
 [[sources]]

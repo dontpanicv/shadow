@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BASE, Computer, type ComputerRunner } from "./computer.ts";
+import { BASE, Computer, type ComputerRunner, MACHINE } from "./computer.ts";
+import { workFolder } from "./tools.ts";
 
 /** A fake agent-desktop, ssh, and scp: sandboxes with states, and a guest clipboard. */
 function fakeHost(sandboxes: Record<string, string>) {
@@ -80,76 +81,60 @@ function fakeHost(sandboxes: Record<string, string>) {
 }
 
 describe("Computer", () => {
-  test("clones a person's computer from the base, copies the files, and runs the command in ~/work", async () => {
+  test("clones the one work computer from the base, copies the files, and runs the command in the thread's folder", async () => {
     const host = fakeHost({ [BASE]: "stopped" });
     const computer = new Computer("/tmp/shadow-computer", host.run);
-    const machine = computer.machineOf("c1", "ada");
+    const folder = workFolder("c1", 7);
 
     const text = await computer.shell(
-      machine,
+      folder,
       "soffice --headless --convert-to pdf report.docx",
       [{ path: "/data/files/0192-report.docx", name: "report.docx" }],
       60_000
     );
 
     expect(text).toBe(
-      "ran: cd work && soffice --headless --convert-to pdf report.docx\n[exit status 0]"
+      `ran: cd work/${folder} && soffice --headless --convert-to pdf report.docx\n[exit status 0]`
     );
-    expect(host.sandboxes[machine]).toBe("running");
+    expect(host.sandboxes[MACHINE]).toBe("running");
     const create = host.calls.find((call) => call.includes("create"));
     expect(create).toContain(`from=${BASE}`);
     const copy = host.calls.find((call) => call[0] === "scp");
     expect(copy?.slice(-2)).toEqual([
       "/data/files/0192-report.docx",
-      "worker@192.168.64.7:work/report.docx",
+      `worker@192.168.64.7:work/${folder}/report.docx`,
     ]);
   });
 
-  test("keeps one computer for each person, with a valid sandbox name", () => {
-    const computer = new Computer("/tmp/shadow-computer", fakeHost({}).run);
-    const ada = computer.machineOf("c1", "ada");
-    expect(ada).toMatch(/^shadow-[0-9a-f]{20}$/);
-    expect(ada.length).toBeLessThanOrEqual(32);
-    expect(computer.machineOf("c1", "bob")).not.toBe(ada);
-    expect(computer.machineOf("c1", null)).not.toBe(ada);
-  });
-
-  test("stops an idle computer when two VMs run", async () => {
-    const host = fakeHost({
-      [BASE]: "stopped",
-      "shadow-old": "running",
-      "shadow-other": "running",
-    });
+  test("gives each thread its own work folder on the one computer", async () => {
+    const host = fakeHost({ [BASE]: "stopped" });
     const computer = new Computer("/tmp/shadow-computer", host.run);
+    expect(workFolder("c1", 7)).toMatch(/^[0-9a-f]{16}$/);
+    expect(workFolder("c1", 8)).not.toBe(workFolder("c1", 7));
 
-    await computer.shell(computer.machineOf("c1", "ada"), "ls", [], 60_000);
+    await computer.shell(workFolder("c1", 7), "ls", [], 60_000);
+    await computer.shell(workFolder("c1", 8), "ls", [], 60_000);
 
-    const stopped = Object.entries(host.sandboxes).filter(
-      ([, state]) => state === "stopped"
-    );
-    expect(stopped.length).toBe(2);
+    expect(host.calls.filter((call) => call.includes("create")).length).toBe(1);
+    expect(host.calls.filter((call) => call.includes("start")).length).toBe(1);
   });
 
   test("says when the server has no base computer", async () => {
     const host = fakeHost({});
     const computer = new Computer("/tmp/shadow-computer", host.run);
     await expect(
-      computer.shell(computer.machineOf("c1", "ada"), "ls", [], 60_000)
+      computer.shell(workFolder("c1", 7), "ls", [], 60_000)
     ).rejects.toThrow("docs/computer.md");
   });
 
   test("gives a screenshot of the desktop as a picture", async () => {
     const host = fakeHost({ [BASE]: "stopped" });
     const computer = new Computer("/tmp/shadow-computer", host.run);
-    const result = await computer.desktop(computer.machineOf("c1", "ada"), [
-      "screenshot",
-      "--screen",
-      "0",
-    ]);
+    const result = await computer.desktop(["screenshot", "--screen", "0"]);
     expect(result.screenshot).toEqual(Uint8Array.fromBase64("iVBORw=="));
   });
 
-  test("gives a computer the newest sources in its shared folder, before it starts and between commands", async () => {
+  test("gives the computer the newest sources in its shared folder, before it starts and between commands", async () => {
     const root = await mkdtemp(join(tmpdir(), "shadow-share-"));
     try {
       const copies = join(root, "sources");
@@ -171,18 +156,18 @@ describe("Computer", () => {
         return host.run(command, timeout);
       };
       const computer = new Computer(join(root, "computer"), run, sources, root);
-      const machine = computer.machineOf("c1", "ada");
-      const shared = join(root, "sandboxes", machine, "vm", "share", "sources");
-      await computer.shell(machine, "ls", [], 60_000);
+      const folder = workFolder("c1", 7);
+      const shared = join(root, "sandboxes", MACHINE, "vm", "share", "sources");
+      await computer.shell(folder, "ls", [], 60_000);
       expect(await Bun.file(join(shared, "pipes", "README.md")).text()).toBe(
         "v1"
       );
-      await computer.shell(machine, "ls", [], 60_000);
+      await computer.shell(folder, "ls", [], 60_000);
       // The same version makes no new copy.
       expect(await readdir(join(shared, ".."))).toEqual(["sources"]);
       await Bun.write(join(copies, "pipes", "README.md"), "v2");
       version = 2;
-      await computer.shell(machine, "ls", [], 60_000);
+      await computer.shell(folder, "ls", [], 60_000);
       expect(await Bun.file(join(shared, "pipes", "README.md")).text()).toBe(
         "v2"
       );

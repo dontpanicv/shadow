@@ -1,5 +1,5 @@
 #!/bin/sh
-# Lets the agents' work computers reach only the public internet, as Shadow's egress does for the browser: a pf
+# Lets the agents' work computer reach only the public internet, as Shadow's egress does for the browser: a pf
 # anchor that blocks the VMs from this Mac, the office network, and private addresses, and a LaunchDaemon that loads
 # it at each boot. Replies to the connections that this Mac opens to a VM, such as Shadow's SSH, still pass. Other VMs
 # on the same VM network of macOS, such as colima, get the same rules.

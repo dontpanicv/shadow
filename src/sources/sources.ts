@@ -60,7 +60,7 @@ export class Sources {
     return this.sources.map((source) => source.name);
   }
 
-  /** Grows each time a pull changes a copy, so a copy of the copies, such as a work computer's, knows it is old. */
+  /** Grows each time a pull changes a copy, so a copy of the copies, such as the work computer's, knows it is old. */
   version(): number {
     return this.changes;
   }
