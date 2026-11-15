@@ -527,22 +527,37 @@ test("an unasked turn offers a routine, and it becomes the person's own, posting
   await close();
 });
 
-test("a routine asked for in a person's own thread names its channel, so its runs do not go to everyone unasked", async () => {
+test("a routine asked for in a person's own thread runs in their own channel, and a turn without a person makes none", async () => {
   const { company, close } = await setup();
   const own = await shadow.app.threads.orchestrator(company.id, alice);
   const create = (await shadow.app.routines.tools(company.id)).find(
     (tool) => tool.name === "routines_create"
   )!;
-  await expect(
+  const ask = (taskId: string) =>
     create.execute(
       {
         name: "Mondays",
         schedule: "0 9 * * 1",
         instructions: "Tell me what needs me.",
       },
-      { conversationId: own.conversationId, taskId: "routine-1" } as never,
+      { conversationId: own.conversationId, taskId } as never,
       BACKGROUND_CONTEXT
-    )
-  ).rejects.toThrow("Name the channel of the routine");
+    );
+  await expect(ask("routine-1")).rejects.toThrow(
+    "Only a person's own request makes a routine."
+  );
+  await shadow.app.threads.send(own.id, alice, "Hello");
+  await until(
+    () => shadow.app.threads.messages(own),
+    (state) => !state.running && state.messages.length === 2
+  );
+  await ask("routine-2");
+  const [routine] = shadow.app.routines.inCompany(company.id, alice.id);
+  const personal = shadow.app.companies.personalChannelOf(company.id, alice);
+  expect(personal).toMatchObject({ ownerId: alice.id, personal: true });
+  expect(routine).toMatchObject({
+    name: "Mondays",
+    channelId: personal.id,
+  });
   await close();
 });

@@ -2367,7 +2367,7 @@ test("a new morning subject stays a proposal until due, survives restart, and cr
     app.app.companies
       .channelsIn(run.companyId, run.owner.id)
       .map((channel) => channel.name)
-  ).toEqual(["general"]);
+  ).toEqual(["general", "alice"]);
   expect(
     app.app.database
       .query("SELECT thread_id,subject FROM intake_delivery")
@@ -2443,7 +2443,7 @@ test("an owner reply cancels a queued new subject without leaving a channel, thr
     app.app.companies
       .channelsIn(run.companyId, run.owner.id)
       .map((channel) => channel.name)
-  ).toEqual(["general"]);
+  ).toEqual(["general", "alice"]);
   expect(
     app.app.database
       .query("SELECT count(*) n FROM intake_item WHERE archived_id IS NOT NULL")

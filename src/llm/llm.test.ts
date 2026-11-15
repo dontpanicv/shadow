@@ -521,11 +521,15 @@ function threadsOver(dataDirectory: string, llm: Llm) {
       summary: null,
       icon: null,
       slackId: null,
+      personal: false,
       threads: [],
     }),
     channelsIn: () => [],
     allChannelsIn: () => [],
     orchestratorOf: () => null,
+    personalChannelOf: () => {
+      throw new Error("No channels here");
+    },
     addChannel: () => {
       throw new Error("No channels here");
     },

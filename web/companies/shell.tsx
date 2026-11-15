@@ -382,6 +382,8 @@ function CompanyNav({
           </div>
           {channels
             .filter((channel) => channel.ownerId !== null)
+            // The person's own channel comes first, as a DM to oneself does in Slack.
+            .toSorted((a, b) => Number(b.personal) - Number(a.personal))
             .map(channelItem)}
           {admin ? (
             <Link

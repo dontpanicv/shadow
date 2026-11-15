@@ -656,7 +656,9 @@ test("an agent runs a script that calls its tools, and only the script's output 
   );
   await idle(garden.id, run.id);
   expect(toolResults).toContainEqual(
-    expect.stringMatching(/^Script completed\n.*\nOutput:\n#general, #seeds$/s)
+    expect.stringMatching(
+      /^Script completed\n.*\nOutput:\n#general, #alice \(private, the person's own\), #seeds$/s
+    )
   );
 });
 
@@ -2033,7 +2035,7 @@ test("an agent creates private channels, searches, and merges them, and a merge 
   );
   expect(
     shadow.app.companies.channels(home.id, alice).map((channel) => channel.name)
-  ).toEqual(["general", "desk"]);
+  ).toEqual(["general", "alice", "desk"]);
   // The thread, the file that no thread mentions, and the routine go to #desk; nothing is lost.
   expect(shadow.app.companies.thread(packing.id, alice).channelId).toBe(
     desk.id
@@ -2117,13 +2119,24 @@ test("people merge only a private channel into another; a channel that every mem
   expect((await merge(general!.id, food.id, outsider)).status).toBe(404);
   expect((await merge(general!.id, food.id)).status).toBe(403);
   expect((await merge(food.id, mine.id)).status).toBe(403);
+  // The person's own channel stays; another private channel can merge into it.
+  const own = shadow.app.companies.personalChannelOf(company.id, alice);
+  expect((await merge(own.id, mine.id)).status).toBe(403);
+  // A second person with the same name gets an own channel with a number.
+  expect(
+    shadow.app.companies.personalChannelOf(company.id, {
+      id: "another-alice",
+      name: "Alice",
+      email: "alice@elsewhere.example",
+    }).name
+  ).toBe("alice-2");
   // A private channel merges into a shared one.
   expect((await merge(mine.id, food.id)).status).toBe(204);
   expect(
     shadow.app.companies
       .channels(company.id, alice)
       .map((channel) => channel.name)
-  ).toEqual(["general", "food"]);
+  ).toEqual(["general", "alice", "food"]);
   expect(shadow.app.companies.orchestratorOf(company.id, alice.id)!.id).toBe(
     orchestrator.id
   );

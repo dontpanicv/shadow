@@ -109,11 +109,16 @@ export function routineTools(
       return channel;
     }
     const thread = companies.threadOf(companyId, conversationId);
-    // A person's own thread lives in a shared channel; a routine from it must not post its runs there unasked.
+    // A person's own thread lives in a shared channel; a routine from it runs in their own private channel.
     if (thread?.ownerId) {
-      throw new Error(
-        "Name the channel of the routine: a channel that every member sees shows its runs to everyone, and a private one keeps them for this person (create_channel makes one)."
+      const own = channels.find(
+        (candidate) =>
+          candidate.personal && candidate.ownerId === thread.ownerId
       );
+      if (!own) {
+        throw new Error("Name the channel of the routine.");
+      }
+      return own;
     }
     const channel = channels.find(
       (candidate) => candidate.id === thread?.channelId
@@ -169,7 +174,8 @@ export function routineTools(
         ),
         channel: Type.Optional(
           Type.String({
-            description: "The channel name; default this thread's channel",
+            description:
+              "The channel name; default this thread's channel, or the person's own private channel from their own thread",
           })
         ),
         post_in_slack: Type.Optional(
@@ -182,21 +188,24 @@ export function routineTools(
       // The id comes from the task, so a rerun after a crash finds the routine it made before.
       replay: "safe",
       execute: async (args, api) => {
-        const channel = await channelOf(args.channel, api.conversationId);
         // Its runs are the turns of the person who asked for it, with their own integrations.
         const requester = await threads.requester(
           companyId,
           api.conversationId
         );
+        if (!requester) {
+          throw new Error("Only a person's own request makes a routine.");
+        }
+        const channel = await channelOf(args.channel, api.conversationId);
         const routine = routines.create(companyId, channel.id, {
           name: args.name,
           schedule: args.schedule,
-          place: placeOf(args, requester?.id ?? null),
+          place: placeOf(args, requester.id),
           instructions: args.instructions,
           script: args.script,
           postInSlack: args.post_in_slack,
           id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
-          createdBy: requester?.id ?? "shadow",
+          createdBy: requester.id,
         });
         return {
           output: [

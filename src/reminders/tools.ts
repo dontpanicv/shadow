@@ -154,15 +154,14 @@ export function reminderTools(
       replay: "safe",
       execute: async (args, api) => {
         const { actor, asker } = await actorFor(api.conversationId);
+        if (!asker) {
+          throw new Error("Only a person's own request makes a reminder.");
+        }
         const source = companies.threadOf(companyId, api.conversationId);
         if (!source) {
           throw new Error("This tool works only in a thread.");
         }
-        const recipientId = recipientOf(
-          actor,
-          asker?.id ?? null,
-          args.recipient
-        );
+        const recipientId = recipientOf(actor, asker.id, args.recipient);
         const created = reminders.create(
           companyId,
           actor,
@@ -171,8 +170,8 @@ export function reminderTools(
           {
             text: args.text,
             timeZone: args.timeZone,
-            ...whenOf(args, recipientId, asker?.id ?? null),
-            createdBy: asker?.id ?? null,
+            ...whenOf(args, recipientId, asker.id),
+            createdBy: asker.id,
             id: randomUUIDv5(`shadow:${companyId}:${api.taskId}`, "url"),
           }
         );

@@ -73,7 +73,8 @@ addresses, or code and data from employers or clients.
   `slack-YYYY-MM-DD.md` file of the channel per changed day each minute, and gives a channel quiet for 10 minutes to
   its brief (`Threads.briefFromSlack`).
 - Shadow has one company; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
-  of it belong to one member. Every read of channels, threads, files, artifacts, routines, reminders, search, or memory
+  of it belong to one member. Each member has one own private channel (`channel.personal`,
+  `Companies.personalChannelOf`), where their orchestrator starts the work that concerns only them. Every read of channels, threads, files, artifacts, routines, reminders, search, or memory
   names the `Realm` it serves: the person, or for an agent's turn `Threads.realm`, which is its thread's realm, or in a
   channel every member sees the person whose message the turn answers. Only background work that acts for no person
   uses the `all…` reads.

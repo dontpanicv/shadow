@@ -468,7 +468,7 @@ test("an artifact belongs to its channel: other threads see it after its thread 
   expect(artifacts.get(banana.id, alice).channelId).toBe(general.id);
   expect(
     companies.channels(companyId, alice).map((channel) => channel.name)
-  ).toEqual(["general"]);
+  ).toEqual(["general", "alice"]);
 });
 
 test("the orchestrator's artifacts belong to the company, and an agent puts one in a channel it names", async () => {

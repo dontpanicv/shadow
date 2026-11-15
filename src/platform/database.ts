@@ -784,6 +784,9 @@ const migrations = [
     at INTEGER NOT NULL
   );
   CREATE INDEX slack_decision_company ON slack_decision (company_id, at);`,
+  // companies: each member's own private channel, which Shadow makes for them, like a DM to oneself in Slack.
+  `ALTER TABLE channel ADD COLUMN personal INTEGER NOT NULL DEFAULT 0;
+  CREATE UNIQUE INDEX channel_personal ON channel (company_id, owner_id) WHERE personal = 1 AND deleted_at IS NULL;`,
 ];
 
 export function openDatabase(path: string): Database {

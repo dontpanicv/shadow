@@ -41,7 +41,7 @@ server, with no cloud service between your company and its data.
 - **Channels come from Slack.** The channels that every member sees, such as `#general`, `#sales`, or `#hiring`,
   copy the public channels of the company's Slack. The Slack bot listens to Slack's events over Socket Mode: a new
   channel appears, a rename follows, and a channel that Slack archives hides with its threads until Slack has it
-  again. Nobody makes them by hand. Each person also makes private channels of their own.
+  again. Nobody makes them by hand. Each person has an own private channel, like a DM to oneself in Slack, where their shadow keeps what concerns only them, and can make more private channels.
 - **Admins and users.** An admin runs Company settings: the Slack bot, the people and their roles, the company
   facts, and what Shadow learned. Admins also choose the model and read the agents' feedback. A user works in Shadow.
   The first of `allowed_emails` is the first admin.

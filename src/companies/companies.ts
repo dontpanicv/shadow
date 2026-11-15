@@ -62,6 +62,8 @@ export interface Channel {
   readonly icon: string | null;
   /** The ID of the Slack channel it copies; null for a channel that no Slack channel made. */
   readonly slackId: string | null;
+  /** The member's own private channel, which Shadow makes for each member, like a DM to oneself in Slack. */
+  readonly personal: boolean;
   readonly threads: readonly ThreadSummary[];
 }
 /** Facts about the company that its people write by hand; every agent of the company reads them. */
@@ -188,6 +190,7 @@ export class Companies {
     };
     // The orchestrators live here until the Slack bot links it to Slack's general channel.
     this.addChannel(company.id, "general", user.id, null);
+    this.personalChannelOf(company.id, user);
     return company;
   }
 
@@ -228,9 +231,11 @@ export class Companies {
   allChannelsIn(companyId: string): Channel[] {
     const channels = this.database
       .query(
-        `SELECT id, name, owner_id AS ownerId, summary, icon, slack_id AS slackId FROM channel WHERE company_id = ? AND deleted_at IS NULL AND ${LIVE} ORDER BY created_at, rowid`
+        `SELECT id, name, owner_id AS ownerId, summary, icon, slack_id AS slackId, personal FROM channel WHERE company_id = ? AND deleted_at IS NULL AND ${LIVE} ORDER BY created_at, rowid`
       )
-      .all(companyId) as Omit<Channel, "threads">[];
+      .all(companyId) as (Omit<Channel, "threads" | "personal"> & {
+      personal: number;
+    })[];
     const threads = this.database
       .query(
         "SELECT id, channel_id AS channelId, title, updated_at AS updatedAt, settled_at AS settledAt FROM thread WHERE company_id = ? AND orchestrator = 0 ORDER BY updated_at DESC"
@@ -238,6 +243,7 @@ export class Companies {
       .all(companyId) as ThreadSummary[];
     return channels.map((channel) => ({
       ...channel,
+      personal: channel.personal === 1,
       threads: threads.filter((thread) => thread.channelId === channel.id),
     }));
   }
@@ -246,6 +252,37 @@ export class Companies {
   createChannel(companyId: string, user: User, name: string): Channel {
     this.requireMember(companyId, user);
     return this.addChannel(companyId, name, user.id, user.id);
+  }
+
+  /**
+   * The member's own private channel, made at once when they have none: named after them, else after them with a
+   * number when another channel has that name.
+   */
+  personalChannelOf(
+    companyId: string,
+    person: Pick<User, "id" | "name" | "email">
+  ): Channel {
+    const own = this.allChannelsIn(companyId).find(
+      (channel) => channel.personal && channel.ownerId === person.id
+    );
+    if (own) {
+      return own;
+    }
+    const base = person.name.trim() || person.email.split("@")[0] || "me";
+    for (let number = 1; ; number += 1) {
+      try {
+        const name = number === 1 ? base : `${base} ${number}`;
+        const channel = this.addChannel(companyId, name, person.id, person.id);
+        this.database
+          .query("UPDATE channel SET personal = 1 WHERE id = ?")
+          .run(channel.id);
+        return { ...channel, personal: true };
+      } catch (error) {
+        if (!(error instanceof HttpError && error.status === 409)) {
+          throw error;
+        }
+      }
+    }
   }
 
   /**
@@ -266,6 +303,7 @@ export class Companies {
       summary: null,
       icon: null,
       slackId: null,
+      personal: false,
       threads: [],
     };
     this.database
@@ -667,6 +705,7 @@ export class Companies {
     await this.auth.api.addMember({
       body: { userId: person.id, organizationId: companyId, role: "member" },
     });
+    this.personalChannelOf(companyId, person);
     this.memberAdded(companyId);
     return {
       userId: person.id,
@@ -716,6 +755,7 @@ export class Companies {
       await this.auth.api.addMember({
         body: { userId: person.id, organizationId: companyId, role: "member" },
       });
+      this.personalChannelOf(companyId, person);
       this.memberAdded(companyId);
     }
     return person;

@@ -58,6 +58,7 @@ async function setup() {
   const names = () =>
     shadow.app.companies
       .channels(company.id, alice)
+      .filter((channel) => !channel.personal)
       .map((channel) => [channel.name, channel.ownerId === null]);
   /** The bot's connection opens, and it does what a new connection does. */
   const connected = async () => {

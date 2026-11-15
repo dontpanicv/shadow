@@ -10,7 +10,7 @@ test("the company's one orchestrator from before becomes the own of the person w
     .get() as { user_version: number };
   // The state before the migration of the orchestrators and the one after it: one orchestrator of the company,
   // made by Shadow, no OAuth clients, no channel emojis, no facts, no private channels, and no recent searches.
-  database.run(`ALTER TABLE routine DROP COLUMN post_in_slack; DROP TABLE slack_member; DROP TABLE slack_conversation; DROP TABLE slack_reply; DROP TABLE slack_goal; DROP TABLE slack_decision; DROP TABLE slack_bot; DROP TABLE slack_history; DROP TABLE slack_message; DROP TABLE slack_day; DROP TABLE slack_file; DROP TABLE slack_user; DROP INDEX channel_slack; ALTER TABLE channel DROP COLUMN slack_id;
+  database.run(`DROP INDEX channel_personal; ALTER TABLE channel DROP COLUMN personal; ALTER TABLE routine DROP COLUMN post_in_slack; DROP TABLE slack_member; DROP TABLE slack_conversation; DROP TABLE slack_reply; DROP TABLE slack_goal; DROP TABLE slack_decision; DROP TABLE slack_bot; DROP TABLE slack_history; DROP TABLE slack_message; DROP TABLE slack_day; DROP TABLE slack_file; DROP TABLE slack_user; DROP INDEX channel_slack; ALTER TABLE channel DROP COLUMN slack_id;
   ALTER TABLE reminder DROP COLUMN not_before; ALTER TABLE reminder DROP COLUMN not_after; ALTER TABLE intake_check DROP COLUMN nudge_at; DROP TABLE intake_block; DROP TABLE intake_feedback; DROP TABLE intake_archive; DROP TRIGGER intake_check_created; DROP TRIGGER intake_check_changed; DROP TABLE intake_check_revision;
   ALTER TABLE routine_run DROP COLUMN input;
 	DROP TABLE intake_source_read;
@@ -45,7 +45,7 @@ test("the company's one orchestrator from before becomes the own of the person w
 	CREATE UNIQUE INDEX thread_orchestrator ON thread (company_id) WHERE orchestrator = 1;
 	INSERT INTO channel (id, company_id, name, created_by, created_at) VALUES ('general', 'home', 'general', 'alice', 1), ('food', 'home', 'food', 'bob', 2);
 	INSERT INTO thread (id, company_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('shadow', 'home', 'food', 'Shadow', 'shadow', 1, 1, 1), ('dinner', 'home', 'food', 'Dinner', 'bob', 1, 1, 0);
-	PRAGMA user_version = ${version - 35};`);
+	PRAGMA user_version = ${version - 36};`);
   migrate(database);
   expect(
     database
@@ -73,7 +73,7 @@ test("own credentials and machines become private ones in their owner's company,
     .get() as { user_version: number };
   // The tables before: a null company is a person's own. Alice paired the NAS both ways, and Bob's own "mac" has the
   // name of Alice's.
-  database.run(`ALTER TABLE routine DROP COLUMN post_in_slack; DROP TABLE slack_member; DROP TABLE slack_conversation; DROP TABLE slack_reply; DROP TABLE slack_goal; DROP TABLE slack_decision; DROP TABLE slack_bot; DROP TABLE slack_history; DROP TABLE slack_message; DROP TABLE slack_day; DROP TABLE slack_file; DROP TABLE slack_user; DROP INDEX channel_slack; ALTER TABLE channel DROP COLUMN slack_id;
+  database.run(`DROP INDEX channel_personal; ALTER TABLE channel DROP COLUMN personal; ALTER TABLE routine DROP COLUMN post_in_slack; DROP TABLE slack_member; DROP TABLE slack_conversation; DROP TABLE slack_reply; DROP TABLE slack_goal; DROP TABLE slack_decision; DROP TABLE slack_bot; DROP TABLE slack_history; DROP TABLE slack_message; DROP TABLE slack_day; DROP TABLE slack_file; DROP TABLE slack_user; DROP INDEX channel_slack; ALTER TABLE channel DROP COLUMN slack_id;
   ALTER TABLE reminder DROP COLUMN not_before; ALTER TABLE reminder DROP COLUMN not_after; ALTER TABLE intake_check DROP COLUMN nudge_at; DROP TABLE intake_block; DROP TABLE intake_feedback; DROP TABLE intake_archive; DROP TRIGGER intake_check_created; DROP TRIGGER intake_check_changed; DROP TABLE intake_check_revision;
   ALTER TABLE routine_run DROP COLUMN input;
 	DROP TABLE intake_source_read;
@@ -113,7 +113,7 @@ test("own credentials and machines become private ones in their owner's company,
 		('alices-mac', NULL, 'mac', '[]', 1, 'a', 'macos', 'arm64', '1', 4, 'alice'),
 		('bobs-mac', NULL, 'mac', '[]', 1, 'b', 'macos', 'arm64', '1', 5, 'bob');
 	UPDATE machine SET deleted_at = 1 WHERE id = 'old-nas';
-	PRAGMA user_version = ${version - 29};`);
+	PRAGMA user_version = ${version - 30};`);
   migrate(database);
   expect(
     database
@@ -181,7 +181,7 @@ test("notification permission expands the intake schema and leaves queued update
   const { user_version: version } = database
     .query("PRAGMA user_version")
     .get() as { user_version: number };
-  database.run(`ALTER TABLE routine DROP COLUMN post_in_slack; DROP TABLE slack_member; DROP TABLE slack_conversation; DROP TABLE slack_reply; DROP TABLE slack_goal; DROP TABLE slack_decision; DROP TABLE slack_bot; DROP TABLE slack_history; DROP TABLE slack_message; DROP TABLE slack_day; DROP TABLE slack_file; DROP TABLE slack_user; DROP INDEX channel_slack; ALTER TABLE channel DROP COLUMN slack_id;
+  database.run(`DROP INDEX channel_personal; ALTER TABLE channel DROP COLUMN personal; ALTER TABLE routine DROP COLUMN post_in_slack; DROP TABLE slack_member; DROP TABLE slack_conversation; DROP TABLE slack_reply; DROP TABLE slack_goal; DROP TABLE slack_decision; DROP TABLE slack_bot; DROP TABLE slack_history; DROP TABLE slack_message; DROP TABLE slack_day; DROP TABLE slack_file; DROP TABLE slack_user; DROP INDEX channel_slack; ALTER TABLE channel DROP COLUMN slack_id;
   ALTER TABLE reminder DROP COLUMN not_before; ALTER TABLE reminder DROP COLUMN not_after; ALTER TABLE intake_check DROP COLUMN nudge_at; DROP TABLE intake_block; DROP TABLE intake_feedback; DROP TABLE intake_archive; DROP TRIGGER intake_check_created; DROP TRIGGER intake_check_changed; DROP TABLE intake_check_revision;
   DROP TABLE intake_source_read;
     DROP INDEX intake_conversation;
@@ -195,7 +195,7 @@ test("notification permission expands the intake schema and leaves queued update
     DROP INDEX place_name;
     ALTER TABLE place DROP COLUMN osm_id;
     CREATE UNIQUE INDEX place_name ON place (company_id, owner_id, name COLLATE NOCASE);
-    PRAGMA user_version = ${version - 16};`);
+    PRAGMA user_version = ${version - 17};`);
   migrate(database);
   expect(
     database

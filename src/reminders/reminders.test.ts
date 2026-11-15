@@ -268,24 +268,19 @@ test("the agent tool creates a company reminder for the person who asked", async
   database.close();
 });
 
-test("an agent without a current person can name a company recipient", async () => {
+test("a turn without a person makes no reminder", async () => {
   const { database, reminders } = setup(() => "Done", null);
   const tool = reminders
     .tools("home")
     .find((candidate) => candidate.name === "reminders_create")!;
   await expect(
     tool.execute(
-      { text: "Review the document", ...time },
-      { conversationId: 1, taskId: 4 } as never,
+      { text: "Review the document", recipient: "Alice", ...time },
+      { conversationId: 1, taskId: 5 } as never,
       {} as never
     )
-  ).rejects.toThrow("Name exactly one member");
-  await tool.execute(
-    { text: "Review the document", recipient: "Alice", ...time },
-    { conversationId: 1, taskId: 5 } as never,
-    {} as never
-  );
-  expect(reminders.list("home", alice, null)).toHaveLength(1);
+  ).rejects.toThrow("Only a person's own request makes a reminder.");
+  expect(reminders.list("home", alice, null)).toHaveLength(0);
   database.close();
 });
 

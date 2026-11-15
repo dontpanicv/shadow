@@ -33,6 +33,7 @@ type Channel = {
 	summary: string | null; // what the channel is for and what goes on in it, as the model last wrote it with the brief
 	icon: string | null; // one emoji, shown in place of the # before the name; the model chooses it for a new channel and again at each new thread
 	slackId: string | null; // the public Slack channel that a channel every member sees copies; null for one no Slack channel made, such as `general` before the Slack bot links it
+	personal: boolean; // the member's own private channel, like a DM to oneself in Slack: Shadow makes one for each member, named after them, and it never merges away; their orchestrator starts there the work that concerns only them, and a routine from the orchestrator runs there
 	threads: ThreadSummary[]; // newest first
 };
 type Notification = {
@@ -258,7 +259,7 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `PUT /api/v1/companies/:companyId` | `{ name }` | `Company`; `403` for a member who is not an admin |
 | `POST /api/v1/companies/:companyId/channels` | `{ name }` | `Channel`: a private channel of the person. The channels that every member sees come only from the Slack bot. `409` if the name exists, also as another person's private channel |
 | `PUT /api/v1/companies/:companyId/channels/:channelId` | `{ name }` | `Channel`, with the name as Shadow keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words. Only a private channel; one that every member sees takes its name from Slack, `409`. `409` if the name exists |
-| `POST /api/v1/companies/:companyId/channels/:channelId/merge` | `{ into }` | `204`; its threads, files, artifacts, routines, suggestions, and source archives move to channel `into`, then the empty channel goes and the orchestrators move to the next channel that every member sees. Nobody deletes a channel otherwise. `403` for a channel that every member sees, which copies a Slack channel and stays until Slack archives it; `409` while an agent of the channel works. Agents merge with `merge_channel` when a person asks; a private channel merges into one that every member sees only after its owner allows it |
+| `POST /api/v1/companies/:companyId/channels/:channelId/merge` | `{ into }` | `204`; its threads, files, artifacts, routines, suggestions, and source archives move to channel `into`, then the empty channel goes and the orchestrators move to the next channel that every member sees. Nobody deletes a channel otherwise. `403` for a channel that every member sees, which copies a Slack channel and stays until Slack archives it, and for a person's own channel; `409` while an agent of the channel works. Agents merge with `merge_channel` when a person asks; a private channel merges into one that every member sees only after its owner allows it |
 | `GET /api/v1/companies/:companyId/facts` | | `{ text }`: facts that the admins write about the company, such as its teams, products, and customers; every agent of the company reads them; `""` until someone writes them |
 | `PUT /api/v1/companies/:companyId/facts` | `{ text }` | `{ text }`; only an admin writes them, `403` for others; `400` over 20,000 characters |
 | `GET /api/v1/companies/:companyId/members` | | `Member[]` |

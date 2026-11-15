@@ -42,6 +42,7 @@ function directory(
         summary: null,
         icon: null,
         slackId: null,
+        personal: false,
         threads: [],
       })
     );
@@ -350,6 +351,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
       summary: null,
       icon: null,
       slackId: null,
+      personal: false,
       threads: [],
     }));
   const indexer = new Indexer(

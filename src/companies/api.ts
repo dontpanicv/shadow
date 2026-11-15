@@ -16,9 +16,13 @@ export const companyApiRoutes: readonly Route[] = [
         await app.companies.create(user, "Shadow");
       }
       await app.pictures.importGoogle(user.id);
+      const companies = app.companies.list(user);
+      for (const company of companies) {
+        app.companies.personalChannelOf(company.id, user);
+      }
       return json({
         user: { ...user, picture: app.companies.pictureOf(user) },
-        companies: app.companies.list(user),
+        companies,
         admin: app.companies.isAdmin(user),
       });
     }),

@@ -85,8 +85,11 @@ test("the first person to sign in starts the company, with a general channel", a
     await call(`/api/v1/companies/${companyId}`, { token: alice })
   ).json()) as any;
   expect(
-    detail.channels.map((channel: { name: string }) => channel.name)
-  ).toEqual(["general"]);
+    detail.channels.map(
+      (channel: { name: string; personal: boolean }) =>
+        `${channel.name}${channel.personal ? " (own)" : ""}`
+    )
+  ).toEqual(["general", "alice (own)"]);
   const duplicate = await call(`/api/v1/companies/${companyId}/channels`, {
     token: alice,
     body: { name: "General" },
