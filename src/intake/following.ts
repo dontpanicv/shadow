@@ -776,7 +776,7 @@ export class Following {
 
 /**
  * What a block matches in an observation: a mail sender's address, in every account of the person; else the chat,
- * such as a WhatsApp or Slack conversation, a group, or a meeting note, within its account. Null when there is
+ * such as a Slack conversation, a group, or a meeting note, within its account. Null when there is
  * nothing to match, so an empty sender or chat never blocks everything; the owner's own mail never matches a sender.
  */
 function blockKey(

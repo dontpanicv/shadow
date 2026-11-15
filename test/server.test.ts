@@ -10,7 +10,18 @@ let signIn: TestApp["signIn"];
 let signedCookie: TestApp["signedCookie"];
 
 beforeAll(async () => {
-  shadow = await startTestApp();
+  shadow = await startTestApp({
+    catalog: [
+      {
+        id: "notes",
+        name: "Notes",
+        description: "The person's notes server.",
+        secretLabel: "API key",
+        address: true,
+        tools: [],
+      },
+    ],
+  });
   ({ app, call, handler, signIn, signedCookie } = shadow);
 });
 
@@ -146,12 +157,12 @@ test("companies are isolated until someone adds you", async () => {
 test("a credential is private until its owner shares it, only its owner deletes it, and secrets never leave the server", async () => {
   const base = `/api/v1/companies/${companyId}`;
   const credential = (await (
-    await call(`${base}/integrations/home_assistant/credentials`, {
+    await call(`${base}/integrations/notes/credentials`, {
       token: alice,
       body: {
         label: "Company",
         secret: "company-secret",
-        address: "http://home.local:8123",
+        address: "http://notes.local:8080",
       },
     })
   ).json()) as any;

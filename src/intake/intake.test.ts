@@ -51,7 +51,7 @@ async function setup(
     noticeReply?: boolean;
     actualReview?: boolean;
     decide?: (input: AssessmentInput) => Assessment[];
-    source?: "google" | "slack" | "whatsapp";
+    source?: "google" | "slack";
     silent?: boolean;
     failAfterThreadStart?: boolean;
     plan?: (input: MorningInput) => MorningPlan;
@@ -648,7 +648,7 @@ test("opting out pauses queued source reads and another account cannot inject ev
   expect(intake.openChecks(run.companyId, run.owner)).toHaveLength(0);
 });
 
-test.each(["slack", "whatsapp", "google"] as const)(
+test.each(["slack", "google"] as const)(
   "a normal request and the owner's reply an hour later stay silent (%s)",
   async (source) => {
     const run = await setup({
@@ -1587,7 +1587,7 @@ test("deleting a waiting update blocks its sender, deletes what intake read from
 
 test("deleting a chat update from a contact with no name blocks only that chat, never the owner's own messages", async () => {
   const run = await setup({
-    source: "whatsapp",
+    source: "slack",
     target: "shared",
     decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
@@ -2839,7 +2839,7 @@ test("old messages that a thread's agent looks up are not assessed as new", asyn
   );
   intake.recordSourceRead(run.target!, run.owner.id, {
     credential: run.credential,
-    tool: "whatsapp_messages",
+    tool: "slack_read",
     result: {},
     items: [march],
   });

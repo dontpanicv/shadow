@@ -161,11 +161,11 @@ test.each(["google", "slack"])(
   }
 );
 
-test.each(["whatsapp", "slack"])(
-  "%s long-running threads have one file per local calendar day",
+test.each(["slack"])(
+  "%s long-running direct conversations have one file per local calendar day",
   async (integration) => {
     const run = await setup(integration);
-    const thread = integration === "slack" ? "group-direct" : "company@g.us";
+    const thread = "group-direct";
     const rows = [
       run.put("one", thread, START, "Morning", { group: true }),
       run.put("two", thread, START + 1000, "Later", { group: true }),
@@ -239,7 +239,7 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
 });
 
 test("a shared review receives only selected messages from a private daily conversation", async () => {
-  const run = await setup("whatsapp");
+  const run = await setup("slack");
   const shared = app.app.companies.addChannel(
     run.company.id,
     "flat",

@@ -10,7 +10,7 @@ server, with no cloud service between your company and its data.
 
 - **Every employee has a shadow.** Each person has their own thread with their shadow that never ends. It knows who
   writes each message, what each person works on, and what the team decided last week.
-- **It reads Slack and mail for you.** Turn on "Read for me" for Slack, Gmail, WhatsApp, or Plaud meeting notes. Your
+- **It reads Slack and mail for you.** Turn on "Read for me" for Slack, Gmail, or Plaud meeting notes. Your
   shadow keeps the useful context and files it with the matter it belongs to, so you do not read every message to
   know what is happening.
 - **It keeps track of what is asked of you.** Your shadow follows each open matter. When a customer has 30 days to
@@ -78,7 +78,6 @@ The first read covers one day; later reads continue from a saved cursor, includi
 - **Slack:** the messages that you send, your mentions, DMs and group DMs, and the replies in those Slack threads.
 - **Gmail:** incoming mail from the Primary inbox after your Gmail filters, and sent mail for context. It leaves out
   archived mail, other inbox categories, spam, trash, and drafts before it fetches the bodies.
-- **WhatsApp:** incoming and outgoing text.
 - **Plaud:** the summaries of your recorded meetings.
 
 The configured model reads bounded batches, with the history of the same subject and the threads that could match.
@@ -110,7 +109,7 @@ the audit and guide later assessments.
 
 Source data, model calls, searches, state changes, agent work, and corrections go to a separate private
 `audit.sqlite`. Source files stay grouped: one per Gmail or Slack thread, one per Plaud meeting, and one per
-conversation per day for WhatsApp and Slack DMs. New messages update the same file.
+conversation per day for Slack DMs. New messages update the same file.
 
 See [the process and verification notes](docs/proactive.md), [the API](docs/api.md#intake-srcintake), and
 [data storage](docs/data.md). Upcoming keeps explicit reminders and routines; it has no inferred task list.
@@ -162,15 +161,7 @@ one.
 | Google (Gmail, Calendar, Drive, Docs, Sheets) | Search and read mail, draft, send after approval, calendar, files | Google sign-in, through [gog](https://github.com/openclaw/gogcli) |
 | Slack | Search and read, draft, send after approval | A request of the Slack web app, pasted as cURL, through [slackcli](https://github.com/shaharia-lab/slackcli) |
 | Plaud | Recordings and their meeting notes | Plaud's MCP server |
-| WhatsApp | Read and send after approval | A linked device, through [wacli](https://github.com/openclaw/wacli) |
 | T3 Code | Start and follow coding threads in a project on the person's machine | The MCP server of their own T3 Code |
-| X | Read | Session cookies, through [Rettiwt-API](https://github.com/Rishikant181/Rettiwt-API) |
-| Instagram | Read | Session cookie |
-| Home Assistant | Read and control a building | Long-lived access token |
-| Netatmo | Weather station and thermostat | Netatmo sign-in |
-| Salus | Heating | Email and password ([salus-it500-cloud](https://github.com/Peterka35/salus-it500-cloud)) |
-| Tesla | Car state, charging history, open the car after approval | Tesla Fleet API sign-in, [vehicle-command](https://github.com/teslamotors/vehicle-command) |
-| Rohlík | Groceries | Rohlík's MCP server |
 
 A connector is a file in `src/integrations/`. A connector with an MCP server gives its tools as they are, under its
 namespace.
@@ -284,7 +275,7 @@ person's inbox in the app.
 - **A domain on Cloudflare**, for the tunnel and the HTTPS address. Google sign-in needs `https` on a public name.
 - **A Google Cloud project** for Google sign-in. Nobody can sign in with a password.
 - **A ChatGPT account** for the model, and enough free memory for the local search model.
-- **Optional:** `gog`, `slackcli`, `wacli`, or `tesla-control` for those integrations.
+- **Optional:** `gog` for Google and `slackcli` for each person's own Slack account.
 
 ### Run it
 
@@ -418,10 +409,7 @@ Shadow stands on the work of these projects and people:
   [Shiki](https://shiki.style), [Leaflet](https://leafletjs.com) with [OpenStreetMap](https://www.openstreetmap.org),
   [Chart.js](https://www.chartjs.org), [docx-preview](https://github.com/VolodymyrBaydalka/docxjs), and
   [read-excel-file](https://gitlab.com/catamphetamine/read-excel-file).
-- **Integrations:** [gog](https://github.com/openclaw/gogcli), [wacli](https://github.com/openclaw/wacli),
-  [slackcli](https://github.com/shaharia-lab/slackcli), [Rettiwt-API](https://github.com/Rishikant181/Rettiwt-API),
-  [vehicle-command](https://github.com/teslamotors/vehicle-command),
-  [salus-it500-cloud](https://github.com/Peterka35/salus-it500-cloud), and TeslaMate for the charging log.
+- **Integrations:** [gog](https://github.com/openclaw/gogcli) and [slackcli](https://github.com/shaharia-lab/slackcli).
 - **Models:** [EmbeddingGemma 2](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) by Google (Apache 2.0).
 - **Design:** the Ember look, inspired by the work of [Charles Postiaux](https://x.com/postiauxcharles); the measures of
   [Linear](https://linear.app), the layout of

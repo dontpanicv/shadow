@@ -178,7 +178,7 @@ export interface Integration {
   readonly id: string;
   readonly name: string;
   /** With a secret, by signing in on its page, or by linking a phone number with a code. */
-  readonly connect: "secret" | "sign-in" | "phone";
+  readonly connect: "secret" | "sign-in";
   /** The name of the secret, for `connect: "secret"`. */
   readonly secretLabel: string | null;
   /** Whether the person names a credential; else Shadow names it from the secret. */

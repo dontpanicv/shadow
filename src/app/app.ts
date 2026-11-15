@@ -8,6 +8,7 @@ import { Browser, browserRequirements } from "../browser/browser.ts";
 import { Companies } from "../companies/companies.ts";
 import { FeedbackReports } from "../feedback/feedback.ts";
 import { Intake } from "../intake/intake.ts";
+import type { Connector } from "../integrations/integrations.ts";
 import { Integrations } from "../integrations/integrations.ts";
 import { SlackBot } from "../integrations/slack-bot.ts";
 import { Llm, type LlmProvider } from "../llm/llm.ts";
@@ -65,7 +66,9 @@ export async function createApp(
   config: Config,
   llmProvider: LlmProvider,
   secrets?: Secrets,
-  embedder: Embedder | null = null
+  embedder: Embedder | null = null,
+  /** The connectors; tests give their own. */
+  catalog?: readonly Connector[]
 ): Promise<App> {
   mkdirSync(config.dataDirectory, { recursive: true });
   const resolvedSecrets =
@@ -106,9 +109,8 @@ export async function createApp(
   const pictures = new ProfilePictures(database);
   const companies = new Companies(database, auth, pictures, reloadTools);
   const integrations = new Integrations(database, resolvedSecrets, companies, {
-    directory: join(config.dataDirectory, "integrations"),
-    baseUrl: config.baseUrl,
     changed: reloadTools,
+    catalog,
   });
   // The change hooks point at the indexer, which reads the threads and the artifacts.
   const artifacts = new Artifacts(database, companies, config, (companyId) =>

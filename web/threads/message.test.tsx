@@ -224,8 +224,8 @@ test("the working summary says the step Shadow is at, and an approval puts Allow
         stopped: false,
         steps: [
           {
-            ...call("living room"),
-            tool: "salus_set_temperature",
+            ...call("sales"),
+            tool: "google_calendar_events",
             running: true,
           },
         ],
@@ -233,22 +233,22 @@ test("the working summary says the step Shadow is at, and an approval puts Allow
     />
   );
   expect(working).toContain(
-    '<span class="work-now">Salus set temperature</span>'
+    '<span class="work-now">Google calendar events</span>'
   );
 
   const approval = await render(
     <ApprovalRequest
       approval={{
         id: "a",
-        tool: "home_assistant_call",
-        text: "vacuum.start vacuum.hall",
+        tool: "google_mail_send",
+        text: "Send to anna@example.com: The offer",
         approverId: null,
         expiresAt: 0,
       }}
       threadId="t"
     />
   );
-  expect(approval).toContain("<p>vacuum.start vacuum.hall</p>");
+  expect(approval).toContain("<p>Send to anna@example.com: The offer</p>");
   expect(approval.indexOf("Allow")).toBeLessThan(approval.indexOf("Deny"));
   expect(approval).not.toContain("Allow for this turn");
 });

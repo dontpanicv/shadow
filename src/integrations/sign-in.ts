@@ -1,6 +1,6 @@
 /**
- * Where a sign-in page sends people. Rohlík registers only loopback addresses for clients that register
- * themselves, so the browser ends on an error page at this address, and the person pastes the address into Shadow,
+ * Where a sign-in page sends people. Some sign-in servers register only loopback addresses for clients that
+ * register themselves, so the browser ends on an error page at this address, and the person pastes the address into Shadow,
  * which reads the sign-in code from it.
  */
 export const SIGN_IN_ADDRESS = "https://localhost/shadow-sign-in";

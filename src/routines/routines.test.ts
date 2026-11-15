@@ -76,7 +76,7 @@ beforeAll(async () => {
     shadow.app.database,
     Secrets.forTests(),
     shadow.app.companies,
-    { directory: shadow.app.config.dataDirectory, catalog: [connector] }
+    { catalog: [connector] }
   );
   routines = new Routines(
     shadow.app.database,
@@ -314,7 +314,6 @@ test("a connector without a credential fails the script", async () => {
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: shadow.app.config.dataDirectory,
       catalog: [{ ...connector, id: "school-2", name: "School 2" }],
     }
   );

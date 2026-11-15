@@ -10,16 +10,17 @@ member. A routine's script cannot send.
 Settings shows the steps that set up each integration: click ⓘ on it. The steps are the `guide` of its connector, in
 `src/integrations/`.
 
-Google, Netatmo, and Tesla need an OAuth client of your own, which an admin
-sets with **Client** on the integration; the next sign-in uses it at once. Until then, only the owner sees it. Google
-also needs `gog` on the Shadow machine, Slack `slackcli`, WhatsApp `wacli`, and Tesla `tesla-control`, in the `PATH` of
-the Shadow service; install them, for example with `brew install gogcli`, `brew install shaharia-lab/tap/slackcli`, and
-`brew install openclaw/tap/wacli`, and for Tesla see below. Then click **Reload** on Configuration in Settings. Shadow
-does not show these integrations without them.
+Shadow has four integrations: Google, Slack, Plaud, and T3 Code, and the company's Slack bot, which an admin connects
+in Company settings.
 
-The sign-in pages of Google, Netatmo, Rohlík, Plaud, and T3 Code end at `https://localhost/shadow-sign-in?code=…`, and Tesla's,
-which refuses localhost, at `/shadow-sign-in?code=…` on Shadow's own address. Nothing answers at that address, so the browser shows an
-error page. Copy the address from the address bar and paste it into Shadow.
+Google needs an OAuth client of your own, which an admin sets with **Client** on the integration; the next sign-in
+uses it at once. Until then, only admins see it. Google also needs `gog` on the Shadow machine, and Slack `slackcli`,
+in the `PATH` of the Shadow service; install them, for example with `brew install gogcli` and
+`brew install shaharia-lab/tap/slackcli`. Then click **Reload** on Configuration in Settings. Shadow does not show
+these integrations without them.
+
+The sign-in pages of Google, Plaud, and T3 Code end at `https://localhost/shadow-sign-in?code=…`. Nothing answers at
+that address, so the browser shows an error page. Copy the address from the address bar and paste it into Shadow.
 
 ## Google: Gmail, Calendar, and Drive
 
@@ -75,48 +76,6 @@ Agents search and read messages, channels, threads, unread messages, and canvase
 send from Slack, and send messages after you allow each one. Each command runs in a home of its own, which Shadow
 removes after it.
 
-## WhatsApp
-
-Shadow links your number as a device, as WhatsApp Web does, through [wacli](https://github.com/openclaw/wacli). This is
-not WhatsApp's own API, and WhatsApp can ban a number that uses it.
-
-Your phone sends Shadow the newest messages of each thread, often only some days, and Shadow keeps a copy of every new
-message while it runs. The copy and the device's keys are in `data/integrations/<credential-id>/`. Agents read threads and
-messages, search them, find contacts, and save the picture, video, audio, or document of a message to the thread's
-channel; when WhatsApp no longer keeps it, your phone sends it again if it is online. For older messages, ask an agent to load them: it asks your phone, which must
-be online, for up to 5000 older messages of a thread at a time. They send a text message or a file of the company after you allow it, or make a
-`wa.me` link that opens WhatsApp with the text, which you send. Deleting the credential removes the device from your number.
-
-## X
-
-Shadow reads your X account through [Rettiwt-API](https://github.com/Rishikant181/Rettiwt-API), with a key made from the
-cookies of your X session. This is not X's paid API, and X can limit or ban an account that uses it. The key gives the
-same access as your login, so keep it secret, as Shadow does. It works for about five years, or until you sign out of
-that session or change your password.
-
-Agents read your bookmarks, newest first, and posts with their replies and threads. They do not post, like, or change
-bookmarks.
-
-## Instagram
-
-Shadow reads your Instagram account through Instagram's own web API, with the `sessionid` cookie of your Instagram
-session. Instagram has no API for saved posts, and it can lock or ban an account that uses this one. The cookie gives
-the same access as your login, so keep it secret, as Shadow does. Shadow also sends the `ds_user_id` cookie, which
-Instagram needs; it is the number at the start of `sessionid`.
-
-Agents read all the posts and reels that you saved, newest first, with the ids of their collections, and the posts of
-one collection: the caption, the author, the place, and the pictures and videos. Instagram's web API gives no list of
-collections with their names. Agents do not save, like, or post. Instagram watches for many calls: read a large
-backlog in small steps.
-
-## Home Assistant
-
-Shadow controls your home through the REST API of Home Assistant, with a long-lived access token of a Home Assistant
-user. The user must be an administrator, because Home Assistant renders templates only for administrators.
-
-Agents read the states and history of entities, render templates, for example to find the entities of an area, and
-call services, such as turning on a light or setting a thermostat. They do not call `notify` services.
-
 ## T3 Code
 
 Agents use the MCP server of the person's own T3 Code: they list its projects, start a thread in a project, or in a new
@@ -128,48 +87,3 @@ browser of the sign-in must both reach that address, because T3 Code gives token
 sign-in used. On T3 Code's page, the person chooses the access of Shadow's threads, from read-only to full access, and
 approves with their T3 Code session or with a pairing code from `t3 pair`. A thread that Shadow starts runs with at
 most that access. T3 Code gives no refresh token: after 30 days, connect it again.
-
-## Netatmo
-
-Agents read the weather stations of the person's Netatmo account through Netatmo's API: the current values of each
-module, indoor and outdoor, and their history. They change nothing. Netatmo gives tokens only to an app that someone
-made at dev.netatmo.com, with the redirect URI `https://localhost/shadow-sign-in`; an admin pastes its client
-ID and client secret with **Client**, and each person then clicks **Connect**.
-
-## Salus
-
-Agents read Salus iT500 thermostats, such as the RT310i, and set their target temperature. Salus closed
-salus-it500.com in October 2026, so Shadow uses the cloud API of Salus's apps, which is not public; Salus can change it.
-The person types the email and password of the RT310i app; Shadow signs in at once, and keeps the email and the MD5 of
-the password, which is what Salus's API takes. Salus removes special characters from a new password without a word, so
-Shadow tries a refused password again without them.
-
-## Tesla
-
-Agents read the person's Tesla cars through Tesla's Fleet API: the battery, charging, climate, location, locks, doors,
-windows, and tires. They preheat or cool the car, set the seat and steering wheel heaters, start and stop charging, set
-the charge limit and the amps, open and close the charge port, lock the car, close the windows, and turn on Sentry
-Mode. Unlocking, opening the trunk or frunk, venting the windows, and turning off Sentry Mode wait until the person
-allows each one, and a routine's script cannot do them. A command wakes a car that sleeps; reading does not, unless the
-agent asks.
-
-Cars since late 2023 take only commands that are signed with a key that the person added in the Tesla app. Shadow
-makes its key once, in `data/integrations/tesla/`, and serves its public key at
-`/.well-known/appspecific/com.tesla.3p.public-key.pem`, where Tesla reads it. So Shadow's `base_url` must be an https
-address on the internet, which is the domain of the Tesla app. Shadow signs commands with Tesla's
-[tesla-control](https://github.com/teslamotors/vehicle-command). Its module cannot be installed with `go install`, so
-build it from the repository:
-
-```sh
-git clone https://github.com/teslamotors/vehicle-command && cd vehicle-command
-go build -o /opt/homebrew/bin/tesla-control ./cmd/tesla-control
-```
-
-While Shadow runs, it logs the charge sessions of each Tesla account in its store: it looks at each car every 30 minutes
-without waking it, and every 5 minutes while the car charges. A session has the place, the battery levels, the kWh into
-the battery, which the car counts, and the kWh from the wall, which Shadow adds up from the charger's volts, amps, and
-phases, as TeslaMate does; it is `null` at a fast charger. Shadow can see a session up to 30 minutes after it started;
-the kWh still count the whole session.
-
-Tesla bills each call to the Fleet API, after a free credit each month: in 2026, about $10, which covers the log and
-some commands each day for one car. Tesla shows the use on developer.tesla.com.

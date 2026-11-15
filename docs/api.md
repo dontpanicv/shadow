@@ -104,7 +104,7 @@ type SearchResult = {
 type RecentSearch = { query: string; searchedAt: number }; // newest first; the same query again, in any case, only moves to the top
 type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
 type Credential = { id: string; label: string; ownerId: string; ownerName: string; shared: boolean; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone shares, watches, or deletes it; shared: every member's turns use it, else only its owner's; watched: its owner lets Shadow read it for them (`src/intake/`)
-type Integration = { id: string; name: string; connect: "secret" | "sign-in" | "phone"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
+type Integration = { id: string; name: string; connect: "secret" | "sign-in"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
 type RoutineRun = {
 	id: string;
 	routineId: string;
@@ -435,12 +435,11 @@ to put that host on the internet while the rest of Shadow stays private.
 | --- | --- | --- |
 | `GET …/integrations` | | `Integration[]`, with the person's own credentials and the ones other members shared |
 | `POST …/integrations/:integrationId/credentials` | `{ label?, secret, address?, username? }`; `label` when the integration is `labeled`, `address` when it has `address`, `username` when it has `username` | `Credential`, private; `400` unless `connect` is `"secret"`, or when the integration cannot use the secret, such as a Slack cURL whose session Slack refuses |
-| `POST …/integrations/:integrationId/connect` | `{ phone }` for `"phone"`; `{ address }` for `"sign-in"` with `address`: the person's own server | `{ url }`: the integration's sign-in page; `{ code }` for `"phone"`. `400` when `address` is not http or https |
-| `POST …/integrations/:integrationId/sign-in` | `{ address }`; `{}` for `"phone"` | `Credential`, private; `400` when the address is not of the person's own sign-in in this company, the sign-in did not finish, or the number did not link within a minute |
+| `POST …/integrations/:integrationId/connect` | `{ address }` for `"sign-in"` with `address`: the person's own server | `{ url }`: the integration's sign-in page. `400` when `address` is not http or https |
+| `POST …/integrations/:integrationId/sign-in` | `{ address }` | `Credential`, private; `400` when the address is not of the person's own sign-in in this company, or the sign-in did not finish |
 | `PUT …/credentials/:credentialId` | `{ shared }`, `{ watched }`, or both | `Credential`; `404` unless it is the person's own; `400` for `watched: true` when the integration is not `watchable` |
 | `DELETE …/credentials/:credentialId` | | `204`; `404` unless it is the person's own |
-| `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is an admin, `404` unless the integration has `client`, `400` with the reason when the integration's API refuses the client, such as Tesla's when it cannot register Shadow's domain |
-| `GET /.well-known/appspecific/com.tesla.3p.public-key.pem` | | The public key that Tesla's Fleet API checks Shadow's signed commands with, with no sign-in; `404` without the Tesla integration |
+| `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is an admin, `404` unless the integration has `client` |
 
 A person connects integrations in Settings. A new credential is private: only the turns of its owner use it. Its owner
 shares it, and then the turns of every member use it, or makes it private again; only its owner deletes it. A turn is
@@ -450,9 +449,9 @@ uses the newest credential of that person, else the newest shared one, unless th
 `account` argument; `<integrationId>_accounts` lists them. The agents of a company get the tools of each integration
 that someone connected there. Secrets never leave the server.
 
-An integration with `connect: "sign-in"` is one or more MCP servers, such as Rohlík's or Plaud's, or an API that
+An integration with `connect: "sign-in"` is one or more MCP servers, such as Plaud's, or an API that
 Shadow's own tools call, such as Google's. With `address`, such as T3 Code, the MCP server runs on the person's own
-machine: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. Rohlík lets self-registered clients return only to
+machine: the app asks for its address before `connect`, and the credential, labeled with its host, keeps it. The app shows a link to the `url` of `connect`; the person signs in there. Some servers let self-registered clients return only to
 loopback addresses, so the sign-in ends on an error page at
 `https://localhost/shadow-sign-in?code=…&state=…`. The person pastes that address, and `sign-in` keeps the tokens as a
 credential, labeled with the account's email when the server gives it. The agents then get the servers' tools as
@@ -461,12 +460,9 @@ shared sign-in, else with a private one; the list has only tool names and schema
 an access token that Shadow renews with the refresh token.
 
 An integration with `client` signs in with Shadow's own OAuth client, because its sign-in server does not register
-clients: Google, Netatmo, and Tesla. An admin sets the client in Settings; until then, only admins see
-the integration, and `connect` answers `400`. Tesla registers Shadow's domain with the client before Shadow keeps it.
+clients: Google. An admin sets the client in Settings; until then, only admins see the integration, and `connect`
+answers `400`.
 `docs/integrations.md` shows how to make the clients.
-
-An integration with `connect: "phone"`, WhatsApp, links the person's number as a device. `connect` gives the code that
-the person enters on their phone, in Linked devices; then `sign-in` waits up to a minute for the link.
 
 ### Routines (`src/routines/`)
 
@@ -539,7 +535,7 @@ future checks, and useful updates posted in the existing subject thread. Matchin
 the source material. External messages still need the person's request and normal tool approval. Collection runs every 15 minutes, starts one day back, and uses saved cursors with an overlap. A bounded
 poll can retain a backlog checkpoint without claiming complete source coverage.
 
-Personally relevant Slack messages, Primary inbox mail after Gmail filters plus sent-mail context, and both directions of WhatsApp are grouped into bounded batches. Related source history and subject checks reach the
+Personally relevant Slack messages, Primary inbox mail after Gmail filters plus sent-mail context are grouped into bounded batches. Related source history and subject checks reach the
 configured model provider. Shadow validates source ids, exact supporting quotes, destinations, and time fields before
 it changes state. Each subject gets its own decision. Current source versions are searchable; older versions remain
 as historical evidence. Full source and decision records live in the private audit database.
@@ -705,7 +701,7 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
   artifacts.
 - Each thread is one conversation in its company's Pi Durable session, a SQLite file in the company's directory.
 - A connector tool that acts as a person, such as `google_mail_send`, `google_mail_send_draft`, `slack_send`,
-  `whatsapp_send`, `whatsapp_send_file`, or a `google_calendar_*_event` call with `notify`, waits for an approval before every call, which shows what it sends: from the person who added the credential that it uses while
+  or a `google_calendar_*_event` call with `notify`, waits for an approval before every call, which shows what it sends: from the person who added the credential that it uses while
   they are a member, else from the turn's person. A routine's script cannot call it.
 - Agents reach public addresses only: the browser and `save_file` go through Shadow's egress proxy, which refuses
   loopback, private, link-local, and other non-public addresses after each DNS answer and redirect. Each person of a

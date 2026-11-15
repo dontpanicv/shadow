@@ -1,7 +1,5 @@
 import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync } from "node:fs";
-import { join } from "node:path";
 import { type Static, type TSchema, Type } from "@earendil-works/pi-ai";
 import {
   auth,
@@ -42,12 +40,12 @@ export interface Integration {
   readonly id: string;
   readonly name: string;
   /** How people connect it: with a secret, by signing in on its page, or by linking their phone number. */
-  readonly connect: "secret" | "sign-in" | "phone";
+  readonly connect: "secret" | "sign-in";
   /** The name of the secret, for `connect: "secret"`. */
   readonly secretLabel: string | null;
   /** Whether the person names a credential; else Shadow names it from the secret, such as by its Slack workspace. */
   readonly labeled: boolean;
-  /** Whether a secret also needs the address of the person's own server, such as their Home Assistant's. */
+  /** Whether a secret also needs the address of the person's own server, such as their T3 Code's. */
   readonly address: boolean;
   /** The name of the account that a secret also needs, such as `Email`, which names the credential; else `null`. */
   readonly username: string | null;
@@ -121,7 +119,7 @@ export interface Connector {
   readonly name: string;
   /** What agents do with it; the description of its codemode namespace. */
   readonly description: string;
-  /** `null` for a sign-in, and for a device. */
+  /** `null` for a sign-in. */
   readonly secretLabel: string | null;
   /**
    * Its secret also needs the address of the person's own server. The tools then get the secret as JSON
@@ -129,7 +127,7 @@ export interface Connector {
    */
   readonly address?: boolean;
   /**
-   * Its secret also needs the person's account, such as the email of their Salus account, under this name; the account
+   * Its secret also needs the person's account, such as the name of their account, under this name; the account
    * names the credential, and `secretFrom`, else the tools, get the secret as JSON `{ username, secret }`.
    */
   readonly username?: string;
@@ -143,13 +141,6 @@ export interface Connector {
    * then get a fresh access token instead of a secret.
    */
   readonly oauth?: string;
-  /** The sign-in page and token endpoint of an `oauth` server that does not publish them, such as Netatmo's. */
-  readonly oauthEndpoints?: {
-    readonly authorization: string;
-    readonly token: string;
-  };
-  /** Where its sign-in page sends people, when not `SIGN_IN_ADDRESS`, such as Tesla's, which refuses localhost. */
-  readonly redirectUrl?: string;
   /**
    * It signs in with Shadow's own OAuth client, which an admin sets in Settings, because its sign-in server
    * does not register clients. Only an admin sees it until then.
@@ -170,15 +161,6 @@ export interface Connector {
   readonly secretFrom?: (
     input: string
   ) => Promise<{ readonly secret: string; readonly label: string }>;
-  /** The device that Shadow links to a person's number, such as WhatsApp's; its tools get the device's store. */
-  readonly device?: Device;
-  /**
-   * Keeps data of each credential in its store while Shadow runs, such as Tesla's charge sessions. The tools then get
-   * the secret as JSON `{ store, secret }`.
-   */
-  readonly keeper?: Keeper;
-  /** The PEM public key that its API checks Shadow's signed commands with, which Shadow serves at its own address. */
-  readonly publicKey?: () => string;
   /**
    * Reads what an account got and sent since a time, for its owner, once they turn that on for the credential
    * (`watched`). Only the `intake` module calls it, never an agent.
@@ -197,11 +179,6 @@ export interface Connector {
     itemId: string,
     attachmentId: string
   ) => Promise<Uint8Array>;
-  /**
-   * Registers Shadow with its API when an admin sets the client, such as Tesla's partner account for Shadow's
-   * domain; Shadow keeps the client only when it works.
-   */
-  readonly registerClient?: (client: OAuthClient) => Promise<void>;
 }
 
 /** What a watch reads with: the time to read from, and the credential's secret or its MCP server. */
@@ -273,28 +250,6 @@ export interface WatchedCredential {
   readonly label: string;
 }
 
-/** Keeps data of a connector's credentials while Shadow runs, each in the store directory of its credential. */
-export interface Keeper {
-  /** Starts keeping a store; `secret` gives the secret, or a fresh access token, each time. */
-  readonly keep: (store: string, secret: () => Promise<string>) => void;
-  readonly stop: (store: string) => void;
-  readonly close: () => void;
-}
-
-/** A device that Shadow links to a person's account, such as a WhatsApp number, and keeps in a store directory. */
-export interface Device {
-  /** Gives the code that the person enters on their phone, and `linked`, which settles when they did. */
-  readonly link: (
-    store: string,
-    phone: string
-  ) => Promise<{ code: string; linked: Promise<void> }>;
-  /** Keeps a linked store current while Shadow runs. */
-  readonly keep: (store: string) => void;
-  /** Ends the link and stops keeping the store. */
-  readonly unlink: (store: string) => Promise<void>;
-  readonly close: () => Promise<void>;
-}
-
 /** The turn a tool call is part of: the person it is for, whose own credentials come first, also private ones. */
 export interface Turn {
   readonly userId: string | null;
@@ -337,10 +292,6 @@ export interface ConnectorNamespace {
 }
 
 export interface IntegrationsOptions {
-  /** Where the devices keep their stores, one folder for each credential. */
-  readonly directory: string;
-  /** Shadow's own address, where an API such as Tesla's reads Shadow's public key. */
-  readonly baseUrl?: string;
   /** Called when the connector tools of a company may change: a credential there changed. */
   readonly changed?: (companyId: string) => void;
   readonly catalog?: readonly Connector[];
@@ -358,14 +309,9 @@ interface McpGrant {
   tokens?: OAuthTokens;
 }
 
-/** A sign-in that someone started: on a sign-in page, or by entering a device's code on their phone. */
+/** A sign-in that someone started on a sign-in page. */
 interface PendingSignIn {
-  readonly provider?: GrantProvider;
-  readonly device?: {
-    readonly credentialId: string;
-    readonly phone: string;
-    readonly linked: Promise<void>;
-  };
+  readonly provider: GrantProvider;
   readonly companyId: string;
   readonly user: User;
   readonly connector: Connector;
@@ -376,8 +322,6 @@ interface PendingSignIn {
 const OWN_CREDENTIAL =
   "id = ?1 AND company_id = ?2 AND owner_id = ?3 AND deleted_at IS NULL";
 const SIGN_IN_MS = 10 * 60 * 1000;
-/** How long finishing a device's link waits for the person to enter its code. */
-const LINK_WAIT_MS = 60 * 1000;
 
 /**
  * The outside systems that agents use. A person connects an integration in their Settings, in the company, and each
@@ -387,7 +331,7 @@ const LINK_WAIT_MS = 60 * 1000;
  */
 export class Integrations {
   private readonly catalog: readonly Connector[];
-  /** The sign-ins in progress, by their OAuth `state`, or by the credential id of a device's link. */
+  /** The sign-ins in progress, by their OAuth `state`. */
   private readonly signIns = new Map<string, PendingSignIn>();
   /** One MCP client for each credential and server, by `<credential id> <server>`, connected at first use. */
   private readonly clients = new Map<string, Promise<Client>>();
@@ -403,37 +347,7 @@ export class Integrations {
     private readonly companies: Companies,
     private readonly options: IntegrationsOptions
   ) {
-    this.catalog = options.catalog ?? integrationCatalog(options);
-    for (const connector of this.catalog) {
-      if (connector.device || connector.keeper) {
-        const linked = this.database
-          .query(
-            "SELECT id FROM credential WHERE integration = ? AND deleted_at IS NULL"
-          )
-          .all(connector.id) as { id: string }[];
-        for (const { id } of linked) {
-          this.keep(connector, id);
-        }
-      }
-    }
-  }
-
-  /** Keeps a device's store current, or a keeper's data, while Shadow runs. */
-  private keep(connector: Connector, credentialId: string): void {
-    const store = this.store(credentialId);
-    connector.device?.keep(store);
-    connector.keeper?.keep(store, async () =>
-      this.ownSecret(connector, this.liveCredential(credentialId))
-    );
-  }
-
-  /** The PEM public key of an integration's API, such as Tesla's; `null` when it has none. */
-  publicKey(integrationId: string): string | null {
-    return (
-      this.catalog
-        .find((connector) => connector.id === integrationId)
-        ?.publicKey?.() ?? null
-    );
+    this.catalog = options.catalog ?? integrationCatalog();
   }
 
   /** The integrations, with the credentials that the person sees in the company: the shared ones and their own. */
@@ -506,16 +420,6 @@ export class Integrations {
     if (!connector.registered) {
       throw notFound();
     }
-    try {
-      await connector.registerClient?.({
-        clientId: required(client.clientId, "Client ID").trim(),
-        clientSecret: required(client.clientSecret, "Client secret").trim(),
-      });
-    } catch (error) {
-      // Not 502: Cloudflare puts its own page in place of a 502, and the person then does not see the reason.
-      // biome-ignore lint/style/useErrorCause: HttpError takes the cause as its third argument.
-      throw new HttpError(400, (error as Error).message, { cause: error });
-    }
     this.database
       .query(
         "INSERT INTO oauth_client (integration, client_id, secret, changed_by, changed_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (integration) DO UPDATE SET client_id = ?2, secret = ?3, changed_by = ?4, changed_at = ?5"
@@ -578,43 +482,23 @@ export class Integrations {
   }
 
   /**
-   * Starts a sign-in. For a sign-in: registers Shadow with the sign-in server, at `address` for a connector with
-   * `address`, unless Shadow has its own client, and returns the page where the person signs in, which ends at an
-   * address that the person gives to `finishConnect`. For a device: returns the code that the person enters on the
-   * phone of `phone`.
+   * Starts a sign-in: registers Shadow with the sign-in server, at `address` for a connector with `address`, unless
+   * Shadow has its own client, and returns the page where the person signs in, which ends at an address that the person
+   * gives to `finishConnect`.
    */
   async connect(
     companyId: string,
     user: User,
     integrationId: string,
-    input: { phone?: string; address?: string } = {}
-  ): Promise<{ url: string } | { code: string }> {
+    input: { address?: string } = {}
+  ): Promise<{ url: string }> {
     this.companies.requireMember(companyId, user);
     const connector = this.connector(integrationId);
     const now = Date.now();
     for (const [state, pending] of this.signIns) {
       if (pending.expiresAt < now) {
         this.signIns.delete(state);
-        if (pending.device) {
-          this.unlink(pending.connector, pending.device.credentialId);
-        }
       }
-    }
-    if (connector.device) {
-      const credentialId = randomUUID();
-      const number = required(input.phone, "Phone number");
-      const { code, linked } = await connector.device.link(
-        this.store(credentialId),
-        number
-      );
-      this.signIns.set(credentialId, {
-        device: { credentialId, phone: number, linked },
-        companyId,
-        user,
-        connector,
-        expiresAt: now + SIGN_IN_MS,
-      });
-      return { code };
     }
     if (connectionOf(connector) !== "sign-in") {
       throw notFound();
@@ -660,7 +544,7 @@ export class Integrations {
 
   /**
    * Ends the person's own sign-in in the company where it started, and keeps it as a private credential. A sign-in ends with the
-   * address where its page ended, and works once; a device's link when the person entered its code.
+   * address where its page ended, and works once.
    */
   async finishConnect(
     companyId: string,
@@ -669,17 +553,10 @@ export class Integrations {
     address?: string
   ): Promise<CredentialSummary> {
     this.companies.requireMember(companyId, user);
-    if (this.connector(integrationId).device) {
-      return this.finishLink(companyId, user, integrationId);
-    }
     const query = URL.parse(required(address, "Address"))?.searchParams;
     const state = query?.get("state") ?? "";
     const pending = this.signIns.get(state);
-    if (
-      !(
-        pending?.provider && this.isOwn(pending, companyId, user, integrationId)
-      )
-    ) {
+    if (!(pending && this.isOwn(pending, companyId, user, integrationId))) {
       throw new HttpError(400, "This is not the address of your sign-in");
     }
     this.signIns.delete(state);
@@ -689,7 +566,7 @@ export class Integrations {
     }
     const { provider, connector } = pending;
     await signIn(connector, provider, code);
-    const credential = this.insertCredential(
+    return this.insertCredential(
       companyId,
       user,
       connector.id,
@@ -698,54 +575,6 @@ export class Integrations {
           ? new URL(provider.grant.address).host
           : connector.name),
       JSON.stringify(provider.grant)
-    );
-    if (connector.keeper) {
-      this.keep(connector, credential.id);
-    }
-    return credential;
-  }
-
-  /** Waits a while for the person's newest link of a device in the company, and keeps it as a private credential. */
-  private async finishLink(
-    companyId: string,
-    user: User,
-    integrationId: string
-  ): Promise<CredentialSummary> {
-    const pending = [...this.signIns.values()]
-      .filter((candidate) =>
-        this.isOwn(candidate, companyId, user, integrationId)
-      )
-      .at(-1);
-    if (!pending?.device) {
-      throw new HttpError(400, "Start linking again");
-    }
-    const { credentialId, phone, linked } = pending.device;
-    let waiting: Timer | undefined;
-    try {
-      await Promise.race([
-        linked,
-        new Promise((_, reject) => {
-          waiting = setTimeout(reject, LINK_WAIT_MS);
-        }),
-      ]);
-    } catch (error) {
-      // biome-ignore lint/style/useErrorCause: HttpError takes the cause as its third argument.
-      throw new HttpError(
-        400,
-        `${pending.connector.name} did not link. Enter the code on your phone, then try again.`,
-        { cause: error }
-      );
-    } finally {
-      clearTimeout(waiting);
-    }
-    this.signIns.delete(credentialId);
-    return this.insertCredential(
-      companyId,
-      user,
-      integrationId,
-      phone,
-      phone,
-      credentialId
     );
   }
 
@@ -958,14 +787,6 @@ export class Integrations {
       .run(Date.now(), credentialId);
     this.closeClient(credentialId);
     this.accessTokens.delete(credentialId);
-    const connector = this.catalog.find(({ id }) => id === row.integration);
-    if (connector?.device) {
-      this.unlink(connector, credentialId);
-    }
-    if (connector?.keeper) {
-      connector.keeper.stop(this.store(credentialId));
-      this.moveAside(credentialId);
-    }
     this.options.changed?.(companyId);
   }
 
@@ -1015,25 +836,8 @@ export class Integrations {
     return tools.flat();
   }
 
-  /**
-   * What a connector's own tool gets of a credential: a device's store, else a fresh access token or the secret, with
-   * the store for a keeper.
-   */
+  /** What a connector's own tool gets of a credential: a fresh access token of a sign-in, else the secret. */
   private async secretOf(
-    connector: Connector,
-    credential: Credential
-  ): Promise<string> {
-    if (connector.device) {
-      return this.store(credential.id);
-    }
-    const secret = await this.ownSecret(connector, credential);
-    return connector.keeper
-      ? JSON.stringify({ store: this.store(credential.id), secret })
-      : secret;
-  }
-
-  /** A fresh access token of a sign-in, else the secret. */
-  private async ownSecret(
     connector: Connector,
     credential: Credential
   ): Promise<string> {
@@ -1125,15 +929,13 @@ export class Integrations {
     }));
   }
 
-  /** Closes the connections to MCP servers, and stops keeping the devices' stores. */
+  /** Closes the connections to MCP servers. */
   async close(): Promise<void> {
     const clients = [...this.clients.values()];
     this.clients.clear();
-    await Promise.allSettled([
-      ...clients.map(async (client) => (await client).close()),
-      ...this.catalog.map((connector) => connector.device?.close()),
-      ...this.catalog.map((connector) => connector.keeper?.close()),
-    ]);
+    await Promise.allSettled(
+      clients.map(async (client) => (await client).close())
+    );
   }
 
   /** A connector's tool whose calls use the account they name, else the turn's newest; see `credentialFor`. */
@@ -1407,31 +1209,6 @@ export class Integrations {
     }
   }
 
-  /** Ends a device's link, and moves its store aside, as deleted files are. */
-  private unlink(connector: Connector, credentialId: string): void {
-    connector
-      .device!.unlink(this.store(credentialId))
-      .then(() => this.moveAside(credentialId))
-      .catch((error: unknown) =>
-        console.error(`unlinking ${connector.name} failed`, error)
-      );
-  }
-
-  /** Moves the store of a deleted credential aside, as deleted files are. */
-  private moveAside(credentialId: string): void {
-    const store = this.store(credentialId);
-    if (!existsSync(store)) {
-      return;
-    }
-    const deleted = join(this.options.directory, "deleted");
-    mkdirSync(deleted, { recursive: true });
-    renameSync(store, join(deleted, credentialId));
-  }
-
-  private store(credentialId: string): string {
-    return join(this.options.directory, credentialId);
-  }
-
   /**
    * The credential that a turn of `userId` in a company uses for a connector: the one named `account`, else the
    * person's newest, else the newest shared one.
@@ -1567,9 +1344,6 @@ interface AccountTool {
 }
 
 function connectionOf(connector: Connector): Integration["connect"] {
-  if (connector.device) {
-    return "phone";
-  }
   return connector.mcp || connector.oauth ? "sign-in" : "secret";
 }
 
@@ -1601,7 +1375,6 @@ async function signIn(
         connector.oauth ?? new URL(connector.mcp![0]!, provider.grant.address),
       ...(connector.scope ? { scope: connector.scope } : {}),
       ...(authorizationCode ? { authorizationCode } : {}),
-      fetchFn: standardTokens(connector.oauthEndpoints?.token),
     });
   } catch (error) {
     // biome-ignore lint/style/useErrorCause: HttpError takes the cause as its third argument.
@@ -1611,25 +1384,6 @@ async function signIn(
       { cause: error }
     );
   }
-}
-
-/**
- * A fetch that makes the token answer of a sign-in server that does not publish its endpoints standard: Netatmo's has
- * its `scope` as a list and no `token_type`, which the SDK refuses.
- */
-function standardTokens(tokenUrl: string | undefined) {
-  return async (url: string | URL, init?: RequestInit): Promise<Response> => {
-    const response = await fetch(url, init);
-    if (!(response.ok && String(url) === tokenUrl)) {
-      return response;
-    }
-    const tokens = (await response.json()) as { scope?: unknown };
-    return Response.json({
-      token_type: "Bearer",
-      ...tokens,
-      ...(Array.isArray(tokens.scope) ? { scope: tokens.scope.join(" ") } : {}),
-    });
-  };
 }
 
 /** The OAuth state of one grant, as the MCP SDK reads and writes it: the client, the tokens, and PKCE. */
@@ -1646,7 +1400,7 @@ class GrantProvider implements OAuthClientProvider {
   ) {}
 
   get redirectUrl() {
-    return this.connector.redirectUrl ?? SIGN_IN_ADDRESS;
+    return SIGN_IN_ADDRESS;
   }
 
   get clientMetadata() {
@@ -1657,24 +1411,6 @@ class GrantProvider implements OAuthClientProvider {
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     };
-  }
-
-  /** The endpoints of a server that does not publish them, such as Netatmo's; else the SDK discovers them. */
-  discoveryState() {
-    const endpoints = this.connector.oauthEndpoints;
-    const server = this.connector.oauth;
-    return endpoints && server
-      ? {
-          authorizationServerUrl: server,
-          authorizationServerMetadata: {
-            issuer: server,
-            authorization_endpoint: endpoints.authorization,
-            token_endpoint: endpoints.token,
-            response_types_supported: ["code"],
-            token_endpoint_auth_methods_supported: ["client_secret_post"],
-          },
-        }
-      : undefined;
   }
 
   state(): string {
@@ -1716,7 +1452,7 @@ class GrantProvider implements OAuthClientProvider {
   }
 }
 
-/** The address of a person's own server, such as `http://homeassistant.local:8123`. */
+/** The address of a person's own server, such as `http://my-mac:3774`. */
 function serverAddress(address: string | undefined): string {
   const url = URL.parse(required(address, "Address"));
   if (!(url && (url.protocol === "http:" || url.protocol === "https:"))) {

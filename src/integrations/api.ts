@@ -2,7 +2,6 @@ import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
 import type { CredentialSummary } from "./integrations.ts";
-import { PUBLIC_KEY_PATH } from "./tesla.ts";
 
 /**
  * The integrations, with the credentials that a person sees in the company: the shared ones and their own, which they
@@ -38,19 +37,6 @@ export const integrationApiRoutes: readonly Route[] = [
       app.slackBot.disconnect(params.company!, user);
       return new Response(null, { status: 204 });
     }),
-  ],
-  // Tesla's Fleet API reads the key that Shadow signs commands with here, at Shadow's domain.
-  [
-    "GET",
-    PUBLIC_KEY_PATH,
-    async ({ app }) => {
-      const key = app.integrations.publicKey("tesla");
-      return key
-        ? new Response(key, {
-            headers: { "content-type": "application/x-pem-file" },
-          })
-        : new Response("Not found", { status: 404 });
-    },
   ],
   [
     "PUT",
@@ -98,10 +84,7 @@ export const integrationApiRoutes: readonly Route[] = [
           params.company!,
           user,
           params.integration!,
-          {
-            phone: body.phone as string | undefined,
-            address: body.address as string | undefined,
-          }
+          { address: body.address as string | undefined }
         )
       )
     ),

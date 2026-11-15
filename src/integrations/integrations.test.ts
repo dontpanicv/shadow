@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chmod, exists } from "node:fs/promises";
-import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -16,14 +14,13 @@ import {
   Integrations,
   type SourceRead,
 } from "./integrations.ts";
-import { whatsAppConnector } from "./whatsapp.ts";
 
 let shadow: TestApp;
 let alice: User;
 /** A member who is not the server's owner. */
 let notOwner: User;
 let companyId: string;
-/** A sign-in server and an MCP server's address, as Rohlík's are, on a local port. */
+/** A sign-in server and an MCP server's address, as Plaud's are, on a local port. */
 let signInServer: ReturnType<typeof Bun.serve>;
 /** What the sign-in server's token endpoint got. */
 const tokenRequests: URLSearchParams[] = [];
@@ -59,7 +56,6 @@ beforeAll(async () => {
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [shop],
       changed: (id) => changes.push(id),
       transport: (_url, provider) => {
@@ -107,7 +103,6 @@ async function signIn(request: Request): Promise<Response> {
   }
   if (pathname === "/oauth2/token") {
     tokenRequests.push(new URLSearchParams(await request.text()));
-    // Netatmo's answer: `scope` is a list, and there is no `token_type`.
     return Response.json({
       access_token: "access-station",
       refresh_token: "refresh-station",
@@ -320,7 +315,6 @@ test("a turn uses its person's own credential, else a shared one, and only its o
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "notes",
@@ -400,7 +394,6 @@ test("a tool that acts as a person asks its credential's owner every time, and o
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "messenger",
@@ -477,7 +470,6 @@ test("a secret of a connector with an address keeps its server's address", async
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "home",
@@ -520,7 +512,6 @@ test("a secret of a connector with an account keeps the account, which names the
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "thermostat",
@@ -558,58 +549,6 @@ test("a secret of a connector with an account keeps the account, which names the
   });
 });
 
-test("a sign-in server that does not publish its endpoints signs in at the connector's own, and returns to its own address", async () => {
-  const { origin } = new URL(signInServer.url);
-  const station: Connector = {
-    id: "station",
-    name: "Station",
-    description: "The weather.",
-    secretLabel: null,
-    oauth: `${origin}/station`,
-    oauthEndpoints: {
-      authorization: `${origin}/oauth2/authorize`,
-      token: `${origin}/oauth2/token`,
-    },
-    registered: true,
-    redirectUrl: "https://shadow.example.com/shadow-sign-in",
-    tools: [],
-  };
-  const withOwner = new Integrations(
-    shadow.app.database,
-    Secrets.forTests(),
-    shadow.app.companies,
-    {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
-      catalog: [station],
-    }
-  );
-  await withOwner.setClient(alice, "station", {
-    clientId: "own-client",
-    clientSecret: "shh",
-  });
-  const { url } = (await withOwner.connect(companyId, alice, "station")) as {
-    url: string;
-  };
-  const page = new URL(url);
-  expect(page.pathname).toBe("/oauth2/authorize");
-  expect(page.searchParams.get("redirect_uri")).toBe(
-    "https://shadow.example.com/shadow-sign-in"
-  );
-  const credential = await withOwner.finishConnect(
-    companyId,
-    alice,
-    "station",
-    `https://shadow.example.com/shadow-sign-in?code=code-4&state=${page.searchParams.get("state")}`
-  );
-  expect(credential.label).toBe("Station");
-  expect(tokenRequests.at(-1)?.get("client_secret")).toBe("shh");
-  expect(tokenRequests.at(-1)?.get("redirect_uri")).toBe(
-    "https://shadow.example.com/shadow-sign-in"
-  );
-  withOwner.deleteCredential(companyId, alice, credential.id);
-  await withOwner.close();
-});
-
 test("only an admin sets Shadow's own client, and its MCP server hides the tools that send", async () => {
   const chat: Connector = {
     id: "chat",
@@ -624,7 +563,6 @@ test("only an admin sets Shadow's own client, and its MCP server hides the tools
   };
   const { database, companies } = shadow.app;
   const withOwner = new Integrations(database, Secrets.forTests(), companies, {
-    directory: join(shadow.app.config.dataDirectory, "integrations"),
     catalog: [chat],
     transport: () => {
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -692,7 +630,6 @@ test("people sign in to the MCP server at the address of their own machine, and 
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [coding],
       transport: (server) => {
         connectedTo.push(server.href);
@@ -756,7 +693,6 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [google],
     }
   );
@@ -799,106 +735,12 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
   await withOwner.close();
 });
 
-test("a keeper keeps the store of each credential while Shadow runs, and Shadow keeps a client that its API took", async () => {
-  const kept: string[] = [];
-  const stopped: string[] = [];
-  const secrets: string[] = [];
-  const registered: string[] = [];
-  const car: Connector = {
-    id: "car",
-    name: "Car",
-    description: "A car.",
-    secretLabel: null,
-    oauth: new URL(signInServer.url).origin,
-    registered: true,
-    scope: "openid email",
-    publicKey: () => "PUBLIC KEY",
-    registerClient: async ({ clientId }) => {
-      if (clientId === "wrong") {
-        throw new Error("Car refused the client");
-      }
-      registered.push(clientId);
-    },
-    keeper: {
-      keep: (store, secret) => {
-        kept.push(store);
-        secret().then((value) => secrets.push(value));
-      },
-      stop: (store) => stopped.push(store),
-      close: () => undefined,
-    },
-    tools: [
-      {
-        name: "car_secret",
-        description: "What the call got.",
-        parameters: Type.Object({}),
-        execute: async (_args, secret) => JSON.parse(secret),
-      },
-    ],
-  };
-  const options = {
-    directory: join(shadow.app.config.dataDirectory, "integrations"),
-    catalog: [car],
-    owner: "alice@example.com",
-  };
-  const { database, companies } = shadow.app;
-  const secretsOfServer = Secrets.forTests();
-  const withOwner = new Integrations(
-    database,
-    secretsOfServer,
-    companies,
-    options
-  );
-  expect(withOwner.publicKey("car")).toBe("PUBLIC KEY");
-  expect(withOwner.publicKey("shop")).toBeNull();
-  await expect(
-    withOwner.setClient(alice, "car", { clientId: "wrong", clientSecret: "x" })
-  ).rejects.toThrow("Car refused the client");
-  expect(withOwner.list(companyId, alice)[0]!.client?.clientId).toBeNull();
-  await withOwner.setClient(alice, "car", {
-    clientId: "own-client",
-    clientSecret: "shh",
-  });
-  expect(registered).toEqual(["own-client"]);
-
-  const { url } = (await withOwner.connect(companyId, alice, "car")) as {
-    url: string;
-  };
-  const credential = await withOwner.finishConnect(
-    companyId,
-    alice,
-    "car",
-    `https://localhost/shadow-sign-in?code=code-5&state=${new URL(url).searchParams.get("state")}`
-  );
-  const credentialStore = join(options.directory, credential.id);
-  expect(kept).toEqual([credentialStore]);
-  const [carSecret] = await withOwner.tools(companyId);
-  expect(await carSecret!.execute({}, { userId: alice.id })).toEqual({
-    store: credentialStore,
-    secret: "access-refreshed",
-  });
-  // After a restart, Shadow keeps the store again.
-  const restarted = new Integrations(
-    database,
-    secretsOfServer,
-    companies,
-    options
-  );
-  expect(kept).toEqual([credentialStore, credentialStore]);
-  withOwner.deleteCredential(companyId, alice, credential.id);
-  expect(stopped).toEqual([credentialStore]);
-  expect(secrets).toContain("access-refreshed");
-  await restarted.close();
-  await withOwner.close();
-});
-
 test("a turn picks one of its person's accounts by name, and lists them", async () => {
   const notes = new Integrations(
     shadow.app.database,
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "mail",
@@ -952,177 +794,6 @@ test("a turn picks one of its person's accounts by name, and lists them", async 
   ]);
 });
 
-test("people link their WhatsApp number with a code, and agents read it through wacli", async () => {
-  const directory = join(shadow.app.config.dataDirectory, "whatsapp-test");
-  const wacli = join(shadow.app.config.dataDirectory, "wacli");
-  // wacli as Shadow runs it: linking gives a code, then links; a read answers with its arguments.
-  await Bun.write(
-    wacli,
-    `#!/bin/sh
-store="$2"
-shift 2
-case "$*" in
-  "--events auth --phone"*)
-    echo "Starting" >&2
-    echo '{"event":"pair_code","data":{"code":"ABCD-1234"}}' >&2
-    echo '{"event":"connected"}' >&2
-    exec sleep 60 ;;
-  "--events sync --follow")
-    echo sync >> "$store/syncs"
-    exec sleep 60 ;;
-  "auth logout") touch "$store/logged-out" ;;
-  "--json media download"*)
-    command="$*"
-    while [ "$1" != "--output" ]; do shift; done
-    echo "$command" > "$2photo.jpg"
-    printf '{"success":true,"data":{"path":"%sphoto.jpg"},"error":null}' "$2" ;;
-  *) printf '{"success":true,"data":{"store":"%s","command":"%s"},"error":null}' "$store" "$*" ;;
-esac
-`
-  );
-  await chmod(wacli, 0o755);
-  const whatsApp = new Integrations(
-    shadow.app.database,
-    Secrets.forTests(),
-    shadow.app.companies,
-    { directory, catalog: [whatsAppConnector(wacli)] }
-  );
-  expect(whatsApp.list(companyId, alice)[0]).toMatchObject({
-    connect: "phone",
-  });
-  await expect(
-    whatsApp.finishConnect(companyId, alice, "whatsapp")
-  ).rejects.toThrow("Start linking again");
-  expect(
-    await whatsApp.connect(companyId, alice, "whatsapp", {
-      phone: "+420 123 456 789",
-    })
-  ).toEqual({
-    code: "ABCD-1234",
-  });
-  const credential = await whatsApp.finishConnect(companyId, alice, "whatsapp");
-  expect(credential.label).toBe("+420 123 456 789");
-
-  const tools = await whatsApp.tools(companyId);
-  expect(tools.map((tool) => tool.name)).toEqual([
-    "whatsapp_chats",
-    "whatsapp_messages",
-    "whatsapp_search",
-    "whatsapp_backfill",
-    "whatsapp_contacts",
-    "whatsapp_draft",
-    "whatsapp_send",
-    "whatsapp_send_file",
-    "whatsapp_save_media",
-    "whatsapp_accounts",
-  ]);
-  const turn = { userId: alice.id };
-  const store = join(directory, credential.id);
-  expect(
-    await tools[0]!.execute({ query: "company", unread: true }, turn)
-  ).toEqual({
-    store,
-    command: "--json --read-only chats list --query company --unread",
-  });
-  // Two backfills at once wait for each other, and the sync starts again after them.
-  const [first, second] = await Promise.all([
-    tools[3]!.execute({ chat: "company@g.us", messages: 1000 }, turn),
-    tools[3]!.execute({ chat: "partner@s.whatsapp.net" }, turn),
-  ]);
-  expect(first).toEqual({
-    store,
-    command:
-      "--json --timeout 5m history backfill --chat company@g.us --count 500 --requests 2",
-  });
-  expect(second).toMatchObject({
-    command: expect.stringContaining(
-      "--chat partner@s.whatsapp.net --count 500 --requests 1"
-    ),
-  });
-  const syncs = join(store, "syncs");
-  for (let tries = 0; tries < 50 && (await readSyncs()) === 0; tries += 1) {
-    await Bun.sleep(20);
-  }
-  expect(await readSyncs()).toBeGreaterThan(0);
-  expect(
-    await tools[5]!.execute(
-      { phone: "+420 123 456 789", text: "On my way & late" },
-      turn
-    )
-  ).toEqual({
-    link: "https://wa.me/420123456789?text=On%20my%20way%20%26%20late",
-  });
-  const allowed: string[] = [];
-  expect(
-    await tools[6]!.execute(
-      { to: "company@g.us", text: "-Home soon" },
-      {
-        ...turn,
-        approve: async (text, approverId) => {
-          allowed.push(`${approverId}: ${text}`);
-        },
-      }
-    )
-  ).toEqual({
-    store,
-    command: "--json send text --to=company@g.us --message=-Home soon",
-  });
-  expect(
-    await tools[7]!.execute(
-      { to: "company@g.us", file: "f1", caption: "Tonight" },
-      {
-        ...turn,
-        file: async () => ({ path: "/files/f1-menu.pdf", name: "menu.pdf" }),
-        approve: async (text, approverId) => {
-          allowed.push(`${approverId}: ${text}`);
-        },
-      }
-    )
-  ).toEqual({
-    store,
-    command:
-      "--json send file --to=company@g.us --file=/files/f1-menu.pdf --filename=menu.pdf --caption=Tonight",
-  });
-  expect(allowed).toEqual([
-    `${alice.id}: Send on WhatsApp to company@g.us: -Home soon`,
-    `${alice.id}: Send on WhatsApp to company@g.us: menu.pdf\n\nTonight`,
-  ]);
-  const saved = join(directory, "saved");
-  expect(
-    await tools[8]!.execute(
-      { chat: "company@g.us", message: "M1" },
-      {
-        ...turn,
-        save: async (write) => ({ id: "f2", name: await write(saved) }),
-      }
-    )
-  ).toEqual({ id: "f2", name: "photo.jpg" });
-  expect(await Bun.file(saved).text()).toStartWith(
-    "--json media download --chat company@g.us --id M1 --output "
-  );
-  await expect(
-    tools[8]!.execute({ chat: "company@g.us", message: "M1" }, turn)
-  ).rejects.toThrow("Only an agent in a thread can save files.");
-
-  whatsApp.deleteCredential(companyId, alice, credential.id);
-  const unlinked = join(directory, "deleted", credential.id, "logged-out");
-  for (let tries = 0; tries < 50 && !(await exists(unlinked)); tries += 1) {
-    await Bun.sleep(20);
-  }
-  expect(await exists(unlinked)).toBe(true);
-  expect(await whatsApp.tools(companyId)).toHaveLength(10);
-  await expect(tools[0]!.execute({}, turn)).rejects.toThrow(
-    "WhatsApp is not connected"
-  );
-  await whatsApp.close();
-
-  async function readSyncs() {
-    return (await exists(syncs))
-      ? (await Bun.file(syncs).text()).trim().split("\n").length
-      : 0;
-  }
-});
-
 test("only a credential's owner lets Shadow read it for them, and only a watched one is read", async () => {
   await shadow.signIn("Bob", "bob@example.com");
   const { internalAdapter } = await shadow.app.auth.$context;
@@ -1145,7 +816,6 @@ test("only a credential's owner lets Shadow read it for them, and only a watched
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "integrations"),
       catalog: [
         {
           id: "mail",
@@ -1272,7 +942,6 @@ test("only an opted-in account owner's chat receives verified read observations"
     Secrets.forTests(),
     shadow.app.companies,
     {
-      directory: join(shadow.app.config.dataDirectory, "observations"),
       catalog: [connector],
     }
   );
@@ -1315,97 +984,4 @@ test("only an opted-in account owner's chat receives verified read observations"
   await read.execute({}, { userId: alice.id, observe });
   expect(received).toHaveLength(1);
   await observed.close();
-});
-
-test("a WhatsApp mention by internal id shows the person's name, @me for the owner, and stays a number when unknown", async () => {
-  const wacli = join(shadow.app.config.dataDirectory, "wacli-mentions");
-  await Bun.write(
-    wacli,
-    `#!/bin/sh
-echo '{"success":true,"data":[{"input":"111222333444555@lid","phone":"420777000111","name":"Jane Doe","resolved":true},{"input":"999888777666555@lid","phone":"420111222333","name":"Me","resolved":true},{"input":"123456789012345@lid","resolved":false}],"error":null}'
-`
-  );
-  await chmod(wacli, 0o755);
-  const message = (MsgID: string, Text: string) => ({
-    ChatJID: "120363@g.us",
-    ChatName: "Group",
-    SenderName: "Pavel",
-    Timestamp: "2026-10-01T08:00:00Z",
-    FromMe: false,
-    ReactionEmoji: "",
-    Revoked: false,
-    MediaCaption: "",
-    MsgID,
-    Text,
-  });
-  const result = {
-    messages: [
-      message("a", "@111222333444555 please look"),
-      message("b", "@999888777666555 please look"),
-      message("c", "@123456789012345 please look"),
-    ],
-  };
-  const source = { account: "+420111222333", secret: async () => "store" };
-  const read = (binary: string) =>
-    whatsAppConnector(binary).observations!(
-      "whatsapp_messages",
-      {},
-      result,
-      source
-    );
-  expect((await read(wacli)).map((item) => item.text)).toEqual([
-    "@Jane Doe please look",
-    "@me please look",
-    "@123456789012345 please look",
-  ]);
-  // A failed lookup keeps the messages.
-  expect((await read("/nonexistent/wacli"))[0]!.text).toBe(
-    "@111222333444555 please look"
-  );
-});
-
-test("WhatsApp source reads use original incoming and outgoing text and exclude drafts and reactions", async () => {
-  const connector = whatsAppConnector("unused");
-  const source = { account: "+420111222333", secret: async () => "unused" };
-  const base = {
-    ChatJID: "420999888777@s.whatsapp.net",
-    ChatName: "Builder",
-    SenderName: "Builder",
-    Timestamp: "2026-10-01T08:00:00Z",
-    ReactionEmoji: "",
-    Revoked: false,
-    MediaCaption: "",
-  };
-  const result = {
-    messages: [
-      {
-        ...base,
-        MsgID: "incoming",
-        FromMe: false,
-        Text: "@420111222333 Confirmed.",
-      },
-      { ...base, MsgID: "outgoing", FromMe: true, Text: "I handled this." },
-      {
-        ...base,
-        MsgID: "reaction",
-        FromMe: false,
-        Text: "",
-        ReactionEmoji: "👍",
-      },
-    ],
-  };
-  const items = await connector.observations!(
-    "whatsapp_search",
-    {},
-    result,
-    source
-  );
-  expect(items.map((item) => [item.fromOwner, item.text])).toEqual([
-    [false, "@me Confirmed."],
-    [true, "I handled this."],
-  ]);
-  expect(items[0]!.at).toBe(Date.parse(base.Timestamp));
-  expect(
-    await connector.observations!("whatsapp_draft", {}, result, source)
-  ).toEqual([]);
 });

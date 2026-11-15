@@ -31,7 +31,7 @@ frame.addEventListener("load", () => {
 
 /**
  * The page a link opens: the artifact in a sandboxed frame. Its addresses are relative, so the page works at
- * `/a/<name>` and at `/<name>` on the public host. Link previews, such as WhatsApp's, show its title.
+ * `/a/<name>` and at `/<name>` on the public host. Link previews, such as Slack's, show its title.
  */
 export function artifactPage(artifact: Artifact): string {
   const title = escapeHtml(artifact.title);

@@ -219,9 +219,9 @@ export class IntakeArchives {
         continue;
       }
       const item = JSON.parse(row.payload) as WatchedItem;
+      // A Slack direct conversation has no thread, so each of its days is one file.
       const daily =
-        credential.integration === "whatsapp" ||
-        (credential.integration === "slack" && !item.chat.includes("/"));
+        credential.integration === "slack" && !item.chat.includes("/");
       const period = daily ? calendarDay(item.at) : "";
       const id = hash(
         JSON.stringify([

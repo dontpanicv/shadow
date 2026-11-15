@@ -133,7 +133,7 @@ addresses, or code and data from employers or clients.
 
 - Use descriptive names; do not abbreviate domain concepts.
 - Shadow's conversations use Slack's words: the company has channels, as a Slack workspace does, and a channel has threads. A source's own
-  conversation, such as a WhatsApp or Slack conversation of a watched account, is a `chat` (`WatchedItem.chat`).
+  conversation, such as a Slack conversation of a watched account, is a `chat` (`WatchedItem.chat`).
 - Do not introduce `mock.module()` in tests; use dependency injection.
 - Order functions top-down by call hierarchy, with entry points before their helpers.
 - Use JSDoc for exported user-facing code examples.

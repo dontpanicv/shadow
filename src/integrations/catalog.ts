@@ -1,42 +1,18 @@
 import { googleConnector } from "./google.ts";
-import { homeAssistantConnector } from "./home-assistant.ts";
-import { instagramConnector } from "./instagram.ts";
 import type { Connector } from "./integrations.ts";
-import { netatmoConnector } from "./netatmo.ts";
 import { recordingObservations, watchRecordings } from "./plaud.ts";
-import { salusConnector } from "./salus.ts";
 import { PASTE_ADDRESS } from "./sign-in.ts";
 import { slackConnector } from "./slack.ts";
-import { teslaConnector } from "./tesla.ts";
-import { whatsAppConnector } from "./whatsapp.ts";
-import { xConnector } from "./x.ts";
 
 /**
- * The connectors that Shadow has: ones with a secret, MCP servers that people sign in to, Google when this machine has
- * gog, Slack when it has slackcli, WhatsApp when it has wacli, and Tesla when it has tesla-control. Tesla keeps Shadow's
- * signing key in `server.directory`, and reads Shadow's public key at `server.baseUrl`.
+ * The connectors that Shadow has: Plaud and T3 Code, MCP servers that people sign in to, Google when this machine has
+ * gog, and Slack when it has slackcli.
  */
 export function integrationCatalog(
-  server: { readonly directory: string; readonly baseUrl?: string },
-  wacli = Bun.which("wacli"),
   gog = Bun.which("gog"),
-  slackcli = Bun.which("slackcli"),
-  teslaControl = Bun.which("tesla-control")
+  slackcli = Bun.which("slackcli")
 ): readonly Connector[] {
   return [
-    homeAssistantConnector(),
-    netatmoConnector(),
-    salusConnector(),
-    {
-      id: "rohlik",
-      name: "Rohlík",
-      description:
-        "A grocery shop with delivery: products, the cart, orders and their history, recipes, and shopping lists. Put things in the cart; people place the order themselves.",
-      secretLabel: null,
-      guide: ["Click **Connect**, and sign in to Rohlík.", PASTE_ADDRESS],
-      tools: [],
-      mcp: ["https://mcp.rohlik.cz/mcp"],
-    },
     {
       id: "plaud",
       name: "Plaud",
@@ -86,17 +62,5 @@ export function integrationCatalog(
     },
     ...(gog ? [googleConnector(gog)] : []),
     ...(slackcli ? [slackConnector(slackcli)] : []),
-    xConnector(),
-    instagramConnector(),
-    ...(wacli ? [whatsAppConnector(wacli)] : []),
-    ...(teslaControl && server.baseUrl
-      ? [
-          teslaConnector({
-            binary: teslaControl,
-            directory: server.directory,
-            domain: new URL(server.baseUrl).hostname,
-          }),
-        ]
-      : []),
   ];
 }

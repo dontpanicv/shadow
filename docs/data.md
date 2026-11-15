@@ -40,10 +40,6 @@ data/
 │       ├── tables/                  Structured history as Parquet, append-only, read with DuckDB.
 │       │   └── <dataset>/date=<yyyy-mm-dd>/<uuidv7>.parquet
 │       └── index.sqlite             The search index of this company (derived, rebuildable).
-├── integrations/
-│   ├── <credential-id>/             A device linked to a person's number, such as WhatsApp's: its keys and its
-│   │                                copy of the person's threads, kept by wacli.
-│   └── deleted/                     The folders of deleted credentials, kept as they were.
 ├── audit.sqlite                    Private raw process log; SQLite backup makes one portable copy.
 ├── models/                          Downloaded models, shared because they hold no data.
 │   ├── embeddinggemma-2-Q8_0.gguf
@@ -189,6 +185,6 @@ The personal Following ledger uses `intake_check_revision` in `shadow.sqlite`. A
 
 Automatic Gmail collection selects only incoming Primary inbox mail after Gmail filters and the owner's sent-mail context. Other categories, archived incoming mail, drafts, spam, and trash are excluded before body fetch and raw intake storage. A normal tool can still read older mail when the person or thread agent needs it; only eligible messages from such a read enter the intake ledger. Earlier stored source records remain historical evidence.
 
-`intake_archive` maps each source account, conversation, calendar period, and destination channel to one source file. Its selected message IDs prevent unrelated private messages from entering a shared channel. Gmail uses its thread ID, Slack channels use their source thread ID, and Plaud uses its recording ID. WhatsApp conversations and Slack DMs or group DMs use one file per calendar day in the server's time zone, as the agenda does. The file keeps its ID when messages arrive or change. Source messages remain separate, complete evidence records in SQLite and the audit.
+`intake_archive` maps each source account, conversation, calendar period, and destination channel to one source file. Its selected message IDs prevent unrelated private messages from entering a shared channel. Gmail uses its thread ID, Slack channels use their source thread ID, and Plaud uses its recording ID. Slack DMs and group DMs use one file per calendar day in the server's time zone, as the agenda does. The file keeps its ID when messages arrive or change. Source messages remain separate, complete evidence records in SQLite and the audit.
 
 The archive stores pending membership and attachment IDs before completing a file update, so an interrupted write can resume. A matching generated filename recovers a file saved before its ID reached SQLite. Unchanged content is not written again. Supported attachments keep their file IDs across message edits. A conversation file that the person or an agent edited is never deleted, also when its sources are deleted. File versions use the same retained-version store as other Shadow files.
