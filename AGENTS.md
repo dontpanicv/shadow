@@ -53,9 +53,12 @@ addresses, or code and data from employers or clients.
   post Shadow's answer.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
-  retain useful context and infer future checks. A useful development adds a visible source message and files to the
-  existing subject thread, including an existing matching shared thread; a new matter and silent filing stay in
-  the person's private channels. Shadow is the
+  retain useful context and infer future checks. Hard rule: what intake reads from a person's accounts goes only to
+  threads of that person's private channels (`privateThreads` in `src/intake/recall.ts`), never to a channel or
+  thread that someone else sees. Only the person's own request in a shared thread brings their sources there. A
+  private thread or channel never moves or merges into a channel that others see. A useful development adds a visible
+  source message and files to the existing subject thread; a new matter and silent filing stay in the person's
+  private channels. Shadow is the
   person's second brain, not their worker: no source starts an agent, and an agent does research, analysis, or a draft
   only when a person asks. An urgent development is posted at once. The others wait for the person's one morning
   review in the 08:00 hour of the person's Slack time zone, which groups them by matter, posts one message to each thread with what it asks of the
@@ -88,6 +91,8 @@ addresses, or code and data from employers or clients.
 - People's own agents, such as Claude Code or Codex, reach Shadow only through `/mcp` (`src/mcp/`), with an OAuth
   access token of better-auth's OAuth provider, never a session token. Each MCP tool acts as that person, through the
   same service calls and realm as the JSON routes; `ask` reaches everything else through their orchestrator.
+- Every file and artifact belongs to a channel; nothing is company-wide. An orchestrator keeps its files and artifacts
+  in its person's own channel (`Threads.placeOf`), as its thread sits in a channel that others see.
 - Serve HTML that an agent or a person wrote only from `/a/:id/content`, with its `sandbox` content policy; never run
   it on Shadow's origin.
 

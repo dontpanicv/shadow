@@ -2,7 +2,7 @@ import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 
 /**
- * The artifacts of a channel, and the company's own, for the web app. Agents make and change them; people open them,
+ * The artifacts of a channel, for the web app. Agents make and change them; people open them,
  * change who sees them, and delete them or their data. The app shows an artifact in a frame of its link page, whose
  * `shadow` calls go to `/a/:artifact/rpc`.
  */
@@ -18,13 +18,6 @@ export const artifactApiRoutes: readonly Route[] = [
           user
         ),
       })
-    ),
-  ],
-  [
-    "GET",
-    "/api/v1/companies/:company/artifacts",
-    api(async ({ app, user, params }) =>
-      json({ artifacts: app.artifacts.inPlace(params.company!, null, user) })
     ),
   ],
   [

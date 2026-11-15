@@ -453,38 +453,41 @@ test("an artifact belongs to its channel: other threads see it after its thread 
     "Not found"
   );
 
-  const general = companies
-    .channels(companyId, alice)
-    .find((channel) => channel.name === "general")!;
+  const own = companies.personalChannelOf(companyId, alice);
   // The merge waits for the agents of the channel.
   await until(
     () =>
-      threads.merge(companyId, alice, recipes.id, general.id).then(
+      threads.merge(companyId, alice, recipes.id, own.id).then(
         () => true,
         () => false
       ),
     Boolean
   );
-  expect(artifacts.get(banana.id, alice).channelId).toBe(general.id);
+  expect(artifacts.get(banana.id, alice).channelId).toBe(own.id);
   expect(
     companies.channels(companyId, alice).map((channel) => channel.name)
   ).toEqual(["general", "alice"]);
 });
 
-test("the orchestrator's artifacts belong to the company, and an agent puts one in a channel it names", async () => {
-  const { artifacts, threads } = shadow.app;
+test("the orchestrator's artifacts belong to its person's own channel, and an agent puts one in a channel it names", async () => {
+  const { artifacts, threads, companies } = shadow.app;
   const orchestrator = await threads.orchestrator(thread.companyId, alice);
+  const own = companies.personalChannelOf(thread.companyId, alice);
   await useTool(
     "artifacts_create",
     { title: "Chores", html: "<p>Dishes</p>" },
     orchestrator.id
   );
-  const [chores] = artifacts.inPlace(thread.companyId, null, alice);
+  const [chores] = artifacts.inPlace(thread.companyId, own.id, alice);
   expect(chores).toMatchObject({
     title: "Chores",
-    channelId: null,
+    channelId: own.id,
     threadId: orchestrator.id,
   });
+  // What every member sees leaves it out.
+  expect(
+    artifacts.inCompany(thread.companyId, null).map((each) => each.id)
+  ).not.toContain(chores!.id);
   expect(toolResults.at(-1)).toContain("Made the artifact.");
 
   const named = await useTool(
@@ -505,5 +508,5 @@ test("the orchestrator's artifacts belong to the company, and an agent puts one 
       orchestrator.id
     )
   ).toContain("There is no channel #nowhere.");
-  expect(await useTool("artifacts_list", {})).toContain("The company's");
+  expect(await useTool("artifacts_list", {})).toContain("Channel: #alice");
 });

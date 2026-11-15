@@ -129,7 +129,7 @@ type Routine = {
 };
 type Artifact = {
 	id: string; // four words, such as "amber-fox-lake-moss" (older ones have two); a name is never given out again
-	channelId: string | null; // the channel it belongs to; null: the company's own, which the orchestrator makes
+	channelId: string; // the channel it belongs to; the orchestrator's go to its person's own channel
 	threadId: string; // the thread that made it
 	title: string;
 	visibility: "public" | "members"; // public: anyone with the link; members: signed-in members only
@@ -238,7 +238,7 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `PUT /api/v1/companies/:companyId/channels/:channelId` | `{ name }` | `Channel`, with the name as Shadow keeps it: lowercase letters, also with diacritics, numbers, and `_`, with `-` between words, as in Slack. Only a private channel; one that every member sees takes its name from Slack, `409`. `409` if the name exists |
 | `PUT /api/v1/companies/:companyId/channels/:channelId/pin` | | `204`; the person pins a channel they see to the top of their sidebar |
 | `DELETE /api/v1/companies/:companyId/channels/:channelId/pin` | | `204`; the person unpins it |
-| `POST /api/v1/companies/:companyId/channels/:channelId/merge` | `{ into }` | `204`; its threads, files, artifacts, routines, suggestions, and source archives move to channel `into`, then the empty channel goes and the orchestrators move to the next channel that every member sees. Nobody deletes a channel otherwise. `403` for a channel that every member sees, which copies a Slack channel and stays until Slack archives it, and for a person's own channel; `409` while an agent of the channel works. Agents merge with `merge_channel` when a person asks; a private channel merges into one that every member sees only after its owner allows it |
+| `POST /api/v1/companies/:companyId/channels/:channelId/merge` | `{ into }` | `204`; its threads, files, artifacts, routines, suggestions, and source archives move to channel `into`, then the empty channel goes and the orchestrators move to the next channel that every member sees. Nobody deletes a channel otherwise. `403` for a channel that every member sees, which copies a Slack channel and stays until Slack archives it, for a person's own channel, and into a channel that every member sees, as a private channel stays private; `409` while an agent of the channel works. Agents merge with `merge_channel` when a person asks |
 | `GET /api/v1/companies/:companyId/facts` | | `{ text }`: facts that the admins write about the company, such as its teams, products, and customers; every agent of the company reads them; `""` until someone writes them |
 | `PUT /api/v1/companies/:companyId/facts` | `{ text }` | `{ text }`; only an admin writes them, `403` for others; `400` over 20,000 characters |
 | `GET /api/v1/companies/:companyId/members` | | `Member[]` |
@@ -258,7 +258,7 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `POST /api/v1/companies/:companyId/threads` | `{ channelId, text }` | `ThreadSummary`; `text` becomes the first message, and its first line the title until the model names the subject in a few words |
 | `GET /api/v1/threads/:threadId` | | `ThreadState` |
 | `POST /api/v1/companies/:companyId/threads/:threadId/settled` | `{ settled: boolean }` | `ThreadSummary`; settled threads stay available in their channel, and any new message in one, such as a routine's answer, opens it again; `400` for the orchestrator |
-| `POST /api/v1/companies/:companyId/threads/:threadId/channel` | `{ channelId }` | `ThreadSummary`; the thread moves to another channel that the person sees, with its artifacts, the files of its channel that no other thread there mentions, its routine, its open suggestions, and what Shadow learned from it, and gets a note of who moved it. Only the person who started a thread moves it into their private channel. `400` for the orchestrator, `403` into a private channel for another person, `404` for a channel the person does not see, `409` while its agent works. Agents move a thread with `move_thread` when a person asks |
+| `POST /api/v1/companies/:companyId/threads/:threadId/channel` | `{ channelId }` | `ThreadSummary`; the thread moves to another channel that the person sees, with its artifacts, the files of its channel that no other thread there mentions, its routine, its open suggestions, and what Shadow learned from it, and gets a note of who moved it. Only the person who started a thread moves it into their private channel. `400` for the orchestrator, `403` into a private channel for another person and from a private channel into one that every member sees, `404` for a channel the person does not see, `409` while its agent works. Agents move a thread with `move_thread` when a person asks |
 | `GET /api/v1/threads/:threadId/events` | | Server-sent events: `event: thread`, `data: ThreadState` after every change |
 | `POST /api/v1/threads/:threadId/messages` | `{ text, voice?, requestId? }` | `204`; a retry with the same `requestId` sends nothing again |
 | `POST /api/v1/threads/:threadId/approvals/:approvalId` | `{ allow: boolean }` | `204`; `allow` runs the action once. `403` for a person who is not the approver; `404` when the approval ended or the person is not a member |
@@ -267,16 +267,14 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `GET /api/v1/companies/:companyId/channels/:channelId/brief` | | `{ brief: Brief \| null }`: what the channel is for, where it is now, its decisions, and its open questions, from its threads and its Slack channel; `null` before the first |
 | `GET /api/v1/companies/:companyId/channels/:channelId/files` | | `{ files: SavedFile[] }`, oldest first |
 | `POST /api/v1/companies/:companyId/channels/:channelId/files` | multipart `files` | `{ files: SavedFile[] }`: all files of the channel |
-| `GET /api/v1/companies/:companyId/files` | | `{ files: SavedFile[] }`: the company's own files, which the orchestrator keeps, oldest first |
-| `POST /api/v1/companies/:companyId/files` | multipart `files` | `{ files: SavedFile[] }`: all of the company's own files |
-| `GET /api/v1/companies/:companyId/files/:fileId` | | Any file of the company, in a channel or its own. Pictures, PDFs, plain text, audio, and video are `inline`; other kinds are `attachment` and `application/octet-stream`. |
+| `GET /api/v1/companies/:companyId/files/:fileId` | | Any file of a channel that the person sees. Pictures, PDFs, plain text, audio, and video are `inline`; other kinds are `attachment` and `application/octet-stream`. |
 | `GET /api/v1/companies/:companyId/files/:fileId/picture` | | A JPEG of a picture file, also HEIC, at most 1024 pixels long, for its thumbnail in a message. `404` for another kind of file. |
 | `DELETE /api/v1/companies/:companyId/files/:fileId` | | `{ files: SavedFile[] }`: the files left where it was. Messages keep the name of a deleted file. |
 
 Files belong to a channel: every thread of the channel sees them, also after a thread is settled. The orchestrator
-belongs to no channel, so its files are the company's own. To attach files to a new thread or a message, send the
+keeps its files in its person's own channel, which nobody else sees. To attach files to a new thread or a message, send the
 same fields as a `multipart/form-data` form with one `files` part per file instead of JSON; the files go to the
-thread's channel, or the company for the orchestrator. A message then needs text, files, or both; a thread without
+thread's channel, or the person's own channel for the orchestrator. A message then needs text, files, or both; a thread without
 text takes the name of its first file. A message's `FileRef` opens at `/api/v1/companies/:companyId/files/:fileId`.
 The agents see each attached file by name and id; `list_files` lists the files of their channel, and `read_file` reads
 any file of the company by its id. `save_file` with `replaces` saves a new version of a file of their channel, which
@@ -356,7 +354,6 @@ the background.
 | Request | Body | Response |
 | --- | --- | --- |
 | `GET /api/v1/companies/:companyId/channels/:channelId/artifacts` | | `{ artifacts: Artifact[] }`, newest first, from every thread of the channel |
-| `GET /api/v1/companies/:companyId/artifacts` | | `{ artifacts: Artifact[] }`: the company's own, which the orchestrator makes, newest first |
 | `GET /api/v1/artifacts/:artifactId` | | `{ artifact: Artifact, records: ArtifactRecord[] }` |
 | `PUT /api/v1/artifacts/:artifactId` | `{ visibility }` | `Artifact` |
 | `DELETE /api/v1/artifacts/:artifactId` | | `204`; its data goes with it |
@@ -485,8 +482,8 @@ All company access requires membership. Turning off an account stops its source 
 notices. Existing audit records remain private. Deleted Shadow threads are excluded from source recall.
 
 "Read for me" is off by default and only its credential owner can change it. It permits automatic private context,
-future checks, and useful updates posted in the existing subject thread. Matching shared threads may receive
-the source material. External messages still need the person's request and normal tool approval. Collection runs every 15 minutes, starts one day back, and uses saved cursors with an overlap. A bounded
+future checks, and useful updates posted in the existing subject thread of the owner's private channels. No channel
+or thread that others see receives the source material. External messages still need the person's request and normal tool approval. Collection runs every 15 minutes, starts one day back, and uses saved cursors with an overlap. A bounded
 poll can retain a backlog checkpoint without claiming complete source coverage.
 
 Personally relevant Slack messages, Primary inbox mail after Gmail filters plus sent-mail context are grouped into bounded batches. Related source history and subject checks reach the

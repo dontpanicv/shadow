@@ -24,7 +24,9 @@ afterAll(() => rm(dataDirectory, { recursive: true, force: true }));
 /** The directory the indexer reads: company ids, and the threads of each company and the channels they are in. */
 function directory(
   ids: readonly string[] = [],
-  threads: readonly (ThreadSummary & ThreadRef)[] = []
+  threads: readonly (ThreadSummary & ThreadRef)[] = [],
+  /** Channels that have no thread. */
+  empty: readonly string[] = []
 ): CompanyDirectory {
   return {
     ids: () => [...ids],
@@ -34,18 +36,18 @@ function directory(
     allChannelsIn: () => channels(),
   };
   function channels() {
-    return [...new Set(threads.map((thread) => thread.channelId))].map(
-      (id) => ({
-        id,
-        name: id,
-        ownerId: null,
-        summary: null,
-        icon: null,
-        slackId: null,
-        personal: false,
-        threads: [],
-      })
-    );
+    return [
+      ...new Set([...threads.map((thread) => thread.channelId), ...empty]),
+    ].map((id) => ({
+      id,
+      name: id,
+      ownerId: null,
+      summary: null,
+      icon: null,
+      slackId: null,
+      personal: false,
+      threads: [],
+    }));
   }
 }
 
@@ -148,7 +150,7 @@ test("start creates each company's folders and indexes a new file soon after it 
   );
   try {
     indexer.start();
-    for (const folder of ["notes", "files", "raw", "channels"]) {
+    for (const folder of ["notes", "raw", "channels"]) {
       expect(
         statSync(join(data, "companies", "company", folder)).isDirectory()
       ).toBe(true);
@@ -217,14 +219,8 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
     join(channel, "files", "tickets.txt"),
     "Ferry tickets for Saturday"
   );
-  await Bun.write(
-    join(data, "companies", "company", "files", "~$draft.docx"),
-    "lock"
-  );
-  await Bun.write(
-    join(data, "companies", "company", "files", "broken report.docx"),
-    "not a zip"
-  );
+  await Bun.write(join(channel, "files", "~$draft.docx"), "lock");
+  await Bun.write(join(channel, "files", "broken report.docx"), "not a zip");
   const indexer = new Indexer(
     data,
     threads,
@@ -311,7 +307,7 @@ test("a scan indexes finished thread messages, artifacts, and channel files, and
       (await indexer.search("company", "broken report", 20, null)).results.map(
         (result) => [result.uri, result.snippet]
       )
-    ).toEqual([["files/broken report.docx", ""]]);
+    ).toEqual([["channels/c1/files/broken report.docx", ""]]);
     expect(() => indexer.status("../other")).toThrow("Invalid company id");
   } finally {
     await indexer.close();
@@ -334,7 +330,7 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
   };
   const artifact = {
     id: "amber-fox",
-    channelId: null,
+    channelId: "c1",
     threadId: "t1",
     title: "Island trip",
     visibility: "members" as const,
@@ -378,9 +374,11 @@ test("search leaves out a deleted channel and a deleted artifact at once, before
   try {
     await indexer.scan("company");
     expect(await found()).toEqual(["artifact:amber-fox", "thread:t1"]);
-    live.channels = [];
-    expect(await found()).toEqual(["artifact:amber-fox"]);
     live.artifacts = false;
+    expect(await found()).toEqual(["thread:t1"]);
+    live.artifacts = true;
+    // A deleted channel takes its threads and artifacts with it.
+    live.channels = [];
     expect(await found()).toEqual([]);
   } finally {
     await indexer.close();
@@ -395,7 +393,7 @@ test("pictures read while the model is down are read again, and text waits for t
     "#!/bin/sh\nprintf '\\377\\330beach\\377\\331'\n"
   );
   await chmod(fakeFfmpeg, 0o755);
-  const files = join(data, "companies", "company", "files");
+  const files = join(data, "companies", "company", "channels", "c1", "files");
   await mkdir(files, { recursive: true });
   await Bun.write(join(files, "IMG_0001.jpg"), "jpeg");
   await Bun.write(
@@ -405,7 +403,7 @@ test("pictures read while the model is down are read again, and text waits for t
   const { embedder, state } = testEmbedder();
   const indexer = new Indexer(
     data,
-    directory(),
+    directory([], [], ["c1"]),
     threadsWith({}),
     artifactsWith(),
     embedder

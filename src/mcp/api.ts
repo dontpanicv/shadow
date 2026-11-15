@@ -153,8 +153,11 @@ function mcpTools(app: App, user: User, company: Company): McpTool[] {
     }
     return channel;
   };
+  // Without a channel, the person's own channel, where their orchestrator keeps its files and artifacts.
   const placeOf = (channel: string | undefined) =>
-    channel === undefined ? null : channelNamed(channel).id;
+    channel === undefined
+      ? app.companies.personalChannelOf(company.id, user).id
+      : channelNamed(channel).id;
   return [
     tool({
       name: "ask",
@@ -320,7 +323,7 @@ function mcpTools(app: App, user: User, company: Company): McpTool[] {
     tool({
       name: "list_files",
       description:
-        "List the files of a channel, or without channel, your own files, which your orchestrator keeps.",
+        "List the files of a channel, or without channel, those of your own channel, where your orchestrator keeps its files.",
       parameters: Type.Object({ channel: Type.Optional(channelParameter) }),
       readOnly: true,
       run: async ({ channel }) => {
@@ -379,7 +382,7 @@ function mcpTools(app: App, user: User, company: Company): McpTool[] {
     tool({
       name: "save_file",
       description:
-        "Save a file to a channel, or without channel, to your own files. Give text, or the bytes as base64.",
+        "Save a file to a channel, or without channel, to your own channel. Give text, or the bytes as base64.",
       parameters: Type.Object({
         name: Type.String({ description: "The file name, such as notes.md" }),
         text: Type.Optional(Type.String()),
@@ -431,7 +434,7 @@ function mcpTools(app: App, user: User, company: Company): McpTool[] {
     }),
     tool({
       name: "create_artifact",
-      description: `Make an artifact in a channel, or without channel, among your own, and get its link. ${app.artifacts.runtime}`,
+      description: `Make an artifact in a channel, or without channel, in your own channel, and get its link. ${app.artifacts.runtime}`,
       parameters: Type.Object({
         title: Type.String({
           description: "A short title; link previews show it",

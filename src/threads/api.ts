@@ -223,26 +223,6 @@ export const threadApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
-    "/api/v1/companies/:company/files",
-    api(async ({ app, user, params }) =>
-      json({
-        files: await app.threads.files(
-          app.threads.place(params.company!, null, user)
-        ),
-      })
-    ),
-  ],
-  [
-    "POST",
-    "/api/v1/companies/:company/files",
-    api(async ({ app, user, params, files }) =>
-      json({
-        files: await app.threads.upload(params.company!, null, user, files),
-      })
-    ),
-  ],
-  [
-    "GET",
     "/api/v1/companies/:company/files/:file",
     api(async ({ app, user, params }) => {
       const { path, name } = await app.threads.file(
@@ -289,9 +269,11 @@ export const threadApiRoutes: readonly Route[] = [
   [
     "GET",
     "/api/v1/companies/:company/learned",
-    api(async ({ app, user, params }) =>
-      json({ learned: app.threads.learnedFor(params.company!, user) })
-    ),
+    api(async ({ app, user, params }) => {
+      // Only an admin reads what Shadow learned in Company settings.
+      app.companies.requireAdmin(params.company!, user);
+      return json({ learned: app.threads.learnedFor(params.company!, user) });
+    }),
   ],
   [
     "PUT",

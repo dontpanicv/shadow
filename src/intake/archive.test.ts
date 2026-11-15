@@ -238,11 +238,17 @@ test("a Plaud recording keeps its latest summary in one meeting file", async () 
   expect(await run.text(file!.id)).not.toContain("\n\nComplete summary");
 });
 
-test("a shared review receives only selected messages from a private daily conversation", async () => {
+test("another review receives only selected messages from a daily conversation, and a channel that others see none", async () => {
   const run = await setup("slack");
-  const shared = app.app.companies.addChannel(
+  const flat = app.app.companies.addChannel(
     run.company.id,
     "flat",
+    run.owner.id,
+    run.owner.id
+  );
+  const shared = app.app.companies.addChannel(
+    run.company.id,
+    "team",
     run.owner.id,
     null
   );
@@ -262,11 +268,14 @@ test("a shared review receives only selected messages from a private daily conve
     secret,
     relevant,
   ]);
-  const [file] = await run.archives.save(run.company.id, shared.id, run.owner, [
+  const [file] = await run.archives.save(run.company.id, flat.id, run.owner, [
     relevant,
   ]);
   expect(await run.text(file!.id)).toContain("Repair confirmed");
   expect(await run.text(file!.id)).not.toContain("Private unrelated matter");
+  await expect(
+    run.archives.save(run.company.id, shared.id, run.owner, [relevant])
+  ).rejects.toThrow("Not found");
 });
 
 test("attachments are reused across message edits and linked from the conversation", async () => {

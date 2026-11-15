@@ -56,6 +56,37 @@ export interface IntakeSourceStatus {
   error: string | null;
   kept: number;
 }
+
+/** The threads that only the person sees: those of their private channels, and their orchestrator. */
+export function ownThreads(
+  companies: Pick<IntakeCompanies, "threadsIn">,
+  companyId: string,
+  owner: Pick<User, "id">
+) {
+  return companies
+    .threadsIn(companyId, owner.id)
+    .filter((thread) => thread.realm === owner.id);
+}
+
+/**
+ * The threads where a person's sources may go: only those of their private channels, with the files that come with
+ * them. Nothing from their watched accounts reaches, or is offered for, a thread or channel that someone else sees.
+ */
+export function privateThreads(
+  companies: Pick<IntakeCompanies, "threadsIn" | "channelsIn">,
+  companyId: string,
+  owner: Pick<User, "id">
+) {
+  const channels = new Set(
+    companies
+      .channelsIn(companyId, owner.id)
+      .filter((channel) => channel.ownerId === owner.id)
+      .map((channel) => channel.id)
+  );
+  return ownThreads(companies, companyId, owner).filter(
+    (thread) => thread.ownerId === null && channels.has(thread.channelId)
+  );
+}
 /** How many later messages of the owner, and of the others, each conversation gives to a review. */
 const LATER_MESSAGES = 4;
 /** How much of each later message a review reads; a long mail still shows that it answered. */
@@ -82,9 +113,10 @@ export class IntakeRecall {
   ): Promise<AssessmentInput["threads"]> {
     this.companies.requireMember(companyId, owner);
     const available = new Map(
-      this.companies
-        .threadsIn(companyId, owner.id)
-        .map((thread) => [thread.id, thread])
+      privateThreads(this.companies, companyId, owner).map((thread) => [
+        thread.id,
+        thread,
+      ])
     );
     const ids = new Set<string>();
     if (includeRecent && !subjectId) {
@@ -240,10 +272,7 @@ export class IntakeRecall {
     return row ? `${row.credential_id}:${row.chat}` : "";
   }
 
-  /**
-   * The channels where a new matter of the person's sources may start: only their private ones, so their mail and
-   * threads reach a channel that others see only as a visible update to an existing matching thread there.
-   */
+  /** The channels where a new matter of the person's sources may start: only their private ones. */
   channels(companyId: string, owner: User): AssessmentInput["channels"] {
     this.companies.requireMember(companyId, owner);
     return this.companies
@@ -524,9 +553,9 @@ export class IntakeRecall {
           (each) => each.companyId === companyId && each.ownerId === owner.id
         )
         .map((each) => each.id),
-      ...this.companies
-        .threadsIn(companyId, owner.id)
-        .map((each) => `thread:${each.id}`),
+      ...ownThreads(this.companies, companyId, owner).map(
+        (each) => `thread:${each.id}`
+      ),
     ]);
   }
 
@@ -537,9 +566,9 @@ export class IntakeRecall {
   ): boolean {
     if (
       check.thread_id &&
-      !this.companies
-        .threadsIn(companyId, owner.id)
-        .some((thread) => thread.id === check.thread_id)
+      !privateThreads(this.companies, companyId, owner).some(
+        (thread) => thread.id === check.thread_id
+      )
     ) {
       return false;
     }

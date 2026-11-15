@@ -633,6 +633,12 @@ export class Companies {
     if (from.id === to.id) {
       return { thread, from, to };
     }
+    if (from.ownerId !== null && to.ownerId === null) {
+      throw new HttpError(
+        403,
+        "A thread of a private channel stays private, so it moves only to another private channel"
+      );
+    }
     const { createdBy } = this.database
       .query("SELECT created_by AS createdBy FROM thread WHERE id = ?")
       .get(threadId) as { createdBy: string };

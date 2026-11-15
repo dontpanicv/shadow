@@ -7,8 +7,7 @@ import { queryClient } from "../app/query.ts";
 import type { Artifact, ArtifactRecord } from "../app/types.ts";
 
 /**
- * The artifacts of a place, `<company id>/<channel id>`, or `<company id>/` for the company's own. Changing who
- * sees one, or deleting it, shows at once.
+ * The artifacts of a place, `<company id>/<channel id>`. Changing who sees one, or deleting it, shows at once.
  */
 export const artifactsOf = keyed((key: string) => {
   const [companyId, channelId] = key.split("/") as [string, string];
@@ -19,9 +18,7 @@ export const artifactsOf = keyed((key: string) => {
       queryClient,
       queryFn: ({ signal }) =>
         request<{ artifacts: Artifact[] }>(
-          channelId
-            ? `/companies/${companyId}/channels/${channelId}/artifacts`
-            : `/companies/${companyId}/artifacts`,
+          `/companies/${companyId}/channels/${channelId}/artifacts`,
           { signal }
         ),
       select: (response) => response.artifacts,

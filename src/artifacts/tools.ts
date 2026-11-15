@@ -18,7 +18,7 @@ export function artifactTools(
     }
     return thread;
   };
-  /** The channel an artifact belongs to: the named one, or the thread's; null, the company, for an orchestrator. */
+  /** The channel an artifact belongs to: the named one, or the thread's; for an orchestrator its person's own. */
   const placeOf = (
     thread: { readonly channelId: string; readonly ownerId: string | null },
     realm: string | null,
@@ -36,7 +36,19 @@ export function artifactTools(
       }
       return named.id;
     }
-    return thread.ownerId === null ? thread.channelId : null;
+    if (thread.ownerId === null) {
+      return thread.channelId;
+    }
+    const own = companies
+      .channelsIn(companyId, thread.ownerId)
+      .find(
+        (candidate) =>
+          candidate.personal && candidate.ownerId === thread.ownerId
+      );
+    if (!own) {
+      throw new Error("The person's own channel is missing.");
+    }
+    return own.id;
   };
   /** An artifact that the realm of the tool's thread sees. */
   const artifactOf = async (id: string, conversationId: ConversationId) => {
@@ -60,7 +72,7 @@ export function artifactTools(
   return [
     defineTool({
       name: "artifacts_create",
-      description: `Make an artifact and give its link to the people. It belongs to the channel of this thread, or to another channel you name, and stays there after the thread is settled; the orchestrator's belong to the company. Before you make one, look for an artifact to change with artifacts_list or recall. Never use an artifact to keep facts or a list; save files and say them in your answer. ${artifacts.runtime}`,
+      description: `Make an artifact and give its link to the people. It belongs to the channel of this thread, or to another channel you name, and stays there after the thread is settled; the orchestrator's belong to its person's own channel. Before you make one, look for an artifact to change with artifacts_list or recall. Never use an artifact to keep facts or a list; save files and say them in your answer. ${artifacts.runtime}`,
       parameters: Type.Object({
         title: Type.String({
           description: "A short title; link previews show it",
@@ -165,8 +177,7 @@ export function artifactTools(
           const thread = threads.find(
             (candidate) => candidate.id === artifact.threadId
           );
-          const place = channel ? `Channel: #${channel.name}` : "The company's";
-          return `${describe(artifact)}\n${place}\nMade in: [${thread?.title}](thread:${artifact.threadId})`;
+          return `${describe(artifact)}\nChannel: #${channel?.name}\nMade in: [${thread?.title}](thread:${artifact.threadId})`;
         });
         return text(list.join("\n\n") || "This company has no artifacts.");
       },

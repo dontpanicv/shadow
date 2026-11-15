@@ -785,15 +785,18 @@ test("files attach to a new thread, a message, and the channel; every thread of 
   ).toEqual(["shopping.txt", "beach.png"]);
 });
 
-test("the orchestrator keeps its files in the company, and an agent of any channel reads a file by its id", async () => {
+test("the orchestrator keeps its files in its person's own channel, which another member never sees, and the person's agent of any channel reads a file by its id", async () => {
   const home = await shadow.app.companies.create(alice, "Budget");
+  await shadow.signIn("Bob", "bob@example.com");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
   const general = shadow.app.companies.channels(home.id, alice)[0]!;
   const orchestrator = await shadow.app.threads.orchestrator(home.id, alice);
+  const own = shadow.app.companies.personalChannelOf(home.id, alice);
   await shadow.app.threads.send(orchestrator.id, alice, "Keep this", [
     new File(["Rent 900"], "budget.txt"),
   ]);
   const [budget] = await shadow.app.threads.files(
-    shadow.app.threads.place(home.id, null, alice)
+    shadow.app.threads.place(home.id, own.id, alice)
   );
   expect(budget!.name).toBe("budget.txt");
   expect(
@@ -803,9 +806,15 @@ test("the orchestrator keeps its files in the company, and an agent of any chann
   ).toEqual([]);
   expect(
     await Bun.file(
-      `${shadow.app.config.dataDirectory}/companies/${home.id}/files/${budget!.id}-budget.txt`
+      `${shadow.app.config.dataDirectory}/companies/${home.id}/channels/${own.id}/files/${budget!.id}-budget.txt`
     ).text()
   ).toBe("Rent 900");
+  expect(() => shadow.app.threads.place(home.id, own.id, bob)).toThrow(
+    "Not found"
+  );
+  await expect(
+    shadow.app.threads.file(home.id, bob, budget!.id)
+  ).rejects.toThrow();
 
   const reader = await shadow.app.threads.create(
     home.id,
@@ -1572,6 +1581,18 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
     (await shadow.call(`/api/v1/threads/${trip.id}`, { token: bobToken }))
       .status
   ).toBe(404);
+  // A thread of a private channel never goes back to a channel that others see.
+  expect((await move(trip.id, general!.id)).status).toBe(403);
+  // What Shadow learned is for an admin in Company settings; the morning review reads a member's own.
+  expect(
+    (
+      await shadow.call(`/api/v1/companies/${home.id}/learned`, {
+        token: bobToken,
+      })
+    ).status
+  ).toBe(403);
+  expect(shadow.app.threads.learnedFor(home.id, bob)).toBeArray();
+  expect(shadow.app.companies.thread(trip.id, alice).channelId).toBe(mine.id);
 
   const busy = await shadow.app.threads.create(
     home.id,
@@ -2078,27 +2099,14 @@ test("an agent creates private channels, searches, and merges them, and a merge 
     "copies a Slack channel"
   );
 
-  // A private channel goes to every member only once its owner allows it.
+  // A private channel never goes to a channel that every member sees.
   shadow.app.companies.createChannel(home.id, alice, "notes");
-  const merged = ask("Merge channel notes into general");
-  const [pending] = await until(
-    async () => shadow.app.threads.approvalsFor(home.id, alice),
-    (approvals) => approvals.length > 0
+  expect(await ask("Merge channel notes into general")).toContain(
+    "#notes is private, so it merges only into another private channel"
   );
-  expect(pending!.approval).toMatchObject({
-    tool: "merge_channel",
-    approverId: alice.id,
-  });
-  expect(
-    shadow.app.companies.channels(home.id, alice).map((channel) => channel.name)
-  ).toContain("notes");
-  shadow.app.threads.answerApproval(
-    pending!.threadId,
-    pending!.approval.id,
-    alice,
-    true
+  expect(await ask("Merge channel notes into desk")).toBe(
+    "Merged #notes into #desk."
   );
-  expect(await merged).toBe("Merged #notes into #general.");
 });
 
 test("people merge only a private channel into another; a channel that every member sees stays", async () => {
@@ -2136,8 +2144,9 @@ test("people merge only a private channel into another; a channel that every mem
       email: "alice@elsewhere.example",
     }).name
   ).toBe("alice-2");
-  // A private channel merges into a shared one.
-  expect((await merge(mine.id, food.id)).status).toBe(204);
+  // A private channel never merges into a shared one; it merges into another private one.
+  expect((await merge(mine.id, food.id)).status).toBe(403);
+  expect((await merge(mine.id, own.id)).status).toBe(204);
   expect(
     shadow.app.companies
       .channels(company.id, alice)

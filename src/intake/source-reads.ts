@@ -8,7 +8,7 @@ import type {
 import type { User } from "../platform/auth.ts";
 import type { Audit } from "./audit.ts";
 import type { IntakeCompanies, IntakeIntegrations } from "./intake.ts";
-import type { IntakeRecall, ItemRow } from "./recall.ts";
+import { type IntakeRecall, type ItemRow, privateThreads } from "./recall.ts";
 
 interface ReadRow {
   id: string;
@@ -43,9 +43,9 @@ export class SourceReads {
     if (
       !(
         credential &&
-        this.companies
-          .threadsIn(thread.companyId, owner.id)
-          .some((each) => each.id === thread.id)
+        privateThreads(this.companies, thread.companyId, owner).some(
+          (each) => each.id === thread.id
+        )
       )
     ) {
       return;
@@ -129,9 +129,9 @@ export class SourceReads {
           credential.companyId === companyId && credential.ownerId === owner.id
       )
       .map((credential) => credential.id);
-    const threads = this.companies
-      .threadsIn(companyId, owner.id)
-      .map((thread) => thread.id);
+    const threads = privateThreads(this.companies, companyId, owner).map(
+      (thread) => thread.id
+    );
     const rows = this.database
       .query(
         "SELECT r.id,r.thread_id,r.source_ids FROM intake_source_read r WHERE r.company_id=? AND r.owner_id=? AND r.assessed_at IS NULL AND r.deleted_at IS NULL AND (? IS NULL OR r.thread_id=?) AND r.credential_id IN (SELECT value FROM json_each(?)) AND r.thread_id IN (SELECT value FROM json_each(?)) ORDER BY r.observed_at,r.id LIMIT 1000"

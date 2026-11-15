@@ -214,22 +214,13 @@ function ResultRow({
   );
   const target = resultTarget(result);
   if (target.kind === "artifact") {
-    // An artifact opens in its channel, or in the orchestrator when it is the company's own.
-    return target.channelId ? (
+    // An artifact opens in its channel; the orchestrator's are in the person's own channel.
+    return (
       <Link
         className="search-row list-row"
         params={{ companyId, channelId: target.channelId }}
         search={{ artifact: target.id }}
         to="/c/$companyId/channel/$channelId"
-      >
-        {body}
-      </Link>
-    ) : (
-      <Link
-        className="search-row list-row"
-        params={{ companyId }}
-        search={{ artifact: target.id }}
-        to="/c/$companyId/orchestrator"
       >
         {body}
       </Link>
@@ -263,19 +254,17 @@ function ResultRow({
 export function resultTarget(
   result: Pick<SearchResult, "kind" | "uri" | "channelId" | "threadId">
 ):
-  | { kind: "artifact"; id: string; channelId: string | null }
+  | { kind: "artifact"; id: string; channelId: string }
   | { kind: "file" | "thread"; id: string }
   | { kind: "none" } {
-  if (result.kind === "artifact") {
+  if (result.kind === "artifact" && result.channelId) {
     return {
       kind: "artifact",
       id: result.uri.slice("artifact:".length),
       channelId: result.channelId,
     };
   }
-  const file = /^(?:channels\/[^/]+\/)?files\/([0-9a-f-]{36})-/.exec(
-    result.uri
-  );
+  const file = /^channels\/[^/]+\/files\/([0-9a-f-]{36})-/.exec(result.uri);
   if (file) {
     return { kind: "file", id: file[1]! };
   }

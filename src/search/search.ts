@@ -24,7 +24,6 @@ import {
 /** Folders of a company that are indexed, and what their files are. Channel files are found per channel. */
 const FOLDERS: readonly { folder: string; kind: SearchKind }[] = [
   { folder: "notes", kind: "note" },
-  { folder: "files", kind: "file" },
   { folder: "raw", kind: "capture" },
 ];
 const SCAN_EVERY_MS = 60_000;

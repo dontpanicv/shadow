@@ -18,12 +18,12 @@ const RUNTIME = `An artifact is one self-contained HTML page: a schedule, an inv
 Values are JSON, up to 64 KB each. A write replaces the value. Keep each person's answers in \`mine\`, so that people never overwrite each other. There are no live updates: to show what others do, call \`everyone.list\` again every few seconds. A call fails with an Error whose message says why; show it.`;
 
 /**
- * A page or small app that an agent made. It belongs to a channel, or to the company when `channelId` is null, as the
- * orchestrator's do, and stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `shadow`.
+ * A page or small app that an agent made. It belongs to a channel, for an orchestrator its person's own channel, and
+ * stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `shadow`.
  */
 export interface Artifact {
   readonly id: string;
-  readonly channelId: string | null;
+  readonly channelId: string;
   /** The thread that made it. */
   readonly threadId: string;
   readonly title: string;
@@ -161,7 +161,7 @@ export const CONTENT_POLICY = [
 interface ArtifactRow {
   readonly id: string;
   readonly companyId: string;
-  readonly channelId: string | null;
+  readonly channelId: string;
   readonly threadId: string;
   readonly title: string;
   readonly visibility: Visibility;
@@ -200,12 +200,12 @@ export class Artifacts {
   }
 
   /**
-   * Makes an artifact in a thread, for a channel of its company or, for a null `channelId`, for the company. The
-   * same `requestKey` again returns the artifact it made before.
+   * Makes an artifact in a thread, for a channel of its company. The same `requestKey` again returns the artifact it
+   * made before.
    */
   create(
     thread: ThreadRef,
-    channelId: string | null,
+    channelId: string,
     input: ArtifactInput & { readonly requestKey: string }
   ): Artifact {
     const title = checkedTitle(input.title);
@@ -267,14 +267,13 @@ export class Artifacts {
     return this.artifact(this.row(id)!);
   }
 
-  /** The artifacts of a company that `realm` sees, newest first: the company's own and those of its channels. */
+  /** The artifacts of the channels of a company that `realm` sees, newest first. */
   inCompany(companyId: string, realm: Realm): Artifact[] {
     const channels = new Set(
       this.companies.channelsIn(companyId, realm).map((channel) => channel.id)
     );
-    return this.allInCompany(companyId).filter(
-      (artifact) =>
-        artifact.channelId === null || channels.has(artifact.channelId)
+    return this.allInCompany(companyId).filter((artifact) =>
+      channels.has(artifact.channelId)
     );
   }
 
@@ -288,7 +287,7 @@ export class Artifacts {
         )
         .all(companyId) as ArtifactRow[]
     )
-      .filter((row) => row.channelId === null || channels.has(row.channelId))
+      .filter((row) => channels.has(row.channelId))
       .map((row) => this.artifact(row));
   }
 
@@ -308,20 +307,13 @@ export class Artifacts {
       .run(to, threadId, from);
   }
 
-  /**
-   * The artifacts of a channel of the person's company from every thread, settled or not, or the company's own for
-   * a null `channelId`; newest first.
-   */
-  inPlace(companyId: string, channelId: string | null, user: User): Artifact[] {
-    if (channelId === null) {
-      this.companies.requireMember(companyId, user);
-    } else {
-      this.companies.channel(companyId, channelId, user);
-    }
+  /** The artifacts of a channel of the person's company from every thread, settled or not; newest first. */
+  inPlace(companyId: string, channelId: string, user: User): Artifact[] {
+    this.companies.channel(companyId, channelId, user);
     return (
       this.database
         .query(
-          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE company_id = ? AND channel_id IS ? AND deleted_at IS NULL ORDER BY created_at DESC`
+          `SELECT ${ARTIFACT_COLUMNS} FROM artifact WHERE company_id = ? AND channel_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`
         )
         .all(companyId, channelId) as ArtifactRow[]
     ).map((row) => this.artifact(row));
@@ -340,9 +332,7 @@ export class Artifacts {
   /** Not found unless the person is a member and sees the artifact's channel, which a private channel's owner alone does. */
   private requireSeen(row: ArtifactRow, user: User): void {
     this.companies.requireMember(row.companyId, user);
-    if (row.channelId !== null) {
-      this.companies.channel(row.companyId, row.channelId, user);
-    }
+    this.companies.channel(row.companyId, row.channelId, user);
   }
 
   /** The HTML an agent wrote, without Shadow's additions. */
@@ -653,10 +643,7 @@ export class Artifacts {
     throw new HttpError(503, "Shadow has no free artifact names");
   }
 
-  /**
-   * A live artifact: not deleted, and not in a deleted channel or company. The company's own artifacts have no
-   * channel; a live company keeps one channel at least, and a deleted one has none.
-   */
+  /** A live artifact: not deleted, and not in a deleted channel or company. */
   private row(id: string): ArtifactRow | null {
     const row = this.database
       .query(
@@ -667,13 +654,7 @@ export class Artifacts {
       return null;
     }
     const channels = this.liveChannels(row.companyId);
-    return (
-      row.channelId === null
-        ? channels.size > 0
-        : channels.has(row.channelId)
-    )
-      ? row
-      : null;
+    return channels.has(row.channelId) ? row : null;
   }
 
   private liveChannels(companyId: string): Set<string> {

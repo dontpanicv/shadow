@@ -33,8 +33,6 @@ data/
 │       │       │   └── <uuidv7>-<name>.<ext>
 │       │       └── deleted/         Files deleted from the channel and old versions, kept as they were.
 │       ├── notes/                   Knowledge as markdown with YAML frontmatter; an Obsidian vault.
-│       ├── files/                   Documents people upload to the company, and the orchestrator's files.
-│       ├── deleted/                 Files deleted from `files/` and old versions, kept as they were.
 │       ├── raw/                     Captures from integrations, exactly as received, never edited.
 │       │   └── <source>/<yyyy>/<mm>/<uuidv7>.<ext>
 │       ├── tables/                  Structured history as Parquet, append-only, read with DuckDB.

@@ -80,7 +80,7 @@ export function CompanyHome() {
 
 const orchestratorRoute = getRouteApi("/signed-in/c/$companyId/orchestrator");
 
-/** The orchestrator's thread; a search result opens one of the company's own artifacts here. */
+/** The orchestrator's thread, with the artifact that `?artifact=` names. */
 export function OrchestratorPage() {
   const { companyId } = orchestratorRoute.useParams();
   const search = orchestratorRoute.useSearch();

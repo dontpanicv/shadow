@@ -256,7 +256,7 @@ export interface Routine {
 export interface Artifact {
   /** Four words, such as "amber-fox-lake-moss"; names from before have two. */
   readonly id: string;
-  readonly channelId: string | null;
+  readonly channelId: string;
   readonly threadId: string;
   readonly title: string;
   readonly visibility: "public" | "members";

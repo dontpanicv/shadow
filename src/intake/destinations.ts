@@ -4,8 +4,12 @@ import type { User } from "../platform/auth.ts";
 import { HttpError, notFound } from "../platform/errors.ts";
 import type { Assessment } from "./assess.ts";
 import type { Delivery, IntakeCompanies, IntakeThreads } from "./intake.ts";
+import { privateThreads } from "./recall.ts";
 
-/** Creates a destination only after its queued review has passed the final assessment. */
+/**
+ * Creates a destination only after its queued review has passed the final assessment. A destination is always a
+ * thread of the owner's private channels or orchestrator, never one that someone else sees.
+ */
 export class IntakeDestinations {
   constructor(
     private readonly database: Database,
@@ -21,7 +25,7 @@ export class IntakeDestinations {
   ): Promise<void> {
     const companyId = delivery.company_id;
     this.companies.requireMember(companyId, owner);
-    const available = this.companies.threadsIn(companyId, owner.id);
+    const available = privateThreads(this.companies, companyId, owner);
     const requestId = `intake:subject:${delivery.id}`;
     let thread = available.find(
       (candidate) =>

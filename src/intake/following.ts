@@ -7,7 +7,12 @@ import { localTime } from "../platform/time.ts";
 import type { Evidence } from "./assess.ts";
 import type { Audit } from "./audit.ts";
 import type { Delivery, IntakeCompanies, IntakeLlm } from "./intake.ts";
-import type { IntakeRecall, IntakeSourceStatus, ItemRow } from "./recall.ts";
+import {
+  type IntakeRecall,
+  type IntakeSourceStatus,
+  type ItemRow,
+  privateThreads,
+} from "./recall.ts";
 
 export interface CheckSnapshot {
   text: string;
@@ -658,9 +663,10 @@ export class Following {
 
   private threadTitles(companyId: string, owner: User) {
     return new Map(
-      this.companies
-        .threadsIn(companyId, owner.id)
-        .map((thread) => [thread.id, thread.title])
+      privateThreads(this.companies, companyId, owner).map((thread) => [
+        thread.id,
+        thread.title,
+      ])
     );
   }
 
@@ -691,9 +697,9 @@ export class Following {
   ): boolean {
     return (
       (!check.threadId ||
-        this.companies
-          .threadsIn(companyId, owner.id)
-          .some((thread) => thread.id === check.threadId)) &&
+        privateThreads(this.companies, companyId, owner).some(
+          (thread) => thread.id === check.threadId
+        )) &&
       this.rows(companyId, owner, check.sourceIds).length ===
         check.sourceIds.length
     );

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { WatchedItem } from "../integrations/integrations.ts";
 import type { User } from "../platform/auth.ts";
+import { notFound } from "../platform/errors.ts";
 import { localDay, localTime } from "../platform/time.ts";
 import type { FileRef } from "../threads/threads.ts";
 import type { Audit } from "./audit.ts";
@@ -53,7 +54,9 @@ export class IntakeArchives {
     rows: ItemRow[]
   ): Promise<FileRef[]> {
     this.companies.requireMember(companyId, owner);
-    this.threads.place(companyId, channelId, owner);
+    if (!this.ownsChannel(companyId, channelId, owner)) {
+      throw notFound();
+    }
     const groups = this.stage(companyId, channelId, owner, rows);
     const files: FileRef[] = [];
     for (const id of groups) {
@@ -314,6 +317,9 @@ export class IntakeArchives {
       return [];
     }
     this.companies.requireMember(group.company_id, owner);
+    if (!this.ownsChannel(group.company_id, group.channel_id, owner)) {
+      return [];
+    }
     const credential = this.integrations
       .watched()
       .find(
@@ -519,6 +525,19 @@ export class IntakeArchives {
       owner,
       new File([bytes], name, { type: attachment.type })
     );
+  }
+
+  /** The person's sources are filed only in their own private channels, which nobody else sees. */
+  private ownsChannel(
+    companyId: string,
+    channelId: string,
+    owner: User
+  ): boolean {
+    return this.companies
+      .channelsIn(companyId, owner.id)
+      .some(
+        (channel) => channel.id === channelId && channel.ownerId === owner.id
+      );
   }
 }
 

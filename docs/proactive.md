@@ -103,8 +103,9 @@ standard Snowball stemmer; there is no guessed accent restoration. This change d
 library. On macOS, Bun still selects Apple's SQLite. FTS5 is enabled; this implementation needs no native extension.
 
 Each record and integration credential belongs to one member. A watched credential produces private evidence for its owner.
-An existing shared thread may receive source material that matches its subject, as explicitly permitted.
-Other people's private threads remain inaccessible. The posted update is visible in the matching thread. Any confirmed notification goes only to the account owner. Turning an account off stops its reads, checks,
+Source material goes only to threads of the owner's private channels, never to a channel or thread that others see,
+and a private thread or channel never moves or merges into one that others see. Only the owner's own request in a
+shared thread brings their sources there, through `intake_read` or their connected accounts. The posted update is visible in the matching private thread. Any confirmed notification goes only to the account owner. Turning an account off stops its reads, checks,
 and queued reviews. It keeps historical audit data. Deleted Shadow threads are hidden from source recall.
 
 An intake message starts a normal turn in its destination thread. Its agent has the same tools as a turn started by

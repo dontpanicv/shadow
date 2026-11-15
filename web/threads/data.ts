@@ -255,10 +255,10 @@ function messageForm(fields: {
   return form;
 }
 
-/** A channel, or the company's own files and artifacts for a null `channelId`, which the orchestrator keeps. */
+/** A channel whose files and artifacts show; the orchestrator's are in the person's own channel. */
 export interface Place {
   readonly companyId: string;
-  readonly channelId: string | null;
+  readonly channelId: string;
 }
 
 /**
@@ -288,18 +288,16 @@ export async function moveThread(
 }
 
 export function placeKey(place: Place): string {
-  return `${place.companyId}/${place.channelId ?? ""}`;
+  return `${place.companyId}/${place.channelId}`;
 }
 
 function placeOf(key: string): Place {
   const [companyId, channelId] = key.split("/") as [string, string];
-  return { companyId, channelId: channelId || null };
+  return { companyId, channelId };
 }
 
 function filesPath({ companyId, channelId }: Place): string {
-  return channelId
-    ? `/companies/${companyId}/channels/${channelId}/files`
-    : `/companies/${companyId}/files`;
+  return `/companies/${companyId}/channels/${channelId}/files`;
 }
 
 /** The files of a place, oldest first. Deleting one shows at once. */

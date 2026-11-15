@@ -117,12 +117,14 @@ function Thread({
         .from({ message: messagesOf(threadId) })
         .orderBy(({ message }) => message.time),
   });
-  // The orchestrator belongs to the company, not to its channel: its files and artifacts are the company's own.
-  const place: Place = {
-    companyId,
-    channelId: isOrchestrator ? null : thread.channelId,
-  };
-  const key = placeKey(place);
+  // The orchestrator keeps its files and artifacts in the person's own channel, which nobody else sees.
+  const placeChannel = isOrchestrator
+    ? channels.find((candidate) => candidate.personal)?.id
+    : thread.channelId;
+  const place: Place | null = placeChannel
+    ? { companyId, channelId: placeChannel }
+    : null;
+  const key = place ? placeKey(place) : "";
   const placeChanged = useDebounced(
     useCallback(
       () =>
@@ -179,21 +181,26 @@ function Thread({
               <Menu
                 entries={[
                   { kind: "label", label: "Move to" },
-                  ...channels.map((candidate) => ({
-                    kind: "action" as const,
-                    label: candidate.name,
-                    icon: candidate.ownerId
-                      ? ("lock" as const)
-                      : ("hash" as const),
-                    current: candidate.id === thread.channelId,
-                    onSelect: () =>
-                      moveThread(
-                        companyId,
-                        threadId,
-                        thread.channelId,
-                        candidate.id
-                      ),
-                  })),
+                  // A thread of a private channel stays private.
+                  ...channels
+                    .filter(
+                      (candidate) => !channel?.ownerId || candidate.ownerId
+                    )
+                    .map((candidate) => ({
+                      kind: "action" as const,
+                      label: candidate.name,
+                      icon: candidate.ownerId
+                        ? ("lock" as const)
+                        : ("hash" as const),
+                      current: candidate.id === thread.channelId,
+                      onSelect: () =>
+                        moveThread(
+                          companyId,
+                          threadId,
+                          thread.channelId,
+                          candidate.id
+                        ),
+                    })),
                 ]}
                 trigger={
                   <Button
@@ -264,7 +271,7 @@ function Thread({
           }
         />
       </section>
-      <PlacePanel place={place} />
+      {place ? <PlacePanel place={place} /> : null}
     </>
   );
 }
@@ -316,11 +323,14 @@ export function ChannelPage({ details }: { details: ReactNode }) {
       </section>
     ) : null;
   }
-  // Only a private channel merges away; a channel that every member sees copies a Slack channel.
+  // Only a private channel merges away, and only into another private channel; a channel that every member sees
+  // copies a Slack channel.
   const targets =
     channel.ownerId === null
       ? []
-      : [...channels.values()].filter((other) => other.id !== channelId);
+      : [...channels.values()].filter(
+          (other) => other.id !== channelId && other.ownerId !== null
+        );
   const merge = async () => {
     if (!into) {
       return;

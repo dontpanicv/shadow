@@ -57,7 +57,13 @@ import {
   planMorning,
   validateMorningPlan,
 } from "./morning.ts";
-import { IntakeRecall, type ItemRow, type SourceRow } from "./recall.ts";
+import {
+  IntakeRecall,
+  type ItemRow,
+  ownThreads,
+  privateThreads,
+  type SourceRow,
+} from "./recall.ts";
 import { SourceReads } from "./source-reads.ts";
 
 const POLL_MS = 15 * 60_000;
@@ -80,7 +86,6 @@ export type IntakeThreads = Pick<
   | "file"
   | "writeFile"
   | "deleteFile"
-  | "realm"
   | "requester"
   | "files"
   | "place"
@@ -1513,9 +1518,9 @@ export class Intake {
         now
       );
     }
-    const thread = this.companies
-      .threadsIn(companyId, owner.id)
-      .find((candidate) => candidate.id === group[0]!.thread_id);
+    const thread = privateThreads(this.companies, companyId, owner).find(
+      (candidate) => candidate.id === group[0]!.thread_id
+    );
     if (!thread) {
       throw notFound();
     }
@@ -1620,9 +1625,10 @@ export class Intake {
     now: number
   ): number {
     const titles = new Map(
-      this.companies
-        .threadsIn(companyId, owner.id)
-        .map((thread) => [thread.id, thread.title])
+      privateThreads(this.companies, companyId, owner).map((thread) => [
+        thread.id,
+        thread.title,
+      ])
     );
     const nudged = this.dueNudges(companyId, owner, now).map((check) => {
       const title = check.threadId ? titles.get(check.threadId) : undefined;
@@ -1797,9 +1803,9 @@ export class Intake {
     }
     if (
       delivery.thread_id &&
-      !this.companies
-        .threadsIn(delivery.company_id, owner.id)
-        .some((thread) => thread.id === delivery.thread_id)
+      !privateThreads(this.companies, delivery.company_id, owner).some(
+        (thread) => thread.id === delivery.thread_id
+      )
     ) {
       return false;
     }
@@ -1855,9 +1861,9 @@ export class Intake {
         return;
       }
     }
-    const thread = this.companies
-      .threadsIn(companyId, owner.id)
-      .find((candidate) => candidate.id === first.thread_id);
+    const thread = privateThreads(this.companies, companyId, owner).find(
+      (candidate) => candidate.id === first.thread_id
+    );
     if (!thread) {
       throw notFound();
     }
@@ -2245,17 +2251,15 @@ export class Intake {
     if (!decision.summary) {
       return;
     }
-    // Silent filing stays private: a matching thread in a channel that others see gets the files only with a visible update.
-    const candidates = this.companies
-      .channelsIn(companyId, owner.id)
-      .filter((candidate) => candidate.ownerId === owner.id);
     const matching = decision.threadId
-      ? this.companies
-          .threadsIn(companyId, owner.id)
-          .find((thread) => thread.id === decision.threadId)?.channelId
+      ? privateThreads(this.companies, companyId, owner).find(
+          (thread) => thread.id === decision.threadId
+        )?.channelId
       : undefined;
     const channel =
-      candidates.find((each) => each.id === matching) ??
+      this.recall
+        .channels(companyId, owner)
+        .find((each) => each.id === matching) ??
       this.privateChannel(companyId, owner);
     await this.archives.save(
       companyId,
@@ -2344,8 +2348,9 @@ export class Intake {
   }
 
   /**
-   * What intake knows about a thread for the person a turn answers, in any thread they see. With `claim`, the turn
-   * answers their own message: their updates that wait for this thread join it, and the morning review skips them.
+   * What intake knows about a thread for the person a turn answers, only in a thread that only they see. With `claim`,
+   * the turn answers their own message: their updates that wait for this thread join it, and the morning review skips
+   * them.
    */
   contextFor(
     companyId: string,
@@ -2358,9 +2363,9 @@ export class Intake {
     if (
       !(
         owner &&
-        this.companies
-          .threadsIn(companyId, ownerId)
-          .some((thread) => thread.id === threadId)
+        ownThreads(this.companies, companyId, owner).some(
+          (thread) => thread.id === threadId
+        )
       )
     ) {
       return "";
@@ -2466,20 +2471,26 @@ export class Intake {
     );
   }
 
-  /** Private source search and ordinary-language corrections are available to the existing agents. */
+  /**
+   * Private source search and ordinary-language corrections for the person whom a turn answers, in a thread they see:
+   * the person asks, so the answer may use their sources there.
+   */
   tools(companyId: string) {
     const actor = async (
       conversationId: Parameters<Threads["requester"]>[1]
     ) => {
       const user = await this.threads.requester(companyId, conversationId);
-      if (
-        !user ||
-        (await this.threads.realm(companyId, conversationId)) !== user.id
-      ) {
+      if (!user) {
         throw notFound();
       }
       this.companies.requireMember(companyId, user);
-      return user;
+      const thread = this.companies
+        .threadsIn(companyId, user.id)
+        .find((each) => each.conversationId === conversationId);
+      if (!thread) {
+        throw notFound();
+      }
+      return { user, thread };
     };
     return [
       defineTool({
@@ -2489,7 +2500,7 @@ export class Intake {
         parameters: Type.Object({ query: Type.String() }),
         replay: "safe",
         execute: async ({ query }, api) => {
-          const user = await actor(api.conversationId);
+          const { user } = await actor(api.conversationId);
           return {
             output: [
               {
@@ -2522,10 +2533,7 @@ export class Intake {
         }),
         replay: "safe",
         execute: async ({ id, action, revision, quote }, api) => {
-          const user = await actor(api.conversationId);
-          const thread = this.companies
-            .threadsIn(companyId, user.id)
-            .find((each) => each.conversationId === api.conversationId)!;
+          const { user, thread } = await actor(api.conversationId);
           const state = await this.threads.messages(thread);
           if (
             !(

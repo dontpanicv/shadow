@@ -179,7 +179,6 @@ async function setup(
     learnedFor: (_companyId, person) => options.learned?.(person.id) ?? [],
     writeFile: app.app.threads.writeFile.bind(app.app.threads),
     deleteFile: app.app.threads.deleteFile.bind(app.app.threads),
-    realm: async () => owner.id,
     requester: async () => owner,
     files: app.app.threads.files.bind(app.app.threads),
     place: app.app.threads.place.bind(app.app.threads),
@@ -1491,15 +1490,55 @@ test("a morning summary that failed is sent at the next try, once", async () => 
   expect(run.posts).toHaveLength(2);
 });
 
+test("a source never reaches a thread that others see, even when the judge names one", async () => {
+  let shared = "";
+  const run = await setup({
+    target: "shared",
+    decide: (input) => [
+      {
+        threadId: shared,
+        startThread: false,
+        channelId: null,
+        newChannel: null,
+        title: "Flat repair claim",
+        summary: "The claim waits for an answer",
+        attention: "now",
+        notification: null,
+        message: "The claim waits for an answer",
+        evidence: input.evidence.map((source) => source.id),
+        checks: [],
+        resolved: [],
+      },
+    ],
+  });
+  shared = run.target!.id;
+  await intake.tick(START + 1000);
+  expect(run.snapshots.length).toBeGreaterThan(0);
+  expect(
+    run.snapshots.flatMap((input) => input.threads.map((thread) => thread.id))
+  ).not.toContain(shared);
+  expect(run.reviews).toEqual([]);
+  expect(
+    (await app.app.threads.messages(run.target!)).messages.filter(
+      (message) => message.observation
+    )
+  ).toEqual([]);
+  expect(
+    app.app.database
+      .query("SELECT count(*) AS n FROM intake_delivery WHERE thread_id=?")
+      .get(shared)
+  ).toEqual({ n: 0 });
+});
+
 test("intake_read gives every waiting update whatever the query, and reading leaves it waiting", async () => {
-  const run = await setup({ initialNotice: "brief" });
+  const run = await setup({ initialNotice: "brief", target: "private" });
   await intake.tick(START + 1000);
   const read = intake
     .tools(run.companyId)
     .find((tool) => tool.name === "intake_read")!;
   const result = await read.execute(
     { query: "something unrelated" } as never,
-    { conversationId: 1 } as never,
+    { conversationId: run.target!.conversationId } as never,
     undefined as never
   );
   const { waiting } = JSON.parse(
@@ -1518,6 +1557,47 @@ test("intake_read gives every waiting update whatever the query, and reading lea
       )
       .get(update!.id)
   ).toEqual({ delivered_at: null, cancelled_at: null });
+  // The person who asks in a thread that others see reads their own sources there; nobody reads them in a thread
+  // that the person does not see.
+  const team = app.app.companies.addChannel(
+    run.companyId,
+    "team",
+    run.owner.id,
+    null
+  );
+  const open = await app.app.threads.startAgentThread(
+    run.companyId,
+    team.id,
+    "Team"
+  );
+  const asked = await read.execute(
+    { query: "balcony" } as never,
+    { conversationId: open.conversationId } as never,
+    undefined as never
+  );
+  expect((asked.output![0] as { text: string }).text).toContain(update!.id);
+  await app.signIn("Bob", "bob@example.com");
+  const { internalAdapter } = await app.app.auth.$context;
+  const bob = (await internalAdapter.findUserByEmail("bob@example.com"))!.user;
+  await app.app.companies.addMember(run.companyId, run.owner, bob.email);
+  const bobs = app.app.companies.addChannel(
+    run.companyId,
+    "bob-notes",
+    bob.id,
+    bob.id
+  );
+  const hidden = await app.app.threads.startAgentThread(
+    run.companyId,
+    bobs.id,
+    "Bob's notes"
+  );
+  await expect(
+    read.execute(
+      { query: "balcony" } as never,
+      { conversationId: hidden.conversationId } as never,
+      undefined as never
+    )
+  ).rejects.toThrow("Not found");
 });
 
 test("the overview shows a waiting update, takes feedback for the judge, and can post the update now", async () => {
@@ -1565,7 +1645,7 @@ test("the overview shows a waiting update, takes feedback for the judge, and can
 
 test("deleting a waiting update blocks its sender, deletes what intake read from them, and reads nothing more from them", async () => {
   const run = await setup({
-    target: "shared",
+    target: "private",
     decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
   run.items([
@@ -1635,7 +1715,7 @@ test("deleting a waiting update blocks its sender, deletes what intake read from
 test("deleting a chat update from a contact with no name blocks only that chat, never the owner's own messages", async () => {
   const run = await setup({
     source: "slack",
-    target: "shared",
+    target: "private",
     decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
   run.items([
@@ -1665,9 +1745,9 @@ test("deleting a chat update from a contact with no name blocks only that chat, 
   );
 });
 
-test("the owner's own message in a shared thread takes its waiting update once; another member's does not", async () => {
+test("the owner's own message in their private thread takes its waiting update once; another member's does not", async () => {
   const run = await setup({
-    target: "shared",
+    target: "private",
     decide: (input) => [{ ...threadUpdate(input), attention: "brief" }],
   });
   await intake.tick(START + 1000);
@@ -1982,93 +2062,84 @@ test("retrieval keeps search rank instead of the company's thread order", async 
   );
 });
 
-for (const target of ["private", "shared"] as const) {
-  test(`a developer email is posted to the existing ${target} claim thread with its files, and notifies its owner once`, async () => {
-    const run = await setup({ target, noticeReply: true, actualReview: true });
-    await intake.tick(START + 1000);
-    const count = app.app.companies.threadsIn(
-      run.companyId,
-      run.owner.id
-    ).length;
-    run.items([
-      item(
-        "reply",
-        "Here is the substantive response. Repairs start Monday.",
-        false,
-        START + DAY,
-        [
-          {
-            id: "appointment",
-            name: "repair.ics",
-            type: "text/calendar",
-            size: 30,
-          },
-        ]
-      ),
-    ]);
-    await intake.tick(START + DAY);
-    expect(
-      app.app.companies.threadsIn(run.companyId, run.owner.id)
-    ).toHaveLength(count);
-    expect(run.reviews.map((review) => review.threadId)).toEqual([
-      run.target!.id,
-    ]);
-    const state = await app.app.threads.messages(run.target!);
-    const prompt = state.messages.find((message) => message.observation)!;
-    expect(prompt.text).toContain("The developer replied");
-    expect(prompt.files).toHaveLength(2);
-    expect(prompt.files.some((file) => file.name.endsWith("repair.ics"))).toBe(
-      true
-    );
-    const { path } = await app.app.threads.file(
-      run.companyId,
-      run.owner,
-      prompt.files[0]!.id
-    );
-    expect(await Bun.file(path).text()).toContain("Repairs start Monday");
-    // The update is the newest message: no agent works on it.
-    expect(state.messages.at(-1)).toMatchObject({ observation: true });
-    await app.signIn("Bob", "bob@example.com");
-    const { internalAdapter } = await app.app.auth.$context;
-    const bob = (await internalAdapter.findUserByEmail("bob@example.com"))!
-      .user;
-    app.app.database
-      .query(
-        "INSERT INTO member(id,organizationId,userId,role,createdAt) VALUES(?,?,?,'member',?)"
-      )
-      .run("reader-bob", run.companyId, bob.id, Date.now());
-    if (target === "shared") {
-      expect(
-        (await app.app.threads.file(run.companyId, bob, prompt.files[0]!.id))
-          .path
-      ).toBe(path);
-    } else {
-      await expect(
-        app.app.threads.file(run.companyId, bob, prompt.files[0]!.id)
-      ).rejects.toThrow();
-    }
-    expect(
-      app.app.notifications.inbox(run.companyId, bob).notifications
-    ).toHaveLength(0);
-    expect(
-      app.app.notifications.inbox(run.companyId, run.owner).notifications
-    ).toEqual([expect.objectContaining({ threadId: run.target!.id })]);
-    const calls = app.faux.state.callCount;
-    await intake.tick(START + DAY + 16 * 60_000);
-    expect(app.faux.state.callCount).toBe(calls);
-    expect(
-      app.app.notifications.inbox(run.companyId, run.owner).notifications
-    ).toHaveLength(1);
-    expect(
-      app.app.notifications.inbox(run.companyId, run.owner).notifications
-    ).toHaveLength(1);
-    expect(
-      (await app.app.threads.messages(run.target!)).messages.filter(
-        (message) => message.observation
-      )
-    ).toHaveLength(1);
+test("a developer email is posted to the existing private claim thread with its files, and notifies its owner once", async () => {
+  const run = await setup({
+    target: "private",
+    noticeReply: true,
+    actualReview: true,
   });
-}
+  await intake.tick(START + 1000);
+  const count = app.app.companies.threadsIn(run.companyId, run.owner.id).length;
+  run.items([
+    item(
+      "reply",
+      "Here is the substantive response. Repairs start Monday.",
+      false,
+      START + DAY,
+      [
+        {
+          id: "appointment",
+          name: "repair.ics",
+          type: "text/calendar",
+          size: 30,
+        },
+      ]
+    ),
+  ]);
+  await intake.tick(START + DAY);
+  expect(app.app.companies.threadsIn(run.companyId, run.owner.id)).toHaveLength(
+    count
+  );
+  expect(run.reviews.map((review) => review.threadId)).toEqual([
+    run.target!.id,
+  ]);
+  const state = await app.app.threads.messages(run.target!);
+  const prompt = state.messages.find((message) => message.observation)!;
+  expect(prompt.text).toContain("The developer replied");
+  expect(prompt.files).toHaveLength(2);
+  expect(prompt.files.some((file) => file.name.endsWith("repair.ics"))).toBe(
+    true
+  );
+  const { path } = await app.app.threads.file(
+    run.companyId,
+    run.owner,
+    prompt.files[0]!.id
+  );
+  expect(await Bun.file(path).text()).toContain("Repairs start Monday");
+  // The update is the newest message: no agent works on it.
+  expect(state.messages.at(-1)).toMatchObject({ observation: true });
+  await app.signIn("Bob", "bob@example.com");
+  const { internalAdapter } = await app.app.auth.$context;
+  const bob = (await internalAdapter.findUserByEmail("bob@example.com"))!.user;
+  app.app.database
+    .query(
+      "INSERT INTO member(id,organizationId,userId,role,createdAt) VALUES(?,?,?,'member',?)"
+    )
+    .run("reader-bob", run.companyId, bob.id, Date.now());
+  await expect(
+    app.app.threads.file(run.companyId, bob, prompt.files[0]!.id)
+  ).rejects.toThrow();
+  expect(
+    app.app.notifications.inbox(run.companyId, bob).notifications
+  ).toHaveLength(0);
+  expect(
+    app.app.notifications.inbox(run.companyId, run.owner).notifications
+  ).toEqual([expect.objectContaining({ threadId: run.target!.id })]);
+  const calls = app.faux.state.callCount;
+  await intake.tick(START + DAY + 16 * 60_000);
+  expect(app.faux.state.callCount).toBe(calls);
+  expect(
+    app.app.notifications.inbox(run.companyId, run.owner).notifications
+  ).toHaveLength(1);
+  expect(
+    app.app.notifications.inbox(run.companyId, run.owner).notifications
+  ).toHaveLength(1);
+  expect(
+    (await app.app.threads.messages(run.target!)).messages.filter(
+      (message) => message.observation
+    )
+  ).toHaveLength(1);
+});
 
 test("judge batches preserve whole email bodies, outgoing direction, and attachment metadata", async () => {
   const run = await setup({ decide: () => [] });
@@ -2529,7 +2600,7 @@ test("the morning review reuses a differently titled thread created after queuin
     },
   });
   await intake.tick(START);
-  const channel = app.app.companies.channelsIn(run.companyId, run.owner.id)[0]!;
+  const channel = app.app.companies.personalChannelOf(run.companyId, run.owner);
   const existing = await app.app.threads.startAgentThread(
     run.companyId,
     channel.id,
@@ -2806,14 +2877,14 @@ test("the person's answered turn marks the update that it took as delivered", as
   const home =
     app.app.companies.list(owner)[0] ??
     (await app.app.companies.create(owner, "Home"));
-  const [general] = app.app.companies.channels(home.id, owner);
+  const own = app.app.companies.personalChannelOf(home.id, owner);
   app.faux.setResponses(
     Array.from({ length: 40 }, () => fauxAssistantMessage("Ok."))
   );
   const { id: threadId } = await app.app.threads.create(
     home.id,
     owner,
-    general!.id,
+    own.id,
     "The balcony claim"
   );
   const thread = app.app.companies.thread(threadId, owner);
