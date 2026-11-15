@@ -22,8 +22,8 @@ server, with no cloud service between your company and its data.
 - **It knows the company.** Each channel keeps a brief that Shadow writes again when a conversation goes quiet. A
   learning loop keeps short facts about each person and how things are done. Your team writes its own facts too.
   Every agent reads all of it before it answers.
-- **It lives in Slack.** Mention Shadow in a channel or DM it, and it answers in the thread, showing what it does as
-  it works. Where an admin gives a channel a goal, it listens: a cheap check skips what is not for it, and it answers
+- **It lives in Slack.** Mention Shadow in a channel or a group DM, or talk to it in Slack's agent view, and it answers
+  in the thread, showing what it does as it works. Where an admin gives a channel a goal, it listens: a cheap check skips what is not for it, and it answers
   only when a reply helps, or tells one person privately. Approvals, reminders, the morning review, and routines reach
   people in Slack too.
 - **It stays quiet.** Shadow notifies you only when you must act or when you asked for it. Routines, reminders, and

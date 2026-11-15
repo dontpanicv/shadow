@@ -32,7 +32,12 @@ export function fakeSlack() {
     /** The email of each user, which users.info gives. */
     emails: {} as Record<string, string>,
     /** What Shadow posted, updated, or published, in order, with the JSON body of each write. */
-    writes: [] as { method: string; body: Record<string, unknown> }[],
+    writes: [] as {
+      method: string;
+      body: Record<string, unknown>;
+      /** The ts of the message that Slack gave back. */
+      ts: string;
+    }[],
     joined: new Set<string>(),
     token: "xoxb-good",
     appToken: "xapp-good",
@@ -55,17 +60,15 @@ export function fakeSlack() {
     },
     /** A write of Shadow, such as chat.postMessage: kept in `writes`, with a new message ts. */
     write(method: string, body: Record<string, unknown>) {
-      slack.writes.push({ method, body });
+      const ts =
+        method === "chat.update"
+          ? String(body.ts)
+          : String(slack.writes.length + 1_000_001);
+      slack.writes.push({ method, body, ts });
       if (method === "conversations.open") {
         return Response.json({ ok: true, channel: { id: `D-${body.users}` } });
       }
-      return Response.json({
-        ok: true,
-        ts:
-          method === "chat.update"
-            ? body.ts
-            : String(slack.writes.length + 1_000_000),
-      });
+      return Response.json({ ok: true, ts });
     },
     /** A read of Shadow, such as conversations.history. */
     read(pathname: string, query: URLSearchParams) {
@@ -77,6 +80,12 @@ export function fakeSlack() {
             team: "Acme",
             team_id: "T1",
             user_id: "B1",
+          });
+        case "/api/conversations.info":
+          // A group DM's id starts with G here; the others are channels.
+          return Response.json({
+            ok: true,
+            channel: { id: channel, is_mpim: channel.startsWith("G") },
           });
         case "/api/conversations.join":
           slack.joined.add(channel);

@@ -50,8 +50,9 @@ admin connects the bot once in Company settings:
 
 1. At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App › From a manifest**, select the
    company's Slack workspace, and paste [slack-app-manifest.json](slack-app-manifest.json), with Shadow's own
-   hostname in `unfurl_domains`. The manifest turns on Socket Mode, interactivity, the Home tab, and the scopes and
-   events below. Keep it an app of your own workspace: Slack gives such an app the normal limits on reading history.
+   hostname in `unfurl_domains`. The manifest turns on Slack's agent view, Socket Mode, interactivity, the Home tab, and
+   the scopes and events below. Slack cannot switch an app back from the agent view, so turn it on for an existing app
+   only when this version of Shadow runs. Keep it an app of your own workspace: Slack gives such an app the normal limits on reading history.
 2. Under **Basic Information › App-Level Tokens**, make a token with the scope `connections:write` (`xapp-…`).
    Shadow opens the connection to Slack, so it needs no public address.
 3. Install the app to the Slack workspace, copy the **Bot User OAuth Token** (`xoxb-…`), and paste both tokens under
@@ -77,9 +78,15 @@ People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
 - **Mention it** in a public channel: the Slack thread becomes a Shadow thread of that channel, which starts with what
   the Slack thread said before. Shadow shows what it does now ("Google mail search…") with a Stop button, and then puts
   its answer in place, with a link to the thread in Shadow and feedback buttons. Shadow follows the thread for 7 days.
-- **DM it**: a DM goes to the person's own thread, which hands work on to the channels, as on the web.
+- **DM it**: Shadow is an agent in Slack's agent view. Each conversation there is a thread of the DM, whose agent
+  session shows "processing" while Shadow works; Slack's Stop stops it. The DM goes to the person's own thread, which
+  hands work on to the channels, as on the web, and knows which public channel the person looks at, so "sum up this
+  channel" works. The suggested prompts come from the manifest.
+- **Group DMs**: mention Shadow in a group DM. The asker's own thread answers, with the group DM's conversation as
+  data, and it leaves out what only the asker may see, because everyone in the group reads the answer. Shadow keeps no
+  shared place for a group, so the group's conversation stays in Slack.
 - **Who**: a Slack user whose email is in `allowed_emails` becomes a member at their first message; others get one
-  answer that they are not allowed. Private channels and group DMs come later.
+  answer that they are not allowed. Private channels come later.
 - **Listening**: an admin gives a channel a goal in Company settings: when Shadow wakes, and how it takes part
   (**Suggest** writes one from the channel's brief). The goal is the consent to listen there. Each new message at the
   top of that channel, and each reply in a thread that Shadow follows, goes through a cheap check with the fast model:

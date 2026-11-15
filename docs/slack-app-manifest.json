@@ -13,12 +13,30 @@
       "display_name": "Shadow",
       "always_online": true
     },
-    "unfurl_domains": ["shadow.example.com"]
+    "unfurl_domains": ["shadow.example.com"],
+    "agent_view": {
+      "agent_description": "Shadow is the company's assistant: it knows the company's channels, mail, files, and tools, and it helps when you ask.",
+      "suggested_prompts": [
+        {
+          "title": "Catch me up",
+          "message": "What happened in this channel this week, and what needs me?"
+        },
+        {
+          "title": "Find something",
+          "message": "Find what we decided about this, with the sources."
+        },
+        {
+          "title": "Schedule work",
+          "message": "Every Monday at 9, sum up what needs me."
+        }
+      ]
+    }
   },
   "oauth_config": {
     "scopes": {
       "bot": [
         "app_mentions:read",
+        "assistant:write",
         "channels:history",
         "channels:join",
         "channels:read",
@@ -29,6 +47,8 @@
         "im:write",
         "links:read",
         "links:write",
+        "mpim:history",
+        "mpim:read",
         "users:read",
         "users:read.email"
       ]
@@ -37,6 +57,9 @@
   "settings": {
     "event_subscriptions": {
       "bot_events": [
+        "agent_session_stopped",
+        "agent_session_title_changed",
+        "app_context_changed",
         "app_home_opened",
         "app_mention",
         "channel_archive",
@@ -46,7 +69,8 @@
         "channel_unarchive",
         "link_shared",
         "message.channels",
-        "message.im"
+        "message.im",
+        "message.mpim"
       ]
     },
     "interactivity": {

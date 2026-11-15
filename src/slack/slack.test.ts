@@ -100,13 +100,14 @@ test("a mention in a channel is a Shadow thread with the Slack thread before it,
     (updates) =>
       updates.some((each) => JSON.stringify(each.body).includes("Friday"))
   );
-  const status = writes("chat.postMessage")[0]!.body;
+  const statusWrite = writes("chat.postMessage")[0]!;
+  const status = statusWrite.body;
   expect(status).toMatchObject({ channel: "C2", thread_ts: root });
   expect(String(status.text)).toStartWith("Working");
   const answer = update.findLast((each) =>
     JSON.stringify(each.body).includes("Friday")
   )!.body;
-  expect(answer.ts).toBe("1000001");
+  expect(answer.ts).toBe(statusWrite.ts);
   const blocks = JSON.stringify(answer.blocks);
   // Shadow's own links open in Shadow, and the answer links its thread.
   expect(blocks).toContain(`(http://shadow.test/c/${company.id}/thread/t1)`);
@@ -141,13 +142,20 @@ test("a mention in a channel is a Shadow thread with the Slack thread before it,
 test("a DM goes to the person's own thread, and a notice they did not see comes as a DM too", async () => {
   const { company, writes, close } = await setup();
   model.answer = "You have two meetings today.";
+  // The person looks at #support in Slack while they write.
+  slack.event({
+    type: "app_context_changed",
+    user: "U1",
+    context: { entities: [{ type: "slack#/types/channel_id", value: "C2" }] },
+  });
+  const asked = (Date.now() / 1000).toFixed(6);
   slack.event({
     type: "message",
     channel_type: "im",
     channel: "D1",
     user: "U1",
     text: "What is on today?",
-    ts: (Date.now() / 1000).toFixed(6),
+    ts: asked,
   });
   await until(
     async () => writes("chat.update"),
@@ -156,9 +164,17 @@ test("a DM goes to the person's own thread, and a notice they did not see comes 
   );
   const own = await shadow.app.threads.orchestrator(company.id, alice);
   const { messages } = await shadow.app.threads.messages(own);
-  expect(messages.some((message) => message.text === "What is on today?")).toBe(
-    true
+  expect(messages.at(-2)!.text).toBe(
+    "What is on today?\n\n(In Slack, Alice is looking at <#C2>.)"
   );
+  // The answer goes in the agent session's thread, whose status shows the work.
+  expect(
+    writes("chat.postMessage").find((post) => post.body.channel === "D1")!.body
+      .thread_ts
+  ).toBe(asked);
+  expect(
+    writes("agents.sessions.setStatus").map((write) => write.body.status)
+  ).toEqual(["processing", "active"]);
 
   const general = shadow.app.companies.channels(company.id, alice)[0]!;
   shadow.app.notifications.notify({
@@ -272,6 +288,45 @@ test("Shadow listens only where a goal or its own reply asks it to: the check sk
     (list) => list.length === 4
   );
   expect(decisions()[0]!.outcome).toBe("muted");
+  await close();
+});
+
+test("a mention in a group DM answers once, from the asker's own thread, with the group's conversation as data", async () => {
+  const { company, writes, close } = await setup();
+  model.answer = "Acme renewed in May.";
+  slack.joined.add("G1");
+  slack.messages.G1 = [
+    {
+      ts: (Date.now() / 1000 - 60).toFixed(6),
+      user: "U2",
+      text: "Are we on for the Acme call?",
+    },
+  ];
+  const mention = {
+    channel: "G1",
+    user: "U1",
+    text: "<@B1> what do we know about Acme?",
+    ts: (Date.now() / 1000).toFixed(6),
+  };
+  // Slack sends a group DM's mention twice: as a message and as an app_mention.
+  slack.event({ type: "message", channel_type: "mpim", ...mention });
+  slack.event({ type: "app_mention", ...mention });
+  await until(
+    async () => writes("chat.update"),
+    (updates) =>
+      updates.some((each) => JSON.stringify(each.body).includes("renewed"))
+  );
+  expect(
+    writes("chat.postMessage").filter((post) => post.body.channel === "G1")
+  ).toHaveLength(1);
+  const own = await shadow.app.threads.orchestrator(company.id, alice);
+  const { messages } = await shadow.app.threads.messages(own);
+  const request = messages.findLast((message) => !message.agent)!.text;
+  expect(request).toContain(
+    "Alice asks you in a Slack group DM: what do we know about Acme?"
+  );
+  expect(request).toContain("- Bob Smith: Are we on for the Acme call?");
+  expect(request).toContain("leave out what only Alice may see");
   await close();
 });
 

@@ -126,6 +126,10 @@ export class SlackSurface implements SlackSurfacePort {
   private readonly following = new Map<string, Promise<() => Promise<void>>>();
   /** The approvals that Shadow asked in Slack already. */
   private readonly asked = new Set<string>();
+  /** The events seen once, by `<channel> <ts>`. */
+  private readonly seen = new Set<string>();
+  /** The public channel each person looks at in Slack, by `<company> <slack user>`. */
+  private readonly views = new Map<string, string>();
   private closed = false;
 
   constructor(
@@ -183,9 +187,16 @@ export class SlackSurface implements SlackSurfacePort {
       this.detach(() => this.mention(companyId, slack));
     } else if (slack.type === "message" && slack.channel_type === "im") {
       this.detach(() => this.direct(companyId, slack));
+    } else if (slack.type === "message" && slack.channel_type === "mpim") {
+      // A group DM wakes Shadow only with a mention; app_mention may bring the same message, which `once` drops.
+      this.detach(() => this.group(companyId, slack));
     } else if (slack.type === "message") {
       this.detach(() => this.listen(companyId, slack));
-    } else if (slack.type === "app_home_opened") {
+    } else if (slack.type === "agent_session_stopped") {
+      this.detach(() => this.stopSession(companyId, event));
+    } else if (slack.type === "app_context_changed") {
+      this.viewing(companyId, event);
+    } else if (slack.type === "app_home_opened" && event.tab !== "messages") {
       this.detach(() => this.home(companyId, String(event.user)));
     } else if (slack.type === "link_shared") {
       this.detach(() => this.unfurl(companyId, event));
@@ -206,7 +217,14 @@ export class SlackSurface implements SlackSurfacePort {
     const root = event.thread_ts ?? event.ts;
     const channel = this.channelOf(companyId, event.channel);
     if (!channel) {
-      await this.say(client, event.channel, root, ONLY_PUBLIC);
+      const { channel: info } = (await client.call("conversations.info", {
+        channel: event.channel,
+      })) as { channel?: { is_mpim?: boolean } };
+      if (info?.is_mpim) {
+        await this.group(companyId, event);
+      } else {
+        await this.say(client, event.channel, root, ONLY_PUBLIC);
+      }
       return;
     }
     const user = await this.person(companyId, client, event.user);
@@ -265,20 +283,162 @@ export class SlackSurface implements SlackSurfacePort {
     }
     const own = await this.threads.orchestrator(companyId, user);
     const after = await this.lastMessageId(companyId, own.id);
+    const text = await client.plain(event.text ?? "");
+    const viewing = this.views.get(`${companyId} ${event.user}`);
     await this.threads.send(
       own.id,
       user,
-      await client.plain(event.text ?? ""),
+      viewing
+        ? `${text}\n\n(In Slack, ${user.name} is looking at <#${viewing}>.)`
+        : text,
       await this.files(client, event.files)
     );
+    // Each conversation in the agent view of Slack is a thread of the DM: the answer goes there.
     await this.reply(
       companyId,
       own.id,
       user,
       event.channel,
-      event.thread_ts ?? null,
+      event.thread_ts ?? event.ts,
       after
     );
+  }
+
+  /**
+   * A mention in a group DM: the asker's own thread answers, with the group's conversation as data, and is told that
+   * everyone in the group reads the answer. Shadow keeps no shared place for a group, so each person's data stays theirs.
+   */
+  private async group(companyId: string, event: SlackEvent): Promise<void> {
+    const client = this.bot.client(companyId);
+    if (
+      !(client?.botUserId && event.user) ||
+      event.bot_id ||
+      event.user === client.botUserId ||
+      !event.text?.includes(`<@${client.botUserId}>`) ||
+      !this.once(`${event.channel} ${event.ts}`)
+    ) {
+      return;
+    }
+    const root = event.thread_ts ?? event.ts;
+    const user = await this.person(companyId, client, event.user);
+    if (!user) {
+      await this.say(client, event.channel, root, DENIED);
+      return;
+    }
+    const earlier =
+      (
+        (await client.call(
+          event.thread_ts ? "conversations.replies" : "conversations.history",
+          {
+            channel: event.channel,
+            limit: "30",
+            ...(event.thread_ts ? { ts: event.thread_ts } : {}),
+          }
+        )) as { messages?: { user?: string; text?: string; ts: string }[] }
+      ).messages ?? [];
+    const lines: string[] = [];
+    for (const message of earlier
+      .filter((each) => each.ts !== event.ts)
+      .toSorted((left, right) => Number(left.ts) - Number(right.ts))) {
+      const name = message.user
+        ? await this.slackName(companyId, client, message.user)
+        : "Someone";
+      lines.push(`- ${name}: ${await client.plain(message.text ?? "")}`);
+    }
+    const own = await this.threads.orchestrator(companyId, user);
+    const after = await this.lastMessageId(companyId, own.id);
+    const asked = await client.plain(
+      stripMention(event.text, client.botUserId)
+    );
+    await this.threads.send(
+      own.id,
+      user,
+      [
+        `${user.name} asks you in a Slack group DM: ${asked}`,
+        lines.length
+          ? `The group DM before it, as data:\n${lines.join("\n")}`
+          : "",
+        `Your answer is posted in the group DM, which everyone in it reads: leave out what only ${user.name} may see.`,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      await this.files(client, event.files)
+    );
+    await this.reply(companyId, own.id, user, event.channel, root, after);
+  }
+
+  /** Slack's Stop on an agent session: stops the Shadow thread that works there. */
+  private async stopSession(
+    companyId: string,
+    event: Record<string, unknown>
+  ): Promise<void> {
+    const client = this.bot.client(companyId);
+    const slackUser = String(event.user ?? "");
+    const user = client && (await this.person(companyId, client, slackUser));
+    if (!user) {
+      return;
+    }
+    const open = this.database
+      .query(
+        "SELECT thread_id AS threadId FROM slack_reply WHERE company_id = ? AND slack_channel_id = ? AND root_ts = ? AND done_at IS NULL"
+      )
+      .all(companyId, String(event.channel), String(event.thread_ts)) as {
+      threadId: string;
+    }[];
+    for (const { threadId } of open) {
+      await this.threads.stop(threadId, user);
+    }
+  }
+
+  /** Remembers which channel a person looks at in Slack, so a DM can mean "this channel". */
+  private viewing(companyId: string, event: Record<string, unknown>): void {
+    const context = event.context as
+      | { entities?: { type: string; value: string }[] }
+      | undefined;
+    const channel = context?.entities?.find(
+      (entity) => entity.type === "slack#/types/channel_id"
+    )?.value;
+    const key = `${companyId} ${String(event.user)}`;
+    if (channel && this.channelOf(companyId, channel)) {
+      this.views.set(key, channel);
+    } else {
+      this.views.delete(key);
+    }
+  }
+
+  /** True the first time it sees a key, for an event that Slack sends twice, such as a mention in a group DM. */
+  private once(key: string): boolean {
+    if (this.seen.has(key)) {
+      return false;
+    }
+    this.seen.add(key);
+    if (this.seen.size > 1000) {
+      this.seen.delete(this.seen.values().next().value!);
+    }
+    return true;
+  }
+
+  /** A Slack user's name, through their Shadow member or Slack. */
+  private async slackName(
+    companyId: string,
+    client: SlackClient,
+    slackUserId: string
+  ): Promise<string> {
+    const userId = this.database
+      .query(
+        "SELECT user_id AS id FROM slack_member WHERE company_id = ? AND slack_user_id = ?"
+      )
+      .get(companyId, slackUserId) as { id: string } | null;
+    const member = this.companies
+      .members(companyId, this.companies.agentMember(companyId))
+      .find((candidate) => candidate.userId === userId?.id);
+    if (member) {
+      return member.name;
+    }
+    const { user } = (await client.call("users.info", {
+      user: slackUserId,
+    })) as { user?: { real_name?: string; name?: string } };
+    return user?.real_name || user?.name || "Someone";
   }
 
   /** Posts a working status in Slack, then follows the Shadow thread until its answer replaces the status. */
@@ -291,6 +451,7 @@ export class SlackSurface implements SlackSurfacePort {
     after: number
   ): Promise<void> {
     const client = this.bot.client(companyId)!;
+    await sessionStatus(client, slackChannelId, rootTs, "processing");
     const posted = await client.post("chat.postMessage", {
       channel: slackChannelId,
       ...(rootTs ? { thread_ts: rootTs } : {}),
@@ -416,6 +577,7 @@ export class SlackSurface implements SlackSurfacePort {
         });
       }
     }
+    await sessionStatus(client, row.slack_channel_id, row.root_ts, "active");
     this.database
       .query("UPDATE slack_reply SET done_at = ? WHERE id = ?")
       .run(Date.now(), row.id);
@@ -1201,6 +1363,28 @@ export class SlackSurface implements SlackSurfacePort {
       }
     });
   }
+}
+
+/**
+ * The status of Slack's agent session in a thread: `processing` while Shadow works, `active` once it answered. A thread
+ * that is no agent session, or a Slack without the agent view, refuses it, which changes nothing.
+ */
+async function sessionStatus(
+  client: SlackClient,
+  channel: string,
+  threadTs: string | null,
+  status: "processing" | "active"
+): Promise<void> {
+  if (!threadTs) {
+    return;
+  }
+  await client
+    .post("agents.sessions.setStatus", {
+      channel_id: channel,
+      thread_ts: threadTs,
+      status,
+    })
+    .catch(() => undefined);
 }
 
 /** The status message while the agent works, with what it does now and a Stop button. */
