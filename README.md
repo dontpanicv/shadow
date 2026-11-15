@@ -391,9 +391,8 @@ bun run lint       # Ultracite (Biome); `bun run format` fixes what it can
   ([docs/modular-monolith.md](docs/modular-monolith.md)). `web/` has the same modules.
 - `design/tokens.json` holds every color, size, space, radius, and shadow; `bun run tokens` makes the CSS, the
   16 × 16 pixel icons, and the logo's paths from it. `design/components.md` is the spec of every component.
-- `design/icon.svg` is Shadow's badge in an 8 × 12 grid: an employee badge, white on black, whose right half is its
-  shadow in accent (#c8603f) noise, under an accent clip. `bun scripts/icon.ts` makes it and every app icon, with one
-  noise cell a point at the size where each shows.
+- `design/icon.svg` is Shadow's logo: a white person on black whose long shadow falls to the upper right in accent
+  (#c8603f) and fades through noise. `bun scripts/icon.ts` makes it and every app icon in whole cells.
 - `.claude/skills/` has the agent skills of this repository, such as
   [Stageshow](https://github.com/benjitaylor/skills) for product demos. The diagrams are made with
   [Archify](https://github.com/tt-a1i/archify) from `docs/assets/*.archify.json`.

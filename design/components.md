@@ -3,7 +3,7 @@
 The look is Ember: black, white, and one accent, square corners, pixel icons, and a 1 pt dither. Every value lives in
 `tokens.json`; layouts and motion are measured from Linear's light and dark themes (Inter 4.1, the same font file).
 `accent` is the only color of Shadow; `gold` takes its value and marks steps and what waits for a person. Shadow's logo
-is a badge whose right half is its shadow.
+is a person with a long shadow.
 Every component exists on the web (`public/styles.css`, `web/ui/`) and looks like Linear's web app. Native selects and
 pickers are never used; menus, selects, switches, and checkboxes are our own.
 
@@ -134,7 +134,7 @@ Used by the company switcher and action menus.
 ## Sidebar
 
 - 244 wide on the canvas, 12 px side padding. It starts with Shadow, with no company name above it. Shadow's icon is
-  its face in one color (`shadow`): the logo with its marks cut out, 16 cells across, 1 px a cell.
+  the logo in one color (`shadow`), 16 cells across, 1 px a cell.
 - Item: 28 high, 1 px apart, padding 0 × 9 × 0 × 8, `radius.md`, a 14 px icon 6 px before the label,
   `fontSize.md` `medium` `textTertiary`. Hover: `fillHover` at once and `text` in 150 ms. Current: `fillActive`, `text`.
   Count: `fontSize.xs` `book`. A channel with an emoji shows it in place of the `#` icon, `fontSize.sm`, centered in
@@ -193,11 +193,12 @@ Used by the company switcher and action menus.
 - Avatar: a 24 px square with the person's profile picture, cropped to fill it; without one, the first letter of their
   name on an `accent` tile, in the 5 × 7 pixel letters of `letter` in `tokens.json`, 2 pt a pixel, in `onAccent`, whose
   bottom right corner dissolves into `canvas`.
-- Shadow's logo: one drawing everywhere, `logo` in `scripts/icon.ts`. An 8 × 8 white face with black marks and a solid
-  `accent` forehead mark that dissolves to the right through interleaved-gradient noise. One noise cell is 1 pt at the
-  size where it shows, also on a home screen, where a finer grain blurs into a gradient. It has one expression. On a
-  transparent tile; in light, on a black tile, so the white face stays apart from a white surface. An avatar is
-  24 pt, the sign-in 48 pt, and an empty state 96 pt. `shadow` is the same logo in one color.
+- Shadow's logo: one drawing everywhere, `logo` in `scripts/icon.ts`. A white person stands at the lower left; their
+  `accent` shadow falls at 45° to the upper right, 1.3 times their height, and fades through interleaved-gradient
+  noise from all of its cells at the feet to a fifth at the head. Each size samples the drawing in whole cells: 24
+  cells across for the 24 pt avatar and the 48 pt sign-in, 32 for the 96 pt empty state and the favicons, and 36 cells
+  of 4 px on the home screen, where a finer grain blurs into a gradient. On a transparent tile; in light, on a black
+  tile, so the white person stays apart from a white surface. `shadow` is the same logo in one color.
 
 ## Lists
 
