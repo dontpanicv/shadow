@@ -204,8 +204,12 @@ export async function readText(path: string): Promise<string | null> {
 
 async function documentSegments(path: string): Promise<Extraction> {
   const text = await documentText(path);
+  // A link in the heading, such as a Slack day file's link to its channel, shows as its text.
   const title = extname(path).match(/^\.(md|markdown)$/i)
-    ? text.match(/^#\s+(.+)$/m)?.[1]?.trim()
+    ? text
+        .match(/^#\s+(.+)$/m)?.[1]
+        ?.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .trim()
     : undefined;
   const parts = chunk(text).slice(0, MAX_CHUNKS);
   return {

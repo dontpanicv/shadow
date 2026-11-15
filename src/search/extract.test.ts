@@ -119,6 +119,12 @@ test("Office files, HTML, and RTF become text", async () => {
   const markdown = join(directory, "note.md");
   await Bun.write(markdown, "# Wifi\n\nThe password is on the router.");
   expect((await extract(markdown)).title).toBe("Wifi");
+  const day = join(directory, "slack-2026-11-12.md");
+  await Bun.write(
+    day,
+    "# [#support](https://acme.slack.com/archives/C2), 2026-11-12\n\nHello"
+  );
+  expect((await extract(day)).title).toBe("#support, 2026-11-12");
 });
 
 test("a PDF is read page by page, with its title", async () => {

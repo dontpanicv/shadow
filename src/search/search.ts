@@ -28,6 +28,11 @@ const FOLDERS: readonly { folder: string; kind: SearchKind }[] = [
   { folder: "raw", kind: "capture" },
 ];
 const SCAN_EVERY_MS = 60_000;
+/**
+ * How long a search waits for the vector of its query. The embedder answers in turn, and new files can keep it busy
+ * for hours, so a search that waits longer uses keywords only.
+ */
+export const QUERY_VECTOR_MS = 2000;
 
 export interface SearchResponse {
   readonly results: readonly SearchResult[];
@@ -173,10 +178,13 @@ export class Indexer {
     const index = this.index(companyId);
     let vector: Float32Array | null = null;
     if (this.embedder?.ready() && query.trim()) {
-      vector =
-        (
-          await this.embedder.embed([queryPrompt(query)]).catch(() => [null])
-        )[0] ?? null;
+      vector = await Promise.race([
+        this.embedder.embed([queryPrompt(query)]).then(
+          ([embedded]) => embedded ?? null,
+          () => null
+        ),
+        Bun.sleep(QUERY_VECTOR_MS).then(() => null),
+      ]);
     }
     const channels = new Set(
       this.directory.channelsIn(companyId, realm).map((channel) => channel.id)

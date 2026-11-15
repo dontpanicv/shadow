@@ -16,7 +16,7 @@ import type { User } from "../platform/auth.ts";
 import { Secrets } from "../platform/secrets.ts";
 import { CompanyIndex, chunk, isProse, type Segment } from "./company-index.ts";
 import type { Embedder } from "./embedder.ts";
-import { cardWords } from "./search.ts";
+import { cardWords, Indexer, QUERY_VECTOR_MS } from "./search.ts";
 
 /** Every source is visible: these tests check ranking, not who sees what. */
 const all = () => true;
@@ -65,6 +65,7 @@ beforeAll(async () => {
         "otto@example.com",
         "eva@example.com",
         "karel@example.com",
+        "ada@example.com",
       ],
       google: {
         clientId: "test-client.apps.googleusercontent.com",
@@ -238,6 +239,31 @@ test("search covers one company and never another, also through the agent's reca
       (result) => result.title
     )
   ).toEqual(["Payroll"]);
+});
+
+test("a search uses keywords when the embedder is too busy to give its query a vector in time", async () => {
+  const anna = await person("Ada", "ada@example.com");
+  const company = await app.companies.create(anna.user, "Busy");
+  await note(
+    company.id,
+    "boiler.md",
+    "# Boiler\n\nThe boiler service is on Friday."
+  );
+  await app.indexer.scan(company.id);
+  // The embedder works through other files: a query's vector never comes in time.
+  const busy = new Indexer(
+    dataDirectory,
+    app.companies,
+    app.threads,
+    app.artifacts,
+    { ...embedder, embed: () => new Promise(() => undefined) }
+  );
+  const started = Date.now();
+  const found = await busy.search(company.id, "boiler", 20, null);
+  expect(Date.now() - started).toBeLessThan(QUERY_VECTOR_MS + 1000);
+  expect(found.semantic).toBe(false);
+  expect(found.results.map((result) => result.title)).toEqual(["Boiler"]);
+  await busy.close();
 });
 
 test("each person sees only their own recent searches, newest first, and a search again moves to the top", async () => {

@@ -161,7 +161,8 @@ The company's index is `data/companies/<company-id>/index.sqlite`. Search, the s
   z ≥ 3 or coverage ≥ 0.5, scored `max(z, 0) + 2 × coverage^1.5`; queries made of ids or numbers weigh words more.
 - **Freshness:** Shadow rescans a company a second after any change to one of its threads, and every minute for
   files. Only changed sources are re-read, and only changed text is re-embedded. A different model or runtime
-  re-embeds everything. Until the model runs, search and recall use keywords only.
+  re-embeds everything. Until the model runs, search and recall use keywords only, and so does a search whose
+  query gets no vector within 2 seconds, as when the model works through many new files.
 
 ## Audit export
 
