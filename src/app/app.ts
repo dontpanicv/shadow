@@ -6,6 +6,7 @@ import { Agenda } from "../agenda/agenda.ts";
 import { Artifacts } from "../artifacts/artifacts.ts";
 import { Browser, browserRequirements } from "../browser/browser.ts";
 import { Companies } from "../companies/companies.ts";
+import { Computer } from "../computer/computer.ts";
 import { FeedbackReports } from "../feedback/feedback.ts";
 import { Intake } from "../intake/intake.ts";
 import type { Connector } from "../integrations/integrations.ts";
@@ -27,6 +28,7 @@ import { extractRequirements, jpeg, readText } from "../search/extract.ts";
 import { Indexer, RecentSearches } from "../search/search.ts";
 import { SlackSurface } from "../slack/slack.ts";
 import { noticeTools } from "../slack/tools.ts";
+import { Sources } from "../sources/sources.ts";
 import { Threads } from "../threads/threads.ts";
 
 export interface App {
@@ -49,6 +51,7 @@ export interface App {
   readonly slackBot: SlackBot;
   readonly feedback: FeedbackReports;
   readonly slack: SlackSurface;
+  readonly sources: Sources;
 }
 
 /** Everything the modules need from this machine, checked before Shadow starts. */
@@ -122,6 +125,16 @@ export async function createApp(
     indexer.touch(companyId)
   );
   const browser = new Browser();
+  const sources = new Sources(
+    join(config.dataDirectory, "sources"),
+    config.sources,
+    config.gitToken
+  );
+  const computer = new Computer(
+    join(config.dataDirectory, "computer"),
+    undefined,
+    sources
+  );
   const notifications = new Notifications(database, companies);
   // The recall port points at the indexer too; files read as search reads them.
   // The routine tools come from routines, which runs its work in threads.
@@ -132,6 +145,8 @@ export async function createApp(
     integrations,
     artifacts,
     browser,
+    computer,
+    sources,
     notifications,
     {
       audit: (companyId, ownerId, trace, stage, data) =>
@@ -264,10 +279,12 @@ export async function createApp(
     slackBot,
     feedback,
     slack,
+    sources,
   };
 }
 
 export async function closeApp(app: App): Promise<void> {
+  app.sources.stop();
   await app.slack.close();
   await app.slackBot.close();
   await app.intake.close();

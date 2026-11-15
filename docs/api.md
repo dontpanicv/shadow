@@ -655,7 +655,8 @@ Errors other than `401`, `204`, and `404` have the body `{ error: string }`.
 - A connector tool that sends a message as a person, such as `slack_send`, waits for the credential owner's approval before every call. A routine's script cannot call it. An MCP tool that acts as a person where others see it, such as one that comments or invites guests, waits for the same approval.
 - Agents reach public addresses only: the browser and `save_file` go through Shadow's egress proxy, which refuses
   loopback, private, link-local, and other non-public addresses after each DNS answer and redirect. Each person of a
-  thread has a browser of their own, with their own logins.
+  thread has a browser of their own, with their own logins. Each person has a work computer of their own, a macOS
+  VM whose firewall lets it reach only public addresses.
 - A codemode script stops after 15 minutes. A routine runs at most every 15 minutes.
 - A credential belongs to the person who connected it. Only that person's turns use it. Secrets never
   leave the server.

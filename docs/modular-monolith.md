@@ -30,6 +30,8 @@ src/
 ├── integrations/            The connectors, their tools, and the credentials of companies and people
 ├── artifacts/               The pages and small apps agents make for a channel, their link pages, and their data
 ├── browser/                 The headless Chrome of each thread and person, which agents visit websites with
+├── sources/                 The company's git repositories that agents read, kept current from their remotes
+├── computer/                The macOS work computer of each person, a VM that agents run commands and apps on
 ├── notifications/           Each person's inbox
 ├── threads/                 One Pi Durable session per company, a conversation per thread, the agent tools, and the
 │                            files of each channel
@@ -51,7 +53,7 @@ Each module has the same files, when it needs them:
 | `*.test.ts` | The tests of the module |
 
 `search/` also has internal files: `extract.ts`, `embedder.ts`, and `company-index.ts`; `llm/` has `search.ts` and
-`tools.ts`; `artifacts/`, `browser/`, and `routines/` have `tools.ts`.
+`tools.ts`; `artifacts/`, `browser/`, `sources/`, `computer/`, and `routines/` have `tools.ts`.
 
 ## The web app
 
@@ -63,8 +65,9 @@ module uses only `app/`, `ui/`, and the modules before it, and never the server'
 
 ## Rules
 
-1. **One direction.** The modules are in this order: `accounts`, `companies`, `llm`, `hands`, `integrations`,
-   `artifacts`, `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `phone`, `feedback`. A module uses only the modules before it. `platform/` uses no module.
+1. **One direction.** The modules are in this order: `accounts`, `companies`, `llm`, `integrations`, `artifacts`,
+   `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`,
+   `feedback`, `slack`. A module uses only the modules before it. `platform/` uses no module.
 2. **Entry files only.** A service uses another module only through its `<module>.ts`. Routes and pages can also
    use another module's `pages.ts`. Only `app/routes.ts` imports `web.ts` and `api.ts`.
    Biome's `noBarrelFile` stays on, so an entry file holds real code and does not re-export.

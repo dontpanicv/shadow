@@ -21,7 +21,11 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import type { Conversation, ConversationId } from "@earendil-works/pi-durable";
+import {
+  type Conversation,
+  type ConversationId,
+  defineTool,
+} from "@earendil-works/pi-durable";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import { Browser } from "../browser/browser.ts";
 import type { ThreadRef } from "../companies/companies.ts";
@@ -35,6 +39,7 @@ import {
   type ThreadHooks,
   type ThreadIntegrations,
   type ThreadMessages,
+  type ThreadSources,
   Threads,
   threadMessages,
 } from "./threads.ts";
@@ -2716,7 +2721,12 @@ function savingThreads(
   browser: Partial<Pick<ThreadBrowser, "pdf" | "tools">> = {},
   integrations: ThreadIntegrations = shadow.app.integrations,
   sourceRead: ThreadHooks["sourceRead"] = (thread, ownerId, read) =>
-    shadow.app.intake.recordSourceRead(thread, ownerId, read)
+    shadow.app.intake.recordSourceRead(thread, ownerId, read),
+  sources: ThreadSources = {
+    names: () => [],
+    skills: () => [],
+    tools: () => [],
+  }
 ) {
   // Each save is a tool call and an answer after it.
   shadow.faux.appendResponses(Array.from({ length: 20 }, () => agent));
@@ -2739,6 +2749,8 @@ function savingThreads(
       tools: () => [],
       ...browser,
     },
+    { tools: () => [] },
+    sources,
     shadow.app.notifications,
     {
       sourceRead,
@@ -2766,6 +2778,64 @@ function answeredIn(threads: Threads, companyId: string, threadId: string) {
     (state) => !state.running && state.messages.at(-1)?.text === "Done."
   );
 }
+
+test("agents get the company's sources and their skills, and search them from a script", async () => {
+  const company = await shadow.app.companies.create(alice, "Sourced");
+  const [general] = shadow.app.companies.channels(company.id, alice);
+  const dataDirectory = await mkdtemp(join(tmpdir(), "shadow-sources-"));
+  const searched: string[] = [];
+  const threads = savingThreads(
+    dataDirectory,
+    async () => null,
+    {},
+    shadow.app.integrations,
+    undefined,
+    {
+      names: () => ["pipes"],
+      skills: () => [
+        {
+          source: "pipes",
+          name: "pipes-product",
+          description: "Use when working with Pipes.",
+          path: "skill/SKILL.md",
+        },
+      ],
+      // A tool of its own, in place of the real search.
+      tools: () =>
+        [
+          defineTool({
+            name: "sources_search",
+            description: "Search the sources",
+            parameters: Type.Object({ text: Type.String() }),
+            execute: async (args) => {
+              searched.push(args.text);
+              return { output: [{ type: "text", text: "pipes/a.ts:1:hit" }] };
+            },
+          }),
+        ] as unknown as ReturnType<ThreadSources["tools"]>,
+    }
+  );
+  try {
+    const before = systemPrompts.length;
+    const { id } = await threads.create(
+      company.id,
+      alice,
+      general!.id,
+      'Run code: text(await tools.sources_search({ text: "stitching" }))'
+    );
+    await answeredIn(threads, company.id, id);
+    expect(searched).toEqual(["stitching"]);
+    expect(toolResults.at(-1)).toContain("pipes/a.ts:1:hit");
+    const prompt = systemPrompts.slice(before).join("\n");
+    expect(prompt).toContain("The company's sources: git repositories");
+    expect(prompt).toContain(
+      "- pipes-product (pipes/skill/SKILL.md): Use when working with Pipes."
+    );
+  } finally {
+    await threads.closeAll();
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
 
 test("the model calls the core tools itself, and every other tool from codemode scripts by namespace", async () => {
   const company = await shadow.app.companies.create(alice, "Namespaces");

@@ -388,6 +388,8 @@ function reopenThreads(): Threads {
     app.integrations,
     app.artifacts,
     new Browser(),
+    { tools: () => [] },
+    { names: () => [], skills: () => [], tools: () => [] },
     app.notifications,
     {
       changed: () => undefined,

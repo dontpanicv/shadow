@@ -27,6 +27,7 @@ const server = Layer.unwrap(
       embedder.start();
       const app = await createApp(config, chatGpt, undefined, embedder);
       app.indexer.start();
+      app.sources.start();
       app.routines.start();
       app.reminders.start();
       app.intake.start();

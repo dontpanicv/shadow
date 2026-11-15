@@ -148,7 +148,7 @@ const slack = await tools.slack_search({ account: "work", query: "acme in:#sales
 return { mail, slack };
 ```
 
-The namespaces are `artifacts_`, `browser_`, `routines_`, `reminders_`, and one for each connected integration,
+The namespaces are `artifacts_`, `browser_`, `computer_`, `routines_`, `reminders_`, and one for each connected integration,
 such as `google_` or `slack_`. The agent finds tools with `describeNamespace()` and `searchTools()`, so the prompt
 does not list hundreds of tools. One script can call many tools and return only what matters, which keeps the
 context small.
@@ -254,6 +254,10 @@ stays there when the thread is settled. The side panel of a thread shows the art
   [agent-browser](https://github.com/vercel-labs/agent-browser). They search the web with ChatGPT's own search,
   because search engines block a headless browser. All their web traffic goes through one egress that blocks the
   server, the office network, and private addresses.
+- **Work computer.** Each person has a macOS VM on the server, made with Vercel's
+  [agent-desktop](https://agent-browser.dev/desktop/sandboxes/macos), where agents run commands and apps: convert
+  documents and PDFs, pack and unpack archives, and work with pictures and audio. [docs/computer.md](docs/computer.md)
+  has the setup.
 - **Routines and reminders.** Ask in plain words: "check the support queue every morning", "remind me on Friday to
   send the invoice". A routine is a schedule, instructions, and an optional script that collects what is new; when the
   script finds nothing, the run ends without the model. A reminder comes at a time.
@@ -304,6 +308,22 @@ allowed_emails = ["you@example.com", "@example.com"]   # the first one is the fi
 [google]
 client_id = "….apps.googleusercontent.com"
 client_secret = "…"
+```
+
+To let agents read the company's code and product docs, list its git repositories. Shadow keeps a copy of each in
+`data/sources/` and pulls it every 10 minutes, so a release reaches the agents within minutes. Agents search and read
+the copies with the `sources_` tools, get the `SKILL.md` files of the `skills` folders as skills, and find the copies
+on their work computer in `/Volumes/My Shared Files/sources`. A restart picks up a changed list.
+
+```toml
+[[sources]]
+name = "pipes"
+url = "https://github.com/example/pipes.git"
+skills = ["skill"]          # folders whose SKILL.md files agents get as skills
+# branch = "main"           # the default branch when not given
+
+[git]
+token = "github_pat_…"      # reads private repositories: a fine-grained token with read access to their contents
 ```
 
 [google-sign-in.md](google-sign-in.md) shows how to make the Google client. Then sign in, connect ChatGPT in

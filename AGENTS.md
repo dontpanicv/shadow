@@ -105,7 +105,7 @@ addresses, or code and data from employers or clients.
 ## Modules
 
 - `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `artifacts`,
-  `browser`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`) holds one domain: its service, routes, and tests. `src/platform/`
+  `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`) holds one domain: its service, routes, and tests. `src/platform/`
   is shared code that knows no domain; `src/app/` composes the services and holds the route helpers.
 - A module uses only the modules before it in that list, through their `<module>.ts` file, or their `pages.ts` from
   routes. A module reads only the tables it owns. `test/architecture.test.ts` enforces these rules;
@@ -130,7 +130,8 @@ addresses, or code and data from employers or clients.
 - How Shadow talks (voice, length, humor) is only in `SOUL` in `src/threads/threads.ts`, the first section of every
   agent's prompt; `INSTRUCTIONS` and the task texts say how it works and never set a tone.
 - Only connector tools with an `approval` or in `approvedTools` wait for a person. All web traffic of agents goes through `Egress`
-  (`src/platform/egress.ts`), never a plain `fetch`.
+  (`src/platform/egress.ts`), never a plain `fetch`. Only the work computers (`src/computer/`), VMs with their own
+  network, reach the web without it; `scripts/install-computer-firewall.sh` keeps them off private addresses.
 
 ## Design System
 

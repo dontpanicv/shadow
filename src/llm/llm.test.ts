@@ -559,6 +559,8 @@ function threadsOver(dataDirectory: string, llm: Llm) {
     noIntegrations,
     noArtifacts,
     noBrowser,
+    { tools: () => [] },
+    { names: () => [], skills: () => [], tools: () => [] },
     noNotifications,
     hooks
   );
@@ -741,6 +743,8 @@ describe("Threads with the Llm", () => {
         noIntegrations,
         noArtifacts,
         noBrowser,
+        { tools: () => [] },
+        { names: () => [], skills: () => [], tools: () => [] },
         noNotifications,
         hooks
       );

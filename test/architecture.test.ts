@@ -11,6 +11,8 @@ const MODULES = [
   "integrations",
   "artifacts",
   "browser",
+  "sources",
+  "computer",
   "notifications",
   "threads",
   "search",
