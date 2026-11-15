@@ -38,11 +38,9 @@ const server = Layer.unwrap(
     }),
     (app) =>
       Effect.promise(async () => {
-        try {
-          await closeApp(app);
-        } finally {
-          embedder.stop();
-        }
+        // First: launchd kills Shadow 20 s after the stop, and its llama-server child would live on alone.
+        embedder.stop();
+        await closeApp(app);
       })
   ).pipe(Effect.map((app) => routes(app, allRoutes)))
 );
