@@ -29,6 +29,13 @@ export const integrationApiRoutes: readonly Route[] = [
     ),
   ],
   [
+    "GET",
+    "/api/v1/companies/:company/slack-bot/involved",
+    api(async ({ app, user, params }) =>
+      json({ channelIds: await app.slackBot.involved(params.company!, user) })
+    ),
+  ],
+  [
     "PUT",
     "/api/v1/companies/:company/slack-bot",
     api(async ({ app, user, params, body }) =>

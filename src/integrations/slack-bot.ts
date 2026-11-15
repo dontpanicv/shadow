@@ -10,6 +10,7 @@ import {
   type SlackMessageEvent,
 } from "./slack-history.ts";
 import { SlackSocket, type SocketLike } from "./slack-socket.ts";
+import { type SlackUser, slackPersonName } from "./slack-text.ts";
 
 /** How often the changed days of the channels are written, and quiet channels get their brief. */
 export const SLACK_FLUSH_INTERVAL = 60_000;
@@ -41,7 +42,7 @@ export interface SlackBotStatus {
 
 type BotCompanies = Pick<
   Companies,
-  "requireAdmin" | "ids" | "syncSlackChannels" | "channelsIn"
+  "requireAdmin" | "requireMember" | "ids" | "syncSlackChannels" | "channelsIn"
 >;
 
 interface BotRow {
@@ -126,6 +127,8 @@ export class SlackBot {
   private readonly timers: ReturnType<typeof setInterval>[] = [];
   private readonly stopping = new AbortController();
   private readonly connectTo: ((url: string) => SocketLike) | undefined;
+  /** The Slack name of each email, `<company id>/<email>`; null for an email that has no Slack account. */
+  private readonly slackNames = new Map<string, string | null>();
   private surface: SlackSurfacePort | null = null;
 
   constructor(
@@ -182,6 +185,50 @@ export class SlackBot {
       syncedAt: row?.synced_at ?? null,
       error: row?.error ?? null,
     };
+  }
+
+  /**
+   * The channels that copy a Slack channel where the person wrote or someone mentioned them; empty without a bot or
+   * without a Slack account with the person's email.
+   */
+  async involved(companyId: string, user: User): Promise<string[]> {
+    this.companies.requireMember(companyId, user);
+    const row = this.row(companyId);
+    const name = row && (await this.slackName(companyId, row, user.email));
+    if (!name) {
+      return [];
+    }
+    const slackIds = new Set(this.history.involved(companyId, name));
+    return this.companies
+      .channelsIn(companyId, user.id)
+      .filter((channel) => channel.slackId && slackIds.has(channel.slackId))
+      .map((channel) => channel.id);
+  }
+
+  /** The name that the kept messages give the Slack user with this email; Slack's users.lookupByEmail names them once. */
+  private async slackName(
+    companyId: string,
+    row: BotRow,
+    email: string
+  ): Promise<string | null> {
+    const key = `${companyId}/${email.toLowerCase()}`;
+    if (!this.slackNames.has(key)) {
+      const { user } = (await this.api
+        .call(
+          this.secrets.decrypt(row.token),
+          "users.lookupByEmail",
+          { email },
+          this.stopping.signal
+        )
+        .catch((error: unknown) => {
+          if (String(error).includes("users_not_found")) {
+            return {};
+          }
+          throw error;
+        })) as { user?: SlackUser };
+      this.slackNames.set(key, user ? slackPersonName(user, "") : null);
+    }
+    return this.slackNames.get(key) ?? null;
   }
 
   /**

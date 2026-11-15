@@ -140,6 +140,21 @@ export class SlackHistory {
     }
   }
 
+  /**
+   * The Slack channels where the person with this Slack name wrote, or where a message mentions them.
+   * shortcut: the kept messages hold names, not user IDs, so two people with one name share their channels; keep the
+   * user IDs of messages when that happens.
+   */
+  involved(companyId: string, name: string): string[] {
+    return (
+      this.database
+        .query(
+          "SELECT DISTINCT slack_channel_id AS id FROM slack_message WHERE company_id = ? AND deleted_at IS NULL AND (author = ? OR instr(text, ?) > 0)"
+        )
+        .all(companyId, name, `@${name}`) as { id: string }[]
+    ).map((row) => row.id);
+  }
+
   /** Keeps what one message event changed: a new message or reply, an edit, or a delete. */
   async event(
     companyId: string,

@@ -332,6 +332,38 @@ export class Companies {
     return { ...channel, name: slug };
   }
 
+  /** The channels that the person pinned to the top of their sidebar, of those they see. */
+  pins(companyId: string, user: User): string[] {
+    const seen = new Set(
+      this.channels(companyId, user).map((channel) => channel.id)
+    );
+    return (
+      this.database
+        .query(
+          "SELECT channel_id AS id FROM channel_pin WHERE company_id = ? AND user_id = ? AND deleted_at IS NULL"
+        )
+        .all(companyId, user.id) as { id: string }[]
+    )
+      .map((row) => row.id)
+      .filter((id) => seen.has(id));
+  }
+
+  /** Pins a channel that the person sees to the top of their sidebar, or unpins it. */
+  pin(companyId: string, user: User, channelId: string, pinned: boolean): void {
+    this.channel(companyId, channelId, user);
+    this.database
+      .query(
+        "INSERT INTO channel_pin (company_id, channel_id, user_id, pinned_at, deleted_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET pinned_at = excluded.pinned_at, deleted_at = excluded.deleted_at"
+      )
+      .run(
+        companyId,
+        channelId,
+        user.id,
+        Date.now(),
+        pinned ? null : Date.now()
+      );
+  }
+
   /**
    * A channel name as Shadow keeps it, as Slack does: lowercase letters, also with diacritics, numbers, and `_`, with `-`
    * between words.

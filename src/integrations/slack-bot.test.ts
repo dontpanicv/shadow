@@ -378,3 +378,30 @@ test("a new channel gets its last 30 days at once, events bring each change, and
   expect([writes.length, briefed.length]).toEqual(before);
   await bot.close();
 });
+
+test("a person's channels are those where they wrote or a message mentions them", async () => {
+  const { slack, bot, company, connected } = await setup();
+  const ts = (Date.now() / 1000 - 60).toFixed(6);
+  slack.channels = [
+    { id: "C1", name: "general", is_general: true },
+    { id: "C2", name: "support" },
+    { id: "C3", name: "random" },
+  ];
+  slack.messages.C1 = [{ ts, user: "U2", text: "Hello all" }];
+  slack.messages.C2 = [{ ts, user: "U1", text: "Shipping today" }];
+  slack.messages.C3 = [{ ts, user: "U2", text: "<@U1> lunch?" }];
+  slack.emails = { U1: "alice@example.com" };
+  await bot.connect(company.id, alice, "xoxb-good", "xapp-good");
+  await connected();
+  const involved = async (user: User) => {
+    const ids = await bot.involved(company.id, user);
+    return shadow.app.companies
+      .channels(company.id, user)
+      .filter((channel) => ids.includes(channel.id))
+      .map((channel) => channel.name)
+      .toSorted((a, b) => a.localeCompare(b));
+  };
+  expect(await involved(alice)).toEqual(["random", "support"]);
+  // Bob has no Slack account with his email.
+  expect(await involved(bob)).toEqual([]);
+});

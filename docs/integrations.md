@@ -76,8 +76,9 @@ People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
   in Slack.
 - **Who**: a Slack user whose email is in `allowed_emails` becomes a member at their first message; others get one
   answer that they are not allowed.
-- **Listening**: an admin gives a channel a goal in Company settings: when Shadow wakes, and how it takes part
-  (**Suggest** writes one from the channel's brief). The goal is the consent to listen there. Each new message at the
+- **Listening**: an admin gives a channel a goal on the channel's page, or every channel the default goal in Company
+  settings: when Shadow wakes, and how it takes part (**Suggest** writes one from the channel's brief). The goal is the
+  consent to listen there. Each new message at the
   top of that channel, and each reply in a thread that Shadow follows, goes through a cheap check with the fast model:
   a message that is clearly not for Shadow costs nothing more. A message that passes starts a turn, which answers only
   when a reply clearly helps, else stays quiet, or tells one person privately. When someone asks for recurring work or a

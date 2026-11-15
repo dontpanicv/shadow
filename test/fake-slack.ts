@@ -29,7 +29,7 @@ export function fakeSlack() {
     messages: {} as Record<string, Record<string, unknown>[]>,
     replies: {} as Record<string, Record<string, unknown>[]>,
     users: { U1: "Alice Novak", U2: "Bob Smith" } as Record<string, string>,
-    /** The email of each user, which users.info gives. */
+    /** The email of each user, which users.info and users.lookupByEmail give. */
     emails: {} as Record<string, string>,
     /** What Shadow posted, updated, or published, in order, with the JSON body of each write. */
     writes: [] as {
@@ -127,6 +127,16 @@ export function fakeSlack() {
               profile: { email: slack.emails[id] },
             },
           });
+        }
+        case "/api/users.lookupByEmail": {
+          const id = Object.keys(slack.emails).find(
+            (candidate) => slack.emails[candidate] === query.get("email")
+          );
+          return Response.json(
+            id
+              ? { ok: true, user: { id, real_name: slack.users[id] } }
+              : { ok: false, error: "users_not_found" }
+          );
         }
         case "/api/conversations.list": {
           // Two pages, so the bot follows the cursor.

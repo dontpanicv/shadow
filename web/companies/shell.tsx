@@ -28,12 +28,14 @@ import { showError } from "../ui/toast.tsx";
 import {
   channelsOf,
   inboxQuery,
+  involvedQuery,
   meQuery,
   openChannels,
   orchestratorQuery,
   refreshCompany,
   refreshInbox,
   rememberOpenChannels,
+  setPinned,
   setSettled,
   threadsOf,
   useMe,
@@ -221,7 +223,10 @@ function Sidebar({ companyId }: { companyId: string | undefined }) {
   );
 }
 
-/** The company's orchestrator, inbox, upcoming, and search, its channels with their active threads, which fold, and the settled threads. */
+/**
+ * The company's orchestrator, inbox, upcoming, and search; its channels with their active threads, which fold, pinned
+ * ones first and then by name; the other channels, folded; and the settled threads.
+ */
 function CompanyNav({
   companyId,
   onNewChannel,
@@ -239,11 +244,9 @@ function CompanyNav({
     refreshInbox(companyId);
   }, [companyId, pathname]);
   const { data: channels = [] } = useLiveQuery({
-    query: (q) =>
-      q
-        .from({ channel: channelsOf(companyId) })
-        .orderBy(({ channel }) => channel.order),
+    query: (q) => q.from({ channel: channelsOf(companyId) }),
   });
+  const involved = new Set(useQuery(involvedQuery(companyId)).data?.channelIds);
   const { data: active = [] } = useLiveQuery({
     query: (q) =>
       q
@@ -267,7 +270,24 @@ function CompanyNav({
     rememberOpenChannels(next);
   };
   const openThreadId = pathname.match(/\/thread\/([^/]+)/)?.[1];
-  const channelItem = (channel: Omit<Channel, "threads">) => {
+  // The person's own channel comes first, as a DM to oneself does in Slack; then pinned ones, then by name.
+  const sorted = channels.toSorted(
+    (a, b) =>
+      Number(b.personal) - Number(a.personal) ||
+      Number(b.pinned) - Number(a.pinned) ||
+      a.name.localeCompare(b.name)
+  );
+  const shared = sorted.filter((channel) => channel.ownerId === null);
+  // A Slack channel is the person's when they pinned it, wrote or were mentioned there, or it has a thread.
+  const theirs = (channel: (typeof channels)[number]) =>
+    channel.pinned ||
+    channel.slackId === null ||
+    involved.has(channel.id) ||
+    active.some((thread) => thread.channelId === channel.id);
+  const others = shared.filter((channel) => !theirs(channel));
+  const channelItem = (
+    channel: Omit<Channel, "threads"> & { readonly pinned: boolean }
+  ) => {
     const threads = active.filter((thread) => thread.channelId === channel.id);
     // The open thread stays in view, so its channel cannot fold.
     const holdsOpenThread = threads.some(
@@ -290,18 +310,32 @@ function CompanyNav({
               locked={channel.ownerId !== null}
             />
           </Link>
-          {threads.length > 0 && !holdsOpenThread ? (
-            <span className="fold-action">
+          <span className="channel-actions">
+            <span className="pin-action">
               <Button
-                aria-expanded={open}
-                icon="disclosure"
-                label={open ? "Fold threads" : "Unfold threads"}
-                onClick={() => toggleOpen(channel.id)}
+                aria-pressed={channel.pinned}
+                icon="pin"
+                label={channel.pinned ? "Unpin channel" : "Pin channel"}
+                onClick={() =>
+                  setPinned(companyId, channel.id, !channel.pinned)
+                }
                 size="tiny"
                 variant="ghost"
               />
             </span>
-          ) : null}
+            {threads.length > 0 && !holdsOpenThread ? (
+              <span className="fold-action">
+                <Button
+                  aria-expanded={open}
+                  icon="disclosure"
+                  label={open ? "Fold threads" : "Unfold threads"}
+                  onClick={() => toggleOpen(channel.id)}
+                  size="tiny"
+                  variant="ghost"
+                />
+              </span>
+            ) : null}
+          </span>
         </div>
         {open ? (
           <div className="nav-threads">
@@ -365,9 +399,18 @@ function CompanyNav({
         </nav>
         <nav aria-label="Channels" className="nav">
           <div className="nav-section">Channels</div>
-          {channels
-            .filter((channel) => channel.ownerId === null)
-            .map(channelItem)}
+          {shared.filter(theirs).map(channelItem)}
+          {others.length > 0 ? (
+            <details className="sidebar-others">
+              <summary className="nav-section">
+                Other channels ({others.length})
+                <span className="disclosure">
+                  <Icon name="disclosure" />
+                </span>
+              </summary>
+              {others.map(channelItem)}
+            </details>
+          ) : null}
         </nav>
         <nav aria-label="Private channels" className="nav">
           <div className="nav-section">
@@ -380,10 +423,8 @@ function CompanyNav({
               variant="ghost"
             />
           </div>
-          {channels
+          {sorted
             .filter((channel) => channel.ownerId !== null)
-            // The person's own channel comes first, as a DM to oneself does in Slack.
-            .toSorted((a, b) => Number(b.personal) - Number(a.personal))
             .map(channelItem)}
           {admin ? (
             <Link

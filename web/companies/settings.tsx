@@ -16,6 +16,7 @@ import {
   Button,
   Dialog,
   Empty,
+  PageSection,
   Select,
   SettingsCard,
   SettingsRow,
@@ -31,6 +32,7 @@ import {
   slackDecisionsQuery,
   slackDefaultGoalQuery,
   slackGoalsQuery,
+  useMe,
 } from "./data.ts";
 import slackManifest from "./slack-app-manifest.json" with { type: "json" };
 
@@ -341,9 +343,8 @@ const DISCONNECTED: SlackBotStatus = {
 };
 
 /**
- * Where Shadow listens without being asked, and how it takes part: the default goal for every channel, a channel's own
- * goal before it, and channels switched off. A channel that does not listen gets answers only when someone mentions
- * Shadow.
+ * Where Shadow listens without being asked, and how it takes part: the default goal for every channel. A channel's own
+ * goal, which comes before it, and switching a channel off are on the channel's page.
  */
 export function SlackGoalsSection({ companyId }: { companyId: string }) {
   const goals = useQuery(slackGoalsQuery(companyId)).data ?? [];
@@ -351,17 +352,47 @@ export function SlackGoalsSection({ companyId }: { companyId: string }) {
   if (goals.length === 0) {
     return <Empty title="No Slack channels yet" />;
   }
-  const base = `/companies/${companyId}/slack`;
   return (
     <SettingsCard>
       <GoalForm
         companyId={companyId}
         goal={fallback ?? { wakeWhen: null, engagement: null }}
         label="All channels"
-        path={`${base}/default-goal`}
+        path={`/companies/${companyId}/slack/default-goal`}
         saved="Shadow listens in all channels"
       />
-      {goals.map((goal) => (
+    </SettingsCard>
+  );
+}
+
+/**
+ * How Shadow listens in one channel that copies a Slack channel: its own goal, the default goal, or off; for admins.
+ * A channel that does not listen gets answers only when someone mentions Shadow.
+ */
+export function ChannelGoalSection({
+  companyId,
+  channelId,
+}: {
+  companyId: string;
+  channelId: string;
+}) {
+  const admin =
+    useMe().companies.find((company) => company.id === companyId)?.role ===
+    "admin";
+  const goal = useQuery({
+    ...slackGoalsQuery(companyId),
+    enabled: admin,
+  }).data?.find((candidate) => candidate.channelId === channelId);
+  const fallback = useQuery({
+    ...slackDefaultGoalQuery(companyId),
+    enabled: admin,
+  }).data;
+  if (!goal) {
+    return null;
+  }
+  return (
+    <PageSection title="Listening">
+      <SettingsCard>
         <GoalForm
           channel={goal}
           companyId={companyId}
@@ -369,11 +400,11 @@ export function SlackGoalsSection({ companyId }: { companyId: string }) {
           goal={goal}
           key={goal.channelId}
           label={`#${goal.channelName}`}
-          path={`${base}/goals/${goal.channelId}`}
+          path={`/companies/${companyId}/slack/goals/${goal.channelId}`}
           saved={`Shadow listens in #${goal.channelName}`}
         />
-      ))}
-    </SettingsCard>
+      </SettingsCard>
+    </PageSection>
   );
 }
 

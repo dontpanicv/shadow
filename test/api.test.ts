@@ -167,6 +167,26 @@ test("a channel name keeps Czech letters, and only a member renames a channel", 
   ).toBe(404);
 });
 
+test("a person pins and unpins a channel they see, for themselves only", async () => {
+  const base = `/api/v1/companies/${companyId}`;
+  const notes = await body(
+    await shadow.call(`${base}/channels`, {
+      token: alice,
+      body: { name: "pinned notes" },
+    })
+  );
+  const pin = (token: string, method: "PUT" | "DELETE") =>
+    shadow.call(`${base}/channels/${notes.id}/pin`, { token, method });
+  const pinned = async (token: string) =>
+    (await body(await shadow.call(base, { token }))).pinned;
+  expect((await pin(alice, "PUT")).status).toBe(204);
+  expect(await pinned(alice)).toEqual([notes.id]);
+  // Another person's private channel is not found.
+  expect((await pin(bob, "PUT")).status).toBe(404);
+  expect((await pin(alice, "DELETE")).status).toBe(204);
+  expect(await pinned(alice)).toEqual([]);
+});
+
 test("a long first line makes a short thread title", async () => {
   shadow.faux.setResponses([fauxAssistantMessage("Noted.")]);
   const thread = await body(

@@ -65,6 +65,7 @@ export const companyApiRoutes: readonly Route[] = [
       json({
         company: app.companies.requireMember(params.company!, user),
         channels: app.companies.channels(params.company!, user),
+        pinned: app.companies.pins(params.company!, user),
       })
     ),
   ],
@@ -97,6 +98,22 @@ export const companyApiRoutes: readonly Route[] = [
         )
       )
     ),
+  ],
+  [
+    "PUT",
+    "/api/v1/companies/:company/channels/:channel/pin",
+    api(async ({ app, user, params }) => {
+      app.companies.pin(params.company!, user, params.channel!, true);
+      return new Response(null, { status: 204 });
+    }),
+  ],
+  [
+    "DELETE",
+    "/api/v1/companies/:company/channels/:channel/pin",
+    api(async ({ app, user, params }) => {
+      app.companies.pin(params.company!, user, params.channel!, false);
+      return new Response(null, { status: 204 });
+    }),
   ],
   [
     "GET",

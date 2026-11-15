@@ -6,7 +6,7 @@ import { dirname } from "node:path";
  * Application tables. better-auth owns `user`, `session`, `account`, `verification`, `organization` (companies),
  * `member`, and `invitation`; it migrates them itself. Append a migration; never edit one that shipped.
  *
- * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `thread`, and `company_facts` (and reads
+ * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `channel_pin`, `thread`, and `company_facts` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
  * `credential`, `oauth_client`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
  * `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
@@ -811,6 +811,15 @@ const migrations = [
     changed_at INTEGER NOT NULL,
     deleted_at INTEGER,
     PRIMARY KEY (company_id, channel_id)
+  );`,
+  // companies: the channels that each person pinned to the top of their sidebar.
+  `CREATE TABLE channel_pin (
+    company_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    pinned_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    PRIMARY KEY (company_id, channel_id, user_id)
   );`,
 ];
 

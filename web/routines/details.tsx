@@ -7,6 +7,7 @@ import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
 import type { Routine, RoutineOutcome, RoutineRun } from "../app/types.ts";
 import { channelsOf } from "../companies/data.ts";
+import { ChannelGoalSection } from "../companies/settings.tsx";
 import { briefQuery } from "../threads/data.ts";
 import { AgentText } from "../threads/message.tsx";
 import {
@@ -81,7 +82,7 @@ const routinesOf = keyed((key: string) =>
 const route = getRouteApi("/signed-in/c/$companyId/channel/$channelId");
 
 /**
- * A channel's name, its summary, its routines, their newest runs, and its brief, which can be long, under its threads. People
+ * A channel's name, how Shadow listens there, its summary, its routines, their newest runs, and its brief, which can be long, under its threads. People
  * create routines by asking an agent; the model writes the summary and the brief from the channel's threads.
  */
 export function ChannelDetails() {
@@ -153,6 +154,7 @@ export function ChannelDetails() {
           </SettingsCard>
         </PageSection>
       ) : null}
+      <ChannelGoalSection channelId={channelId} companyId={companyId} />
       {channel?.summary ? (
         <PageSection title="Summary">
           <p className="page-text">{channel.summary}</p>

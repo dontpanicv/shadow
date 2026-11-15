@@ -32,12 +32,15 @@ export function useMe() {
 }
 
 /** The channels and the threads of a company come in one response, which both collections read. */
-const loading = new Map<string, Promise<{ channels: Channel[] }>>();
+const loading = new Map<
+  string,
+  Promise<{ channels: Channel[]; pinned: string[] }>
+>();
 
 function companyState(companyId: string) {
   let pending = loading.get(companyId);
   if (!pending) {
-    pending = request<{ channels: Channel[] }>(
+    pending = request<{ channels: Channel[]; pinned: string[] }>(
       `/companies/${companyId}`
     ).finally(() => loading.delete(companyId));
     loading.set(companyId, pending);
@@ -68,30 +71,62 @@ export async function mergeChannel(
   await refreshCompany(companyId);
 }
 
-/** The channels of a company, in the server's order. Renaming one shows at once. */
+/** The channels of a company, in the server's order, each with whether the person pinned it. Renaming or pinning one shows at once. */
 export const channelsOf = keyed((companyId: string) =>
   createCollection(
     queryCollectionOptions({
       id: `channels:${companyId}`,
       queryKey: ["companies", companyId, "channels", "list"],
       queryClient,
-      queryFn: async () =>
-        (await companyState(companyId)).channels.map(
-          ({ threads, ...channel }, order) => ({ ...channel, order })
-        ),
+      queryFn: async () => {
+        const { channels, pinned } = await companyState(companyId);
+        return channels.map(({ threads, ...channel }, order) => ({
+          ...channel,
+          order,
+          pinned: pinned.includes(channel.id),
+        }));
+      },
       getKey: (channel) => channel.id,
       // The collection loads again after it, with the name as the server keeps it.
       onUpdate: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          await request(`/companies/${companyId}/channels/${mutation.key}`, {
-            method: "PUT",
-            body: { name: mutation.modified.name },
-          });
+          const channel = `/companies/${companyId}/channels/${mutation.key}`;
+          await ("pinned" in mutation.changes
+            ? request(`${channel}/pin`, {
+                method: mutation.modified.pinned ? "PUT" : "DELETE",
+              })
+            : request(channel, {
+                method: "PUT",
+                body: { name: mutation.modified.name },
+              }));
         }
       },
     })
   )
 );
+
+/** The channels that copy a Slack channel where the person wrote or someone mentioned them. */
+export function involvedQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "channels", "involved"],
+    queryFn: ({ signal }) =>
+      request<{ channelIds: string[] }>(
+        `/companies/${companyId}/slack-bot/involved`,
+        { signal }
+      ),
+  });
+}
+
+/** Pins a channel to the top of the person's sidebar, or unpins it. */
+export function setPinned(
+  companyId: string,
+  channelId: string,
+  pinned: boolean
+) {
+  return channelsOf(companyId).update(channelId, (draft) => {
+    draft.pinned = pinned;
+  });
+}
 
 /** The threads of every channel of a company. Settling or moving one shows at once. */
 export const threadsOf = keyed((companyId: string) =>
