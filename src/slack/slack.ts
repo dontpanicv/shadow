@@ -16,6 +16,7 @@ import type {
 } from "../notifications/notifications.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
+import { timeZone } from "../platform/time.ts";
 import type { Routines } from "../routines/routines.ts";
 import type { Approval, Message, Threads } from "../threads/threads.ts";
 import { type ChannelGoal, checkMessage } from "./check.ts";
@@ -45,7 +46,15 @@ const ONLY_PUBLIC =
 export interface SlackGoal {
   readonly channelId: string;
   readonly channelName: string;
-  /** Null for a channel without a goal, where Shadow answers only mentions. */
+  /** Null for a channel without its own goal, which listens with the company's default goal, if there is one. */
+  readonly wakeWhen: string | null;
+  readonly engagement: string | null;
+  /** An admin stopped Shadow listening here: it answers only mentions, whatever the goals say. */
+  readonly off: boolean;
+}
+
+/** The goal of every channel without its own goal; null fields when Shadow listens only where a channel has a goal. */
+export interface SlackDefaultGoal {
   readonly wakeWhen: string | null;
   readonly engagement: string | null;
 }
@@ -103,6 +112,7 @@ type SurfaceCompanies = Pick<
   | "agentMember"
   | "allThreadsIn"
   | "channelsIn"
+  | "factsOf"
   | "isAdmin"
   | "memberByEmail"
   | "members"
@@ -237,7 +247,7 @@ export class SlackSurface implements SlackSurfacePort {
     // The answer goes to a Slack channel that people outside Shadow may read, such as guests.
     const text = `${await client.plain(
       stripMention(event.text ?? "", client.botUserId)
-    )}\n\n(Asked in Slack #${channel.name}: the answer is posted there, where people outside Shadow may read it, so leave out what only ${user.name} may see. A routine asked for here posts in Slack with post_in_slack.)`;
+    )}\n\n(Asked in Slack #${channel.name}: the Shadow bot posts your answer there, where people outside Shadow may read it, so leave out what only ${user.name} may see. A routine asked for here posts in Slack with post_in_slack.)`;
     const files = await this.files(client, event.files);
     const known = this.conversation(companyId, event.channel, root);
     let threadId: string;
@@ -598,7 +608,7 @@ export class SlackSurface implements SlackSurfacePort {
       return;
     }
     const channel = this.channelOf(companyId, event.channel);
-    if (!channel) {
+    if (!channel || this.isOff(companyId, channel.id)) {
       return;
     }
     const root = event.thread_ts ?? event.ts;
@@ -1095,7 +1105,7 @@ export class SlackSurface implements SlackSurfacePort {
     const upcoming = this.agenda.upcoming(companyId, user);
     const lines = (items: readonly string[], none: string) =>
       items.length ? items.map((item) => `• ${item}`).join("\n") : none;
-    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const zone = timeZone();
     const when = (at: number | null) =>
       at
         ? new Date(at).toLocaleString("en-GB", {
@@ -1175,21 +1185,78 @@ export class SlackSurface implements SlackSurfacePort {
 
   // Goals and decisions, for admins
 
-  /** The channels that copy a Slack channel, with their goal for ambient listening; null for one without. */
+  /** The channels that copy a Slack channel, with their own goal for ambient listening, and whether it is off. */
   goals(companyId: string, user: User): SlackGoal[] {
     this.companies.requireAdmin(companyId, user);
     return this.companies
       .channelsIn(companyId, null)
       .filter((channel) => channel.slackId)
       .map((channel) => {
-        const goal = this.goalOf(companyId, channel.id);
+        const goal = this.ownGoalOf(companyId, channel.id);
         return {
           channelId: channel.id,
           channelName: channel.name,
           wakeWhen: goal?.wakeWhen ?? null,
           engagement: goal?.engagement ?? null,
+          off: this.isOff(companyId, channel.id),
         };
       });
+  }
+
+  /** The goal of every channel without its own goal. */
+  defaultGoal(companyId: string, user: User): SlackDefaultGoal {
+    this.companies.requireAdmin(companyId, user);
+    const goal = this.defaultGoalOf(companyId);
+    return {
+      wakeWhen: goal?.wakeWhen ?? null,
+      engagement: goal?.engagement ?? null,
+    };
+  }
+
+  /** Gives every channel without its own goal this goal: the consent for Shadow to listen in all of them. */
+  setDefaultGoal(
+    companyId: string,
+    user: User,
+    goal: { readonly wakeWhen: unknown; readonly engagement: unknown }
+  ): SlackDefaultGoal {
+    this.companies.requireAdmin(companyId, user);
+    const wakeWhen = required(goal.wakeWhen, "Wake when");
+    const engagement = required(goal.engagement, "Take part by");
+    this.database
+      .query(
+        "INSERT INTO slack_default_goal (company_id, wake_when, engagement, changed_by, changed_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (company_id) DO UPDATE SET wake_when = excluded.wake_when, engagement = excluded.engagement, changed_by = excluded.changed_by, changed_at = excluded.changed_at, deleted_at = NULL"
+      )
+      .run(companyId, wakeWhen, engagement, user.id, Date.now());
+    return { wakeWhen, engagement };
+  }
+
+  /** Stops Shadow listening where a channel has no goal of its own. */
+  removeDefaultGoal(companyId: string, user: User): void {
+    this.companies.requireAdmin(companyId, user);
+    this.database
+      .query(
+        "UPDATE slack_default_goal SET deleted_at = ? WHERE company_id = ? AND deleted_at IS NULL"
+      )
+      .run(Date.now(), companyId);
+  }
+
+  /** Stops Shadow listening in a channel whatever the goals say, or lets it listen again; it still answers mentions. */
+  setOff(companyId: string, user: User, channelId: string, off: boolean): void {
+    this.companies.requireAdmin(companyId, user);
+    this.slackChannel(companyId, channelId);
+    if (off) {
+      this.database
+        .query(
+          "INSERT INTO slack_channel_off (company_id, channel_id, changed_by, changed_at) VALUES (?, ?, ?, ?) ON CONFLICT (company_id, channel_id) DO UPDATE SET changed_by = excluded.changed_by, changed_at = excluded.changed_at, deleted_at = NULL"
+        )
+        .run(companyId, channelId, user.id, Date.now());
+    } else {
+      this.database
+        .query(
+          "UPDATE slack_channel_off SET deleted_at = ? WHERE company_id = ? AND channel_id = ? AND deleted_at IS NULL"
+        )
+        .run(Date.now(), companyId, channelId);
+    }
   }
 
   /** Gives a channel a goal, which is the consent for Shadow to listen and take part there. */
@@ -1208,10 +1275,18 @@ export class SlackSurface implements SlackSurfacePort {
         "INSERT INTO slack_goal (company_id, channel_id, wake_when, engagement, changed_by, changed_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (company_id, channel_id) DO UPDATE SET wake_when = excluded.wake_when, engagement = excluded.engagement, changed_by = excluded.changed_by, changed_at = excluded.changed_at, deleted_at = NULL"
       )
       .run(companyId, channelId, wakeWhen, engagement, user.id, Date.now());
-    return { channelId, channelName: channel.name, wakeWhen, engagement };
+    // A goal that an admin writes for a channel is the consent to listen there again.
+    this.setOff(companyId, user, channelId, false);
+    return {
+      channelId,
+      channelName: channel.name,
+      wakeWhen,
+      engagement,
+      off: false,
+    };
   }
 
-  /** Stops Shadow listening in a channel; it still answers mentions there. */
+  /** Takes a channel's own goal away; it listens with the default goal then, if there is one, and still answers mentions. */
   removeGoal(companyId: string, user: User, channelId: string): void {
     this.companies.requireAdmin(companyId, user);
     this.database
@@ -1230,9 +1305,39 @@ export class SlackSurface implements SlackSurfacePort {
     this.companies.requireAdmin(companyId, user);
     const channel = this.slackChannel(companyId, channelId);
     const brief = await this.threads.brief(companyId, channelId, user);
+    return this.suggest(
+      companyId,
+      user,
+      "a Slack channel",
+      `Channel #${channel.name}\nSummary: ${channel.summary ?? "none"}\n\nBrief:\n${brief?.text ?? "none yet"}`
+    );
+  }
+
+  /** A default goal that the fast model suggests from the company's facts and channels, which the admin changes or accepts. */
+  suggestDefaultGoal(companyId: string, user: User): Promise<ChannelGoal> {
+    this.companies.requireAdmin(companyId, user);
+    const channels = this.companies
+      .channelsIn(companyId, null)
+      .filter((channel) => channel.slackId)
+      .map((channel) => `#${channel.name}: ${channel.summary ?? "no summary"}`)
+      .join("\n");
+    return this.suggest(
+      companyId,
+      user,
+      "every Slack channel of the company that has no goal of its own",
+      `Facts about the company:\n${this.companies.factsOf(companyId) || "none yet"}\n\nChannels:\n${channels || "none yet"}`
+    );
+  }
+
+  private async suggest(
+    companyId: string,
+    user: User,
+    where: string,
+    context: string
+  ): Promise<ChannelGoal> {
     const answer = await this.llm.complete(
-      `You suggest when Shadow, a company's assistant, takes part in a Slack channel without being asked, and how. Shadow helps where it knows the answer or can find it in the company's sources; it does not chat. Answer with JSON only: {"wakeWhen": "<the kinds of messages, in one sentence>", "engagement": "<how Shadow answers them, in one sentence>"}.`,
-      `Channel #${channel.name}\nSummary: ${channel.summary ?? "none"}\n\nBrief:\n${brief?.text ?? "none yet"}`,
+      `You suggest when Shadow, a company's assistant, takes part in ${where} without being asked, and how. Shadow helps where it knows the answer or can find it in the company's sources; it does not chat. Answer with JSON only: {"wakeWhen": "<the kinds of messages, in one sentence>", "engagement": "<how Shadow answers them, in one sentence>"}.`,
+      context,
       undefined,
       this.llm.fastModel(),
       { companyId, userId: user.id, source: "background", threadId: null }
@@ -1274,13 +1379,40 @@ export class SlackSurface implements SlackSurfacePort {
 
   // Helpers
 
+  /** The goal that Shadow listens with in a channel: none when it is off, else its own goal, else the default goal. */
   private goalOf(companyId: string, channelId: string): ChannelGoal | null {
-    const row = this.database
+    if (this.isOff(companyId, channelId)) {
+      return null;
+    }
+    return (
+      this.ownGoalOf(companyId, channelId) ?? this.defaultGoalOf(companyId)
+    );
+  }
+
+  private ownGoalOf(companyId: string, channelId: string): ChannelGoal | null {
+    return this.database
       .query(
         "SELECT wake_when AS wakeWhen, engagement FROM slack_goal WHERE company_id = ? AND channel_id = ? AND deleted_at IS NULL"
       )
       .get(companyId, channelId) as ChannelGoal | null;
-    return row;
+  }
+
+  private defaultGoalOf(companyId: string): ChannelGoal | null {
+    return this.database
+      .query(
+        "SELECT wake_when AS wakeWhen, engagement FROM slack_default_goal WHERE company_id = ? AND deleted_at IS NULL"
+      )
+      .get(companyId) as ChannelGoal | null;
+  }
+
+  private isOff(companyId: string, channelId: string): boolean {
+    return Boolean(
+      this.database
+        .query(
+          "SELECT 1 FROM slack_channel_off WHERE company_id = ? AND channel_id = ? AND deleted_at IS NULL"
+        )
+        .get(companyId, channelId)
+    );
   }
 
   private slackChannel(companyId: string, channelId: string): Channel {

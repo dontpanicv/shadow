@@ -14,6 +14,12 @@ import type { Notifications } from "../notifications/notifications.ts";
 import type { User } from "../platform/auth.ts";
 import { setSetting, setting } from "../platform/database.ts";
 import { notFound } from "../platform/errors.ts";
+import {
+  afterCalendarDays,
+  localDay,
+  localHour,
+  localTime,
+} from "../platform/time.ts";
 import type { Reminders } from "../reminders/reminders.ts";
 import type { Indexer } from "../search/search.ts";
 import type { FileRef, Threads } from "../threads/threads.ts";
@@ -21,13 +27,11 @@ import { IntakeArchives } from "./archive.ts";
 import {
   type Assessment,
   type AssessmentInput,
-  afterCalendarDays,
   assess,
   type Evidence,
   type FutureCheck,
   type IntakeNotification,
   type Knowledge,
-  pragueTime,
 } from "./assess.ts";
 import { Audit } from "./audit.ts";
 import { IntakeDestinations } from "./destinations.ts";
@@ -1034,13 +1038,7 @@ export class Intake {
         "SELECT * FROM intake_delivery WHERE cancelled_at IS NULL AND delivered_at IS NULL ORDER BY created_at"
       )
       .all() as Delivery[];
-    const hour = Number(
-      new Intl.DateTimeFormat("en", {
-        timeZone: "Europe/Prague",
-        hour: "2-digit",
-        hourCycle: "h23",
-      }).format(now)
-    );
+    const hour = localHour(now);
     const claimed = new Set([...this.claims.values()].flat());
     const allowed = pending.filter(
       (delivery) =>
@@ -1117,9 +1115,7 @@ export class Intake {
     now: number
   ): Promise<void> {
     const owner = this.owner(companyId, ownerId);
-    const day = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Prague",
-    }).format(now);
+    const day = localDay(now);
     const doneKey = `intake.morning:${companyId}:${ownerId}`;
     const trace = `morning:${companyId}:${ownerId}:${day}`;
     // Its own back-off: a failing plan never holds back the person's urgent updates.
@@ -1278,7 +1274,7 @@ export class Intake {
         )
         .map((reminder) => ({
           text: reminder.text,
-          due: pragueTime(reminder.dueAt),
+          due: localTime(reminder.dueAt),
         })),
       corrections: this.following.corrections(companyId, owner),
       knowledge: this.knowledge(companyId, owner),
@@ -2546,7 +2542,7 @@ function hash(text: string): string {
   return new Bun.CryptoHasher("sha256").update(text).digest("hex");
 }
 function sourceLink(item: Evidence): string {
-  const label = `${item.source.replace(/[[\]\n]/g, " ")} · ${new Date(item.at).toISOString()}`;
+  const label = `${item.source.replace(/[[\]\n]/g, " ")} · ${localTime(item.at)}`;
   return item.url && /^(https?:\/\/|thread:)/.test(item.url)
     ? `[${label}](${item.url})`
     : label;

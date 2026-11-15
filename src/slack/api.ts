@@ -38,6 +38,56 @@ export const slackApiRoutes: readonly Route[] = [
     ),
   ],
   [
+    "PUT",
+    "/api/v1/companies/:company/slack/goals/:channel/off",
+    api(async ({ app, user, params }) => {
+      app.slack.setOff(params.company!, user, params.channel!, true);
+      return new Response(null, { status: 204 });
+    }),
+  ],
+  [
+    "DELETE",
+    "/api/v1/companies/:company/slack/goals/:channel/off",
+    api(async ({ app, user, params }) => {
+      app.slack.setOff(params.company!, user, params.channel!, false);
+      return new Response(null, { status: 204 });
+    }),
+  ],
+  [
+    "GET",
+    "/api/v1/companies/:company/slack/default-goal",
+    api(async ({ app, user, params }) =>
+      json(app.slack.defaultGoal(params.company!, user))
+    ),
+  ],
+  [
+    "PUT",
+    "/api/v1/companies/:company/slack/default-goal",
+    api(async ({ app, user, params, body }) =>
+      json(
+        app.slack.setDefaultGoal(params.company!, user, {
+          wakeWhen: body.wakeWhen,
+          engagement: body.engagement,
+        })
+      )
+    ),
+  ],
+  [
+    "DELETE",
+    "/api/v1/companies/:company/slack/default-goal",
+    api(async ({ app, user, params }) => {
+      app.slack.removeDefaultGoal(params.company!, user);
+      return new Response(null, { status: 204 });
+    }),
+  ],
+  [
+    "POST",
+    "/api/v1/companies/:company/slack/default-goal/suggest",
+    api(async ({ app, user, params }) =>
+      json(await app.slack.suggestDefaultGoal(params.company!, user))
+    ),
+  ],
+  [
     "GET",
     "/api/v1/companies/:company/slack/decisions",
     api(async ({ app, user, params }) =>

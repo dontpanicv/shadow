@@ -293,6 +293,75 @@ test("Shadow listens only where a goal or its own reply asks it to: the check sk
   await close();
 });
 
+test("the default goal lets Shadow listen in every channel, until an admin switches one off or takes the default away", async () => {
+  const { surface, company, support, close } = await setup();
+  let tick = 0;
+  const say = (text: string) => {
+    tick += 1;
+    const message = {
+      type: "message",
+      channel: "C2",
+      user: "U2",
+      text,
+      ts: (Date.now() / 1000 + tick).toFixed(6),
+    };
+    slack.messages.C2!.unshift(message);
+    slack.event(message);
+  };
+  const decisions = () => surface.decisions(company.id, alice);
+  model.probability = 0.9;
+  model.answer = "QUIET";
+
+  surface.setDefaultGoal(company.id, alice, {
+    wakeWhen: "questions that the company's sources answer",
+    engagement: "answer briefly, with the source",
+  });
+  expect(surface.defaultGoal(company.id, alice).wakeWhen).toBe(
+    "questions that the company's sources answer"
+  );
+  // A channel without its own goal listens with the default one.
+  expect(
+    surface
+      .goals(company.id, alice)
+      .find((goal) => goal.channelId === support.id)
+  ).toMatchObject({ wakeWhen: null, off: false });
+  say("Where is the price list?");
+  await until(
+    async () => decisions(),
+    (list) => list.length === 1
+  );
+  expect(decisions()[0]!.outcome).toBe("quiet");
+
+  // Off stops listening, whatever the goals say.
+  surface.setOff(company.id, alice, support.id, true);
+  say("Where is the old price list?");
+  await Bun.sleep(50);
+  expect(decisions()).toHaveLength(1);
+
+  // A channel's own goal is the consent to listen there again.
+  surface.setGoal(company.id, alice, support.id, {
+    wakeWhen: "questions about invoices",
+    engagement: "answer briefly",
+  });
+  expect(
+    surface
+      .goals(company.id, alice)
+      .find((goal) => goal.channelId === support.id)
+  ).toMatchObject({ wakeWhen: "questions about invoices", off: false });
+
+  // Without its own goal and without the default, the channel answers only mentions.
+  surface.removeGoal(company.id, alice, support.id);
+  surface.removeDefaultGoal(company.id, alice);
+  say("Anyone for lunch?");
+  await Bun.sleep(50);
+  expect(decisions()).toHaveLength(1);
+  expect(surface.defaultGoal(company.id, alice)).toEqual({
+    wakeWhen: null,
+    engagement: null,
+  });
+  await close();
+});
+
 test("a mention in a group DM answers once, from the asker's own thread, with the group's conversation as data", async () => {
   const { company, writes, close } = await setup();
   model.answer = "Acme renewed in May.";

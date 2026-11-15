@@ -1,10 +1,10 @@
+import { localTime, timeZone } from "../platform/time.ts";
 import {
   type AssessmentInput,
   type Evidence,
   type FutureCheck,
   KNOWLEDGE_RULES,
   type Knowledge,
-  pragueTime,
 } from "./assess.ts";
 
 /** What the morning review knows for one person: every update that waited for it, and where they could go. */
@@ -71,7 +71,7 @@ Group the updates into matters, one matter for each matter. Put updates about th
 Evidence with fromOwner=true is the owner's own message. Before you keep an update, read what came after its source in the same conversation. Drop an update when the evidence shows that the owner already handled it, such as a later reply that answers the request or someone's confirmation that it works, that it is out of date, or that it is not useful to the owner. A request named to another person, by name or mention, is that person's. Give a short reason. The owner's corrections are their decisions: respect them.
 Shadow is the owner's second brain, not their worker: it remembers and reminds, and the owner does the work. Never analyse the sources further, draft a reply, or plan the work.
 message: one update for the thread, in the owner's language. It merges the matter's updates, says what changed, what it asks of the owner or of whom, and any deadline that a source states, with the facts from the evidence only. Cite the source ids in square brackets.
-ask: one short sentence in the owner's language of what the matter still needs from the owner, such as "Odpovědět Graemovi na termíny hovoru" or "Podívat se, proč Petrovi nefunguje import". An ask is not only a literal request. It is also a problem that someone reports to the owner or in the owner's area ("this does not work", "can you take a look?"), a person who waits for the owner, a failure, risk, or decision that nobody has solved and that the owner must know or carry, and a matter that the owner started or promised and that is not finished. Set ask=null only when nothing is left for the owner: plain information, something filed for later use such as a tip, a matter that the evidence shows handled, a task that clearly belongs to someone else, or a matter that a pending reminder already covers. When in doubt, set the ask: a forgotten unsolved matter costs the owner more than one more line. due: the deadline that a source states for it, as an ISO date and time with the Europe/Prague offset, or null.
+ask: one short sentence in the owner's language of what the matter still needs from the owner, such as "Odpovědět Graemovi na termíny hovoru" or "Podívat se, proč Petrovi nefunguje import". An ask is not only a literal request. It is also a problem that someone reports to the owner or in the owner's area ("this does not work", "can you take a look?"), a person who waits for the owner, a failure, risk, or decision that nobody has solved and that the owner must know or carry, and a matter that the owner started or promised and that is not finished. Set ask=null only when nothing is left for the owner: plain information, something filed for later use such as a tip, a matter that the evidence shows handled, a task that clearly belongs to someone else, or a matter that a pending reminder already covers. When in doubt, set the ask: a forgotten unsolved matter costs the owner more than one more line. due: the deadline that a source states for it, as an ISO date and time with the offset of timeZone, or null.
 line: one short line for the owner's morning summary. Only a matter with an ask or a due appears there. summary: one or two sentences in the owner's language that start the morning summary, such as how many matters need the owner today; name only matters with an ask or a due.
 nudges are asks that Shadow already follows and is about to remind the owner of. Put a nudge in closed only with clear evidence: state=resolved when the evidence shows it handled, state=stopped when a pending reminder covers the same matter or when it clearly belongs to someone else. Waiting for a reply and a partial answer are not handled. When in doubt, keep the nudge: leave it out of closed. Shadow adds the open nudges to the morning summary itself, so never make a matter for a nudge. The input may have no updates.
 Every update id must be in exactly one matter or in dropped.
@@ -86,8 +86,8 @@ export async function planMorning(
     MORNING_SYSTEM,
     JSON.stringify({
       ...input,
-      currentTime: pragueTime(input.now),
-      timeZone: "Europe/Prague",
+      currentTime: localTime(input.now),
+      timeZone: timeZone(),
     })
   );
   const plan = validateMorningPlan(

@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { localTime } from "../platform/time.ts";
 import type { Summarizer } from "./memory.ts";
 
 /** The longest brief, in bytes of UTF-8: about 1500 tokens, which every thread of the channel reads. */
@@ -244,16 +245,12 @@ function said(message: {
   readonly text: string;
   readonly time: number;
 }): string {
-  const date = new Date(message.time)
-    .toISOString()
-    .slice(0, 16)
-    .replace("T", " ");
   const text = message.text.replace(/\s+/g, " ").trim();
   const cut =
     text.length > MESSAGE_CHARACTERS
       ? `${text.slice(0, MESSAGE_CHARACTERS)}…`
       : text;
-  return `${message.author}, ${date} UTC: ${cut}`;
+  return `${message.author}, ${localTime(message.time)}: ${cut}`;
 }
 
 function parse(answer: string): { summary: string; brief: string } | null {

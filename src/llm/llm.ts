@@ -21,6 +21,7 @@ import type { User } from "../platform/auth.ts";
 import { setSetting, setting } from "../platform/database.ts";
 import { HttpError } from "../platform/errors.ts";
 import type { Secrets } from "../platform/secrets.ts";
+import { localDay } from "../platform/time.ts";
 import { searchWeb, type WebSearchResult } from "./search.ts";
 import { llmTools } from "./tools.ts";
 import { transcribe } from "./transcribe.ts";
@@ -411,9 +412,7 @@ export class Llm {
    */
   usage(companyId: string, user: User, days: number): UsageReport {
     const span = Math.min(Math.max(Math.floor(days) || 30, 1), MAX_USAGE_DAYS);
-    const from = new Date(Date.now() - (span - 1) * 86_400_000)
-      .toISOString()
-      .slice(0, 10);
+    const from = localDay(Date.now() - (span - 1) * 86_400_000);
     const admin = this.isAdmin(user, companyId);
     const where = `company_id = ? AND day >= ?${admin ? "" : " AND user_id = ?"}`;
     const values = admin ? [companyId, from] : [companyId, from, user.id];
@@ -467,7 +466,7 @@ export class Llm {
       )
       .run(
         spend.companyId,
-        new Date().toISOString().slice(0, 10),
+        localDay(Date.now()),
         spend.userId ?? "",
         spend.source,
         spend.threadId ?? "",

@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import type { Realm } from "../companies/companies.ts";
+import { localTime, timeZone } from "../platform/time.ts";
 import type { Summarizer } from "./memory.ts";
 
 /** The longest text of what Shadow learned about one person in one realm, in bytes of UTF-8. */
@@ -34,7 +35,7 @@ Rules:
 - Write in the language of the people. Each entry is one short line of at most ${ENTRY_BYTES} bytes.
 
 You may also suggest an automation, but only when a person asked for the same thing more than once, said that something happens regularly, or said they must do something at a later time. Never suggest what <automations> already has or what a person declined. A suggestion is only a question to the person: Shadow never makes it without them.
-- A routine: work on a schedule, as a cron expression in the time zone ${Intl.DateTimeFormat().resolvedOptions().timeZone}, in a channel, with instructions in plain words for the agent of each run, which says when to stay quiet.
+- A routine: work on a schedule, as a cron expression in the time zone ${timeZone()}, in a channel, with instructions in plain words for the agent of each run, which says when to stay quiet.
 - A reminder: one time, as a local ISO date and time with its UTC offset, later than now.
 
 Answer with one JSON object and nothing else, with only the keys you need:
@@ -338,7 +339,7 @@ export class Learned {
       lines.unshift(text);
     }
     return [
-      `Now: ${new Date().toISOString()}. The new messages of ${place}. People: ${input.people.map((person) => person.name).join(", ")}.`,
+      `Now: ${localTime(Date.now())}. The new messages of ${place}. People: ${input.people.map((person) => person.name).join(", ")}.`,
       `<entries>\n${editable.map(line).join("\n") || "(none yet)"}\n</entries>`,
       known.length ? `<known>\n${known.map(line).join("\n")}\n</known>` : "",
       input.facts ? `<facts>\n${input.facts}\n</facts>` : "",
@@ -538,16 +539,12 @@ function suggestions(answer: Answer, input: ReviewInput): Suggestion[] {
 }
 
 function messageLine(message: ReviewMessage): string {
-  const date = new Date(message.time)
-    .toISOString()
-    .slice(0, 16)
-    .replace("T", " ");
   const text = message.text.replace(/\s+/g, " ").trim();
   const cut =
     text.length > MESSAGE_CHARACTERS
       ? `${text.slice(0, MESSAGE_CHARACTERS)}…`
       : text;
-  return `${message.author}, ${date} UTC: ${cut}`;
+  return `${message.author}, ${localTime(message.time)}: ${cut}`;
 }
 
 /** `text` in at most `bytes` bytes of UTF-8. */

@@ -40,13 +40,17 @@ addresses, or code and data from employers or clients.
 - Agents make and change reminders with tools; a person sees their pending ones in Upcoming and cancels one there.
 - Shadow stays quiet by default: background work notifies a person only when they must act or asked for it, and a
   routine or reminder answers `QUIET` when nothing needs anyone.
-- In Slack (`src/slack/`), a mention or a DM is a person's request, and an admin's goal for a channel is the consent
-  for Shadow to listen there: a cheap check, then a turn in the shared realm that answers only when a reply helps,
+- In Slack (`src/slack/`), a mention or a DM is a person's request, and an admin's goal is the consent for
+  Shadow to listen: a channel's own goal there, the company's default goal in every other channel that an admin did
+  not switch off. A message there gets a cheap check, then a turn in the shared realm that answers only when a reply helps,
   else `QUIET` or `notices_tell` to one person. Ambient turns never act: for a routine or a reminder that someone asks
   for, they `notices_suggest` it, and it becomes that person's own, with their realm and credentials, only when they
   accept. They post at most `AMBIENT_PER_HOUR` replies in a channel, follow a thread for `FOLLOW_MS`, stop when muted,
   and log decisions without message text. A person's own credentials serve only the turns of their own requests,
   routines, and reminders; a turn without a person uses no personal credentials.
+  The bot keeps the copy of the public channels and posts Shadow's answers; the `slack_` tools
+  (`src/integrations/slack.ts`) use a person's own slackcli session to search, read, and send as that person, and never
+  post Shadow's answer.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
   retain useful context and infer future checks. A useful development adds a visible source message and files to the

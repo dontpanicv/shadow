@@ -79,6 +79,7 @@ export function fakeSlack() {
             ok: true,
             team: "Acme",
             team_id: "T1",
+            url: "https://acme.slack.com/",
             user_id: "B1",
           });
         case "/api/conversations.info":

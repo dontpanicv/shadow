@@ -12,6 +12,7 @@ import type {
   Member,
   SlackBotStatus,
   SlackDecision,
+  SlackDefaultGoal,
   SlackGoal,
   ThreadSummary,
   User,
@@ -180,6 +181,17 @@ export function slackGoalsQuery(companyId: string) {
     queryKey: ["companies", companyId, "slack", "goals"],
     queryFn: ({ signal }) =>
       request<SlackGoal[]>(`/companies/${companyId}/slack/goals`, { signal }),
+  });
+}
+
+/** The goal of every Slack channel without its own goal, for admins. */
+export function slackDefaultGoalQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "slack", "default-goal"],
+    queryFn: ({ signal }) =>
+      request<SlackDefaultGoal>(`/companies/${companyId}/slack/default-goal`, {
+        signal,
+      }),
   });
 }
 

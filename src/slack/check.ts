@@ -25,7 +25,7 @@ export interface CheckResult {
   readonly reason: "decided" | "error" | "incomplete-context";
 }
 
-const SYSTEM = `You screen the messages of one Slack channel for Shadow, the company's assistant, which takes part in this channel. Read the conversation, and say how likely it is that the newest message is for Shadow: a question or a request that Shadow can help with, or something that Shadow's goal for the channel names. A message between people that needs nothing from Shadow is not for it. When in doubt, say it is: another step decides whether to answer.
+const SYSTEM = `You screen the messages of one Slack channel for Shadow, the company's assistant, which takes part in this channel. Shadow knows the company's facts, and with its tools it searches the company's channels, threads, files, and memory, and the web. Read the conversation, and say how likely it is that Shadow can be helpful with the newest message: a question or a request that Shadow can answer with what it knows or finds, or something that Shadow's goal for the channel names. A message between people that needs nothing from Shadow, or that Shadow cannot help with, is not for it.
 
 Answer with JSON only: {"probability": <0 to 1>}`;
 

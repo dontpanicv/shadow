@@ -89,7 +89,7 @@ test("a message that fits is its own line, and lines that fit together join with
     ].join("\n")
   );
   expect(await memory.zoom(2, 1)).toBe(
-    "Message 2, 2026-10-25 12:04 UTC:\nAlice: The first weekend of May"
+    "Message 2, 2026-10-25T12:04+00:00:\nAlice: The first weekend of May"
   );
   expect(await memory.zoom()).toBe(memory.view(4));
   await expect(memory.zoom(1, 2)).rejects.toThrow("There is no line 1+2");

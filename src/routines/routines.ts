@@ -9,6 +9,7 @@ import type { Companies, Realm } from "../companies/companies.ts";
 import type { Integrations } from "../integrations/integrations.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound, required } from "../platform/errors.ts";
+import { localTime } from "../platform/time.ts";
 import type { Indexer } from "../search/search.ts";
 import type { Threads } from "../threads/threads.ts";
 import { routineTools } from "./tools.ts";
@@ -910,14 +911,4 @@ function cut(text: string): string {
   return text.length > MAX_RESULT
     ? `${text.slice(0, MAX_RESULT)}\n[The rest of the ${text.length} characters is cut.]`
     : text;
-}
-
-function localTime(milliseconds: number): string {
-  return new Date(milliseconds).toLocaleString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

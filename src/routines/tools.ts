@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { type ConversationId, defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
+import { timeZone } from "../platform/time.ts";
 import type {
   Routine,
   RoutineCompanies,
@@ -22,7 +23,7 @@ export function routineTools(
   companyId: string,
   declarations: string
 ) {
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zone = timeZone();
   const scriptHelp = `A script is JavaScript that runs in a sandbox at the start of every run, before an agent sees anything. It is the body of an async function: it calls tools as \`await tools.<name>(args)\`, keeps JSON values between runs with \`store(key, value)\` and \`load(key)\` (only a run that succeeds saves them), and returns what is new. It has no fetch, timers, or modules. When it returns nothing (undefined, null, or an empty array) and prints nothing, the run ends quietly, at no cost. Otherwise the agent of the routine's thread gets what it returned and printed, with the instructions. Each run starts with only its current input; use the script store and archive IDs for progress, and read earlier thread messages only when needed. During a run, routines_test_script reads the current run's proposed store; it does not commit it. Use a script for work that is the same every time, such as collecting new items since the last run; leave it out when the work needs judgement from the start. The tools scripts can call:\n${declarations}`;
   const scheduleHelp = `A cron expression in ${zone} time: minute hour day-of-month month day-of-week, such as "0 7 * * 1-5" for weekdays at 7:00. A routine runs at most every 15 minutes.`;
   const describe = (routine: Routine, channel: string | undefined) =>

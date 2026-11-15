@@ -793,6 +793,25 @@ const migrations = [
   UPDATE reminder SET deleted_at = strftime('%s', 'now') * 1000 WHERE place_id IS NOT NULL AND deleted_at IS NULL;`,
   // integrations: revoke old credential sharing. Keep the column while older machines may still read it.
   "UPDATE credential SET shared = 0 WHERE shared != 0;",
+  // integrations: the address of the bot's Slack workspace, such as https://acme.slack.com/, for the links of messages.
+  "ALTER TABLE slack_bot ADD COLUMN team_url TEXT;",
+  // slack: a default goal lets Shadow listen in every channel without its own goal, unless an admin switched it off there.
+  `CREATE TABLE slack_default_goal (
+    company_id TEXT PRIMARY KEY,
+    wake_when TEXT NOT NULL,
+    engagement TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE TABLE slack_channel_off (
+    company_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    PRIMARY KEY (company_id, channel_id)
+  );`,
 ];
 
 export function openDatabase(path: string): Database {

@@ -53,10 +53,18 @@ export interface SlackBotStatus {
   readonly error: string | null;
 }
 
-/** A channel that copies a Slack channel, with its goal for ambient listening; null when Shadow only answers mentions. */
+/** A channel that copies a Slack channel, with its own goal for ambient listening; null when it uses the default goal. */
 export interface SlackGoal {
   readonly channelId: string;
   readonly channelName: string;
+  readonly wakeWhen: string | null;
+  readonly engagement: string | null;
+  /** Shadow answers only mentions here, whatever the goals say. */
+  readonly off: boolean;
+}
+
+/** The goal of every Slack channel without its own goal; null when Shadow listens only where a channel has one. */
+export interface SlackDefaultGoal {
   readonly wakeWhen: string | null;
   readonly engagement: string | null;
 }

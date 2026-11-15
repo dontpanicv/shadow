@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import { randomUUIDv5 } from "bun";
 import type { Companies } from "../companies/companies.ts";
+import { localTime } from "../platform/time.ts";
 import type { Threads } from "../threads/threads.ts";
 import type { Reminder, Reminders } from "./reminders.ts";
 
@@ -14,7 +15,7 @@ export function reminderTools(
 ) {
   const at = Type.String({
     description:
-      "The local date and time with its UTC offset, such as 2026-11-01T09:00:00+01:00",
+      "The local date and time with its UTC offset, such as 2026-11-01T09:00+01:00",
   });
   const timeZone = Type.String({
     description: "IANA time zone of the recipient, such as Europe/Prague",
@@ -160,22 +161,9 @@ function describe(reminder: Reminder): string {
   }
   return [
     `${reminder.text} (reminder ${reminder.id})`,
-    `Due: ${local(reminder.dueAt, reminder.timeZone)} ${reminder.timeZone} (${new Date(reminder.dueAt).toISOString()})`,
+    `Due: ${localTime(reminder.dueAt, reminder.timeZone)} (${reminder.timeZone})`,
     `Recipient: ${reminder.recipientId}`,
     `Thread: ${reminder.threadId}`,
     `Status: ${status}`,
   ].join("\n");
-}
-
-/** A time as the recipient reads it in their time zone. */
-function local(time: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(time);
 }

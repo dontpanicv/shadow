@@ -2,6 +2,15 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import type { Channel, Companies } from "../companies/companies.ts";
 import type { SlackApi } from "./slack-api.ts";
+import {
+  type SlackUser,
+  slackClock,
+  slackDay,
+  slackMarkdown,
+  slackMentions,
+  slackPermalink,
+  slackPersonName,
+} from "./slack-text.ts";
 
 /** How far back the history of a Slack channel reaches when Shadow first reads it, and the daily check reads again. */
 export const SLACK_HISTORY_DAYS = 30;
@@ -11,7 +20,6 @@ export const SLACK_BRIEF_QUIET_MS = 10 * 60_000;
 const LARGEST_FILE = 50 * 1024 * 1024;
 /** Messages that say only who came or left. */
 const SKIPPED = new Set(["channel_join", "channel_leave"]);
-const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /** A message of a Slack channel, for the brief of its channel, with the day file that keeps it. */
 export interface SlackHistoryMessage {
@@ -352,7 +360,7 @@ export class SlackHistory {
       message.thread_ts && message.thread_ts !== message.ts
         ? message.thread_ts
         : null;
-    const day = dayOf(thread ?? message.ts);
+    const day = slackDay(thread ?? message.ts);
     const before = this.stored(companyId, channel.slackId, message.ts);
     const filesJson = JSON.stringify(files);
     if (
@@ -472,7 +480,12 @@ export class SlackHistory {
       fileId = null;
       hash = "";
     } else {
-      const text = dayText(channel.name, day, messages);
+      const text = dayText(
+        channel,
+        day,
+        messages,
+        this.workspaceUrl(companyId)
+      );
       const next = createHash("sha256").update(text).digest("hex");
       if (!(fileId && hash === next)) {
         fileId = (
@@ -541,9 +554,8 @@ export class SlackHistory {
     message: SlackMessage,
     signal?: AbortSignal
   ): Promise<string> {
-    const profile = message.user_profile;
-    if (profile?.real_name || profile?.display_name) {
-      return (profile.real_name || profile.display_name)!;
+    if (message.user_profile?.real_name || message.user_profile?.display_name) {
+      return slackPersonName({ profile: message.user_profile }, "");
     }
     if (!message.user) {
       return message.username ?? message.bot_profile?.name ?? "Slack";
@@ -568,19 +580,8 @@ export class SlackHistory {
       "users.info",
       { user: userId },
       signal
-    )) as {
-      user?: {
-        real_name?: string;
-        name?: string;
-        profile?: { real_name?: string; display_name?: string };
-      };
-    };
-    const name =
-      user?.real_name ||
-      user?.profile?.real_name ||
-      user?.profile?.display_name ||
-      user?.name ||
-      userId;
+    )) as { user?: SlackUser };
+    const name = slackPersonName(user, userId);
     this.database
       .query(
         "INSERT INTO slack_user (company_id, user_id, name) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET name = excluded.name"
@@ -597,21 +598,23 @@ export class SlackHistory {
     signal?: AbortSignal
   ): Promise<string> {
     const names = new Map<string, string>();
-    for (const [, id] of text.matchAll(/<@([A-Z0-9]+)(?:\|[^>]*)?>/g)) {
-      names.set(id!, await this.userName(companyId, token, id!, signal));
+    for (const id of slackMentions(text)) {
+      names.set(id, await this.userName(companyId, token, id, signal));
     }
-    return text
-      .replace(
-        /<@([A-Z0-9]+)(?:\|[^>]*)?>/g,
-        (_, id: string) => `@${names.get(id)}`
-      )
-      .replace(/<#[A-Z0-9]+\|([^>]*)>/g, "#$1")
-      .replace(/<!(here|channel|everyone)[^>]*>/g, "@$1")
-      .replace(/<(https?:[^|>]+)\|([^>]+)>/g, "[$2]($1)")
-      .replace(/<(https?:[^>]+)>/g, "$1")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&");
+    return slackMarkdown(text, names);
+  }
+
+  /** The address of the bot's Slack workspace, for the links of messages; null before the bot read it. */
+  private workspaceUrl(companyId: string): string | null {
+    return (
+      (
+        this.database
+          .query(
+            "SELECT team_url AS url FROM slack_bot WHERE company_id = ? AND deleted_at IS NULL"
+          )
+          .get(companyId) as { url: string | null } | null
+      )?.url ?? null
+    );
   }
 
   private stored(
@@ -655,50 +658,52 @@ export class SlackHistory {
 
 /** The Markdown of one day of a channel: each message, with the replies of its thread under it as quotes. */
 function dayText(
-  channelName: string,
+  channel: SlackChannelOf,
   day: string,
-  messages: readonly StoredMessage[]
+  messages: readonly StoredMessage[],
+  workspaceUrl: string | null
 ): string {
-  const lines = [`# #${channelName}, ${day}`, ""];
+  // The link gives the Slack channel's ID, as Shadow's name can differ from Slack's, such as support-slack.
+  const name = workspaceUrl
+    ? `[#${channel.name}](${new URL(`/archives/${channel.slackId}`, workspaceUrl).href})`
+    : `#${channel.name}`;
+  const lines = [`# ${name}, ${day}`, ""];
+  const linesOf = (message: StoredMessage) =>
+    messageLines(
+      message,
+      workspaceUrl &&
+        slackPermalink(
+          workspaceUrl,
+          channel.slackId,
+          message.ts,
+          message.thread_ts
+        )
+    );
   const replies = Map.groupBy(
     messages.filter((message) => message.thread_ts),
     (message) => message.thread_ts!
   );
   for (const message of messages.filter((each) => !each.thread_ts)) {
-    lines.push(...messageLines(message), "");
+    lines.push(...linesOf(message), "");
     for (const reply of replies.get(message.ts) ?? []) {
-      lines.push(...messageLines(reply).map((line) => `> ${line}`), "");
+      lines.push(...linesOf(reply).map((line) => `> ${line}`), "");
     }
   }
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-function messageLines(message: StoredMessage): string[] {
+/** A message under its author's name and its time, which links to the message in Slack. */
+function messageLines(message: StoredMessage, link: string | null): string[] {
   const files = (JSON.parse(message.files) as Kept[]).map((file) =>
     "id" in file
       ? `[${file.name}](file:${file.id})`
       : `${file.name} (${file.link})`
   );
   return [
-    `**${message.author}**, ${timeOf(message.ts)}`,
+    `**${message.author}**, ${link ? `[${slackClock(message.ts)}](${link})` : slackClock(message.ts)}`,
     ...(message.text ? message.text.split("\n") : []),
     ...(files.length > 0 ? [`Attachments: ${files.join(", ")}`] : []),
   ];
-}
-
-/** The local day of a Slack timestamp, as YYYY-MM-DD. */
-function dayOf(ts: string): string {
-  return new Date(Number(ts) * 1000).toLocaleDateString("sv-SE", {
-    timeZone: TIME_ZONE,
-  });
-}
-
-function timeOf(ts: string): string {
-  return new Date(Number(ts) * 1000).toLocaleTimeString("sv-SE", {
-    timeZone: TIME_ZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function nextCursor(page: Record<string, unknown>): string {

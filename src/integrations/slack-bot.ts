@@ -326,6 +326,7 @@ export class SlackBot {
     const listened = this.row(companyId)?.listened_at ?? null;
     const since = listened === null ? null : listened - CATCH_UP_OVERLAP_MS;
     this.enqueue(companyId, async (token) => {
+      await this.readWorkspace(companyId, token);
       await this.listChannels(companyId, token);
       await this.history.catchUp(companyId, token, since, this.stopping.signal);
       await this.history.flush(companyId);
@@ -337,6 +338,32 @@ export class SlackBot {
         this.dailyCheck(companyId);
       }
     });
+  }
+
+  /**
+   * Reads the address of the workspace at each connection, as an admin can rename it. A new address writes every day
+   * file again, for the links of its messages.
+   */
+  private async readWorkspace(companyId: string, token: string): Promise<void> {
+    const { url } = await this.api.call(
+      token,
+      "auth.test",
+      {},
+      this.stopping.signal
+    );
+    if (typeof url !== "string") {
+      return;
+    }
+    const { changes } = this.database
+      .query(
+        "UPDATE slack_bot SET team_url = ? WHERE company_id = ? AND deleted_at IS NULL AND team_url IS NOT ?"
+      )
+      .run(url, companyId, url);
+    if (changes) {
+      this.database
+        .query("UPDATE slack_day SET dirty = 1 WHERE company_id = ?")
+        .run(companyId);
+    }
   }
 
   private event(companyId: string, event: { readonly type: string }): void {

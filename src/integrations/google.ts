@@ -1,3 +1,4 @@
+import { localDay } from "../platform/time.ts";
 import type { Connector, WatchedItem, WatchSource } from "./integrations.ts";
 
 const AUTH = "https://accounts.google.com";
@@ -124,9 +125,7 @@ export async function watchGmail(source: WatchSource): Promise<WatchedItem[]> {
     through?: number;
   };
   const through = saved.through ?? Date.now();
-  const earliest = new Date(source.since - 24 * 60 * 60_000)
-    .toISOString()
-    .slice(0, 10);
+  const earliest = localDay(source.since - 24 * 60 * 60_000);
   const day = earliest.replaceAll("-", "/");
   const items: WatchedItem[] = [];
   let { pageToken } = saved;

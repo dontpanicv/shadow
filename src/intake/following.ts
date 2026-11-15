@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { WatchedItem } from "../integrations/integrations.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound } from "../platform/errors.ts";
+import { localTime } from "../platform/time.ts";
 import type { Evidence } from "./assess.ts";
 import type { Audit } from "./audit.ts";
 import type { Delivery, IntakeCompanies, IntakeLlm } from "./intake.ts";
@@ -430,7 +431,7 @@ export class Following {
         message: update.body,
         posts:
           update.attention === "now" ? "within minutes" : "at the 08:00 review",
-        waitingSince: new Date(update.createdAt).toISOString(),
+        waitingSince: localTime(update.createdAt),
         sources: update.evidence.map((evidence) => evidence.source),
       }));
   }
@@ -708,11 +709,11 @@ export class Following {
     const text = JSON.stringify({
       check: detail.check,
       deadlineAt: detail.check.explicitTime
-        ? new Date(detail.check.checkAt).toISOString()
+        ? localTime(detail.check.checkAt)
         : null,
       evidence: detail.evidence,
       correction: quote,
-      currentTime: new Date().toISOString(),
+      currentTime: localTime(Date.now()),
     });
     const trace = `correction:${randomUUID()}`;
     this.audit.record(trace, "model.request", companyId, owner.id, {

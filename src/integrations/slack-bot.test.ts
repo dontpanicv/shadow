@@ -110,7 +110,7 @@ test("an admin connects the Slack bot with its two tokens, and its public channe
     ["company", true],
     ["sales", false],
     ["sales-slack", true],
-    ["dev-ops", true],
+    ["dev_ops", true],
   ]);
   const channels = shadow.app.companies.channels(company.id, alice);
   expect(
@@ -283,6 +283,16 @@ test("a new channel gets its last 30 days at once, events bring each change, and
   );
   expect(invoiceDay.text).toContain(
     `Attachments: [invoice.pdf](file:${pdf.id})`
+  );
+  // Each time links to its message, with the IDs that the slack_ tools of a person's account take.
+  expect(invoiceDay.text).toStartWith(
+    `# [#support](https://acme.slack.com/archives/C2), ${day(invoice)}`
+  );
+  expect(invoiceDay.text).toContain(
+    `(https://acme.slack.com/archives/C2/p${invoice.replace(".", "")})`
+  );
+  expect(invoiceDay.text).toContain(
+    `(https://acme.slack.com/archives/C2/p${paid.replace(".", "")}?thread_ts=${invoice}&cid=C2)`
   );
   expect(invoiceDay.text).toContain("> **Alice Novak**, ");
   expect(invoiceDay.text).toContain("> Paid");

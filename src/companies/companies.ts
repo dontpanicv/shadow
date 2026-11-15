@@ -333,7 +333,8 @@ export class Companies {
   }
 
   /**
-   * A channel name as Shadow keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words.
+   * A channel name as Shadow keeps it, as Slack does: lowercase letters, also with diacritics, numbers, and `_`, with `-`
+   * between words.
    * `409` when another channel of the company has it.
    */
   private freeChannelName(
@@ -345,7 +346,7 @@ export class Companies {
       .normalize("NFC")
       .toLowerCase()
       .replace(/^#/, "")
-      .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
+      .replace(/[^\p{L}\p{M}\p{N}_]+/gu, "-")
       .replace(/^-|-$/g, "");
     if (!slug) {
       throw new HttpError(400, "Use letters or numbers in the channel name");
@@ -808,7 +809,7 @@ export class Companies {
     for (const slack of slackChannels) {
       const channel = known.find((row) => row.slackId === slack.id);
       if (channel?.deletedAt === null) {
-        // Shadow keeps a name such as dev_ops as dev-ops, so it compares the name it would give.
+        // Shadow keeps a name such as Dev-Ops! as dev-ops, so it compares the name it would give.
         const name = this.freeSlackName(companyId, slack.name, channel.id);
         if (name !== channel.name) {
           this.database

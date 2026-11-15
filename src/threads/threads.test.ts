@@ -261,7 +261,7 @@ function agent(context: Context, options?: SimpleStreamOptions) {
     return fauxAssistantMessage("Done.");
   }
   const file =
-    /^\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: Read the file\nAttached: .* \(file ([\w-]+)\)$/.exec(
+    /^\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Alice: Read the file\nAttached: .* \(file ([\w-]+)\)$/.exec(
       text
     );
   if (file) {
@@ -412,12 +412,12 @@ test("an agent starts a thread in another channel, gets the answer back, and can
   );
   expect(agentInputs.slice(inputCount)).toContainEqual(
     expect.stringMatching(
-      /^\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: Ask #food what's for dinner$/
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Alice: Ask #food what's for dinner$/
     )
   );
   expect(agentInputs.slice(inputCount)).toContainEqual(
     expect.stringMatching(
-      /^\d{4}-\d\d-\d\d \d\d:\d\d UTC Shadow from \[Ask #food what's for dinner\]\(thread:[\w-]+\): What's for dinner\?$/
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Shadow from \[Ask #food what's for dinner\]\(thread:[\w-]+\): What's for dinner\?$/
     )
   );
   // Alice hears back once in her thread, with the answer to the report: the first answer waited while #food worked.
@@ -1700,16 +1700,18 @@ test("the orchestrator compacts into a view of its memory, and its agent zooms i
   const zoomed = await said("Zoom 0", 10);
   const view = memoryViews.findLast((memory) => memory.includes("5+1|"));
   expect(view).toMatch(
-    /0\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: The wifi password is on the fridge\n1\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Shadow: Ok.\n2\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: Bring the tent/
+    /0\+1\|\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Alice: The wifi password is on the fridge\n1\+1\|\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Shadow: Ok.\n2\+1\|\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Alice: Bring the tent/
   );
-  expect(view).toMatch(/5\+1\|\d{4}-\d\d-\d\d \d\d:\d\d UTC Shadow: Ok\./);
+  expect(view).toMatch(
+    /5\+1\|\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Shadow: Ok\./
+  );
   expect(view).not.toContain("Here is the manual");
   // The transcript keeps the messages that the compaction took out of the model's context.
   expect(zoomed.messages[0]!.text).toBe("The wifi password is on the fridge");
   expect(zoomed.messages.at(-1)!.text).toBe("Done.");
   expect(toolResults).toContainEqual(
     expect.stringMatching(
-      /^Message 0, \d{4}-\d\d-\d\d \d\d:\d\d UTC:\n\d{4}-\d\d-\d\d \d\d:\d\d UTC Alice: The wifi password is on the fridge$/
+      /^Message 0, \d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d:\n\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d Alice: The wifi password is on the fridge$/
     )
   );
 });

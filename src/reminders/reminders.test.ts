@@ -210,7 +210,7 @@ test("the agent tool creates a company reminder for the person who asked", async
   );
   expect(result.output?.[0]).toMatchObject({
     type: "text",
-    text: expect.stringContaining("01/11/2090, 09:00 Europe/Prague"),
+    text: expect.stringContaining("2090-11-01T09:00+01:00 (Europe/Prague)"),
   });
   const [reminder] = reminders.list("home", alice, null);
   expect(reminder).toMatchObject({

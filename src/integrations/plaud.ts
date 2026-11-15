@@ -1,3 +1,4 @@
+import { localDay } from "../platform/time.ts";
 import type { Connector, WatchedItem, WatchSource } from "./integrations.ts";
 
 /** Keeps only returned summaries. The read time is not the recording's original time. */
@@ -53,7 +54,6 @@ export async function watchRecordings({
   record,
   checkpoint,
 }: WatchSource): Promise<WatchedItem[]> {
-  const day = (time: number) => new Date(time).toISOString().slice(0, 10);
   const saved = (checkpoint?.value ?? {}) as {
     pending?: Recording[];
     page?: number;
@@ -67,8 +67,8 @@ export async function watchRecordings({
   const page = saved.page ?? 1;
   const through = saved.through ?? Date.now();
   const raw = await call("list_files", {
-    date_from: day(since - 24 * 60 * 60 * 1000),
-    date_to: day(Date.now() + 24 * 60 * 60 * 1000),
+    date_from: localDay(since - 24 * 60 * 60 * 1000),
+    date_to: localDay(Date.now() + 24 * 60 * 60 * 1000),
     page_size: 50,
     page,
   });

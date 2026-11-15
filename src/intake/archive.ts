@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { WatchedItem } from "../integrations/integrations.ts";
 import type { User } from "../platform/auth.ts";
+import { localDay, localTime } from "../platform/time.ts";
 import type { FileRef } from "../threads/threads.ts";
 import type { Audit } from "./audit.ts";
 import type {
@@ -30,7 +31,6 @@ interface Observation {
   row: ItemRow;
   item: WatchedItem & { source?: string };
 }
-const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /** Derived conversation files. Message-level originals remain in the evidence store and audit. */
 export class IntakeArchives {
@@ -222,7 +222,7 @@ export class IntakeArchives {
       // A Slack direct conversation has no thread, so each of its days is one file.
       const daily =
         credential.integration === "slack" && !item.chat.includes("/");
-      const period = daily ? calendarDay(item.at) : "";
+      const period = daily ? localDay(item.at) : "";
       const id = hash(
         JSON.stringify([
           companyId,
@@ -540,22 +540,10 @@ function render(
           attachments[hash(JSON.stringify([row.source_id, attachment.id]))];
         return file ? [`[${safeName(attachment.name)}](file:${file.id})`] : [];
       });
-      return `## ${new Date(item.at).toISOString()} · ${item.fromOwner ? "Account owner" : item.sender || "Source"}\n\n${item.url ?? ""}\n\nSource message: ${row.source_id}\n\n${item.text}${files.length ? `\n\n${files.join("\n")}` : ""}`;
+      return `## ${localTime(item.at)} · ${item.fromOwner ? "Account owner" : item.sender || "Source"}\n\n${item.url ?? ""}\n\nSource message: ${row.source_id}\n\n${item.text}${files.length ? `\n\n${files.join("\n")}` : ""}`;
     }),
   ];
   return `${sections.join("\n\n")}\n`;
-}
-
-function calendarDay(at: number): string {
-  const parts = new Intl.DateTimeFormat("en", {
-    timeZone: TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(at);
-  return ["year", "month", "day"]
-    .map((type) => parts.find((part) => part.type === type)!.value)
-    .join("-");
 }
 
 function hash(text: string): string {

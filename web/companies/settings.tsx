@@ -7,6 +7,7 @@ import type {
   Facts,
   Role,
   SlackBotStatus,
+  SlackDefaultGoal,
   SlackGoal,
 } from "../app/types.ts";
 import {
@@ -28,6 +29,7 @@ import {
   refreshCompany,
   slackBotQuery,
   slackDecisionsQuery,
+  slackDefaultGoalQuery,
   slackGoalsQuery,
 } from "./data.ts";
 import slackManifest from "./slack-app-manifest.json" with { type: "json" };
@@ -339,47 +341,84 @@ const DISCONNECTED: SlackBotStatus = {
 };
 
 /**
- * The goal of each Slack channel: where Shadow listens without being asked, and how it takes part. A channel without a
- * goal gets answers only when someone mentions Shadow.
+ * Where Shadow listens without being asked, and how it takes part: the default goal for every channel, a channel's own
+ * goal before it, and channels switched off. A channel that does not listen gets answers only when someone mentions
+ * Shadow.
  */
 export function SlackGoalsSection({ companyId }: { companyId: string }) {
   const goals = useQuery(slackGoalsQuery(companyId)).data ?? [];
+  const fallback = useQuery(slackDefaultGoalQuery(companyId)).data;
   if (goals.length === 0) {
     return <Empty title="No Slack channels yet" />;
   }
+  const base = `/companies/${companyId}/slack`;
   return (
     <SettingsCard>
+      <GoalForm
+        companyId={companyId}
+        goal={fallback ?? { wakeWhen: null, engagement: null }}
+        label="All channels"
+        path={`${base}/default-goal`}
+        saved="Shadow listens in all channels"
+      />
       {goals.map((goal) => (
-        <GoalRow companyId={companyId} goal={goal} key={goal.channelId} />
+        <GoalForm
+          channel={goal}
+          companyId={companyId}
+          fallback={fallback}
+          goal={goal}
+          key={goal.channelId}
+          label={`#${goal.channelName}`}
+          path={`${base}/goals/${goal.channelId}`}
+          saved={`Shadow listens in #${goal.channelName}`}
+        />
       ))}
     </SettingsCard>
   );
 }
 
-function GoalRow({ companyId, goal }: { companyId: string; goal: SlackGoal }) {
-  const path = `/companies/${companyId}/slack/goals/${goal.channelId}`;
+/**
+ * One goal: the default goal, or a channel's own goal, with the default as its placeholder. A channel listens with
+ * either, until an admin stops it there.
+ */
+function GoalForm({
+  companyId,
+  label,
+  path,
+  saved,
+  goal,
+  fallback,
+  channel,
+}: {
+  companyId: string;
+  label: string;
+  path: string;
+  saved: string;
+  goal: SlackDefaultGoal;
+  fallback?: SlackDefaultGoal | undefined;
+  channel?: SlackGoal;
+}) {
   const [draft, setDraft] = useState({
     wakeWhen: goal.wakeWhen ?? "",
     engagement: goal.engagement ?? "",
   });
+  // The goals, the default goal, and the decisions all change together.
   const refresh = () =>
     queryClient.invalidateQueries({
-      queryKey: slackGoalsQuery(companyId).queryKey,
+      queryKey: ["companies", companyId, "slack"],
     });
   const save = useMutation({
     mutationFn: () => request(path, { method: "PUT", body: draft }),
     onSuccess: () => {
-      showToast("success", `Shadow listens in #${goal.channelName}`);
+      showToast("success", saved);
       return refresh();
     },
     onError: showError,
   });
-  const remove = useMutation({
-    mutationFn: () => request(path, { method: "DELETE" }),
-    onSuccess: () => {
-      setDraft({ wakeWhen: "", engagement: "" });
-      return refresh();
-    },
+  const change = useMutation({
+    mutationFn: (action: { path: string; method: "PUT" | "DELETE" }) =>
+      request(action.path, { method: action.method }),
+    onSuccess: refresh,
     onError: showError,
   });
   const suggest = useMutation({
@@ -390,6 +429,8 @@ function GoalRow({ companyId, goal }: { companyId: string; goal: SlackGoal }) {
     onSuccess: setDraft,
     onError: showError,
   });
+  const off = channel?.off ?? false;
+  const listening = !off && Boolean(goal.wakeWhen ?? fallback?.wakeWhen);
   return (
     <form
       aria-busy={save.isPending || suggest.isPending || undefined}
@@ -399,36 +440,68 @@ function GoalRow({ companyId, goal }: { companyId: string; goal: SlackGoal }) {
         save.mutate();
       }}
     >
-      <SettingsRow label={`#${goal.channelName}`}>
+      <SettingsRow label={label}>
         <Button
           label="Suggest"
           onClick={() => suggest.mutate()}
           variant="ghost"
         />
-        {goal.wakeWhen ? (
+        {channel && goal.wakeWhen && fallback?.wakeWhen && !off ? (
+          <Button
+            label="Use default"
+            onClick={() => {
+              setDraft({ wakeWhen: "", engagement: "" });
+              change.mutate({ path, method: "DELETE" });
+            }}
+            variant="ghost"
+          />
+        ) : null}
+        {off ? (
+          <Button
+            label="Listen"
+            onClick={() =>
+              change.mutate({ path: `${path}/off`, method: "DELETE" })
+            }
+            variant="ghost"
+          />
+        ) : null}
+        {listening ? (
           <Button
             label="Stop listening"
-            onClick={() => remove.mutate()}
+            onClick={() => {
+              if (channel) {
+                change.mutate({ path: `${path}/off`, method: "PUT" });
+              } else {
+                setDraft({ wakeWhen: "", engagement: "" });
+                change.mutate({ path, method: "DELETE" });
+              }
+            }}
             variant="ghost"
           />
         ) : null}
       </SettingsRow>
       <input
-        aria-label={`When Shadow takes part in #${goal.channelName}`}
+        aria-label={`When Shadow takes part in ${label}`}
         className="input"
         onChange={(event) =>
           setDraft({ ...draft, wakeWhen: event.target.value })
         }
-        placeholder="Wake when: questions about invoices and payments"
+        placeholder={
+          fallback?.wakeWhen ??
+          "Wake when: questions about invoices and payments"
+        }
         value={draft.wakeWhen}
       />
       <input
-        aria-label={`How Shadow takes part in #${goal.channelName}`}
+        aria-label={`How Shadow takes part in ${label}`}
         className="input"
         onChange={(event) =>
           setDraft({ ...draft, engagement: event.target.value })
         }
-        placeholder="Take part by: answering briefly, with the source"
+        placeholder={
+          fallback?.engagement ??
+          "Take part by: answering briefly, with the source"
+        }
         value={draft.engagement}
       />
       <Button

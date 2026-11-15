@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { Companies } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, notFound } from "../platform/errors.ts";
+import { localTime, timeZone } from "../platform/time.ts";
 import {
   dueTime,
   type Reminder,
@@ -61,7 +62,6 @@ export type AgendaReminders = Pick<
 const MAX_OPEN = 3;
 /** The answered suggestions that a review sees, so that it does not ask again. */
 const ANSWERED = 20;
-const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const COLUMNS =
   "id, kind, name, text, schedule, at, channel_id AS channelId, thread_id AS threadId, created_at AS createdAt";
 
@@ -100,7 +100,7 @@ export class Agenda {
           return null;
         }
       } else {
-        dueTime(suggestion.at, TIME_ZONE, Date.now());
+        dueTime(suggestion.at, timeZone(), Date.now());
       }
     } catch {
       return null;
@@ -133,7 +133,7 @@ export class Agenda {
         routine ? suggestion.instructions : suggestion.text,
         routine ? suggestion.schedule : null,
         routine ? null : suggestion.at,
-        routine ? null : TIME_ZONE,
+        routine ? null : timeZone(),
         Date.now()
       );
     return id;
@@ -174,7 +174,7 @@ export class Agenda {
       );
     const reminders = this.pendingReminders(companyId, user).map(
       (reminder) =>
-        `- Reminder for ${new Date(reminder.dueAt).toISOString()}: ${reminder.text}`
+        `- Reminder for ${localTime(reminder.dueAt, reminder.timeZone)} (${reminder.timeZone}): ${reminder.text}`
     );
     const suggested = (
       this.database
@@ -250,7 +250,7 @@ export class Agenda {
             id: resultId,
             text: row.text,
             at: row.at!,
-            timeZone: row.timeZone ?? TIME_ZONE,
+            timeZone: row.timeZone ?? timeZone(),
             createdBy: user.id,
           });
         } catch (error) {

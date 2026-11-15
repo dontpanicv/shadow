@@ -169,7 +169,7 @@ type Llm = {
 type UsageTotals = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number }; // tokens; input leaves out cacheRead, the tokens read from the prompt cache; cost in US dollars at the model's list price, which a ChatGPT login does not pay
 type UsageSource = "thread" | "orchestrator" | "routine" | "reminder" | "intake" | "background"; // intake: what Shadow reads in watched accounts; background: briefs, memory, names, emojis, and what Shadow learns
 type Usage = {
-	days: (UsageTotals & { day: string })[]; // "YYYY-MM-DD" in UTC, oldest first; a day without use is left out
+	days: (UsageTotals & { day: string })[]; // "YYYY-MM-DD" of the server's time zone, oldest first; a day without use is left out
 	total: UsageTotals;
 	sources: (UsageTotals & { source: UsageSource })[]; // most cost first
 	models: (UsageTotals & { model: string })[]; // "provider/model", or "tool:<name>" for a tool's own model calls
@@ -235,7 +235,7 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `GET /api/v1/companies/:companyId` | | `{ company: Company, channels: Channel[] }`: the channels every member sees, and the person's own private ones |
 | `PUT /api/v1/companies/:companyId` | `{ name }` | `Company`; `403` for a member who is not an admin |
 | `POST /api/v1/companies/:companyId/channels` | `{ name }` | `Channel`: a private channel of the person. The channels that every member sees come only from the Slack bot. `409` if the name exists, also as another person's private channel |
-| `PUT /api/v1/companies/:companyId/channels/:channelId` | `{ name }` | `Channel`, with the name as Shadow keeps it: lowercase letters, also with diacritics, and numbers, with `-` between words. Only a private channel; one that every member sees takes its name from Slack, `409`. `409` if the name exists |
+| `PUT /api/v1/companies/:companyId/channels/:channelId` | `{ name }` | `Channel`, with the name as Shadow keeps it: lowercase letters, also with diacritics, numbers, and `_`, with `-` between words, as in Slack. Only a private channel; one that every member sees takes its name from Slack, `409`. `409` if the name exists |
 | `POST /api/v1/companies/:companyId/channels/:channelId/merge` | `{ into }` | `204`; its threads, files, artifacts, routines, suggestions, and source archives move to channel `into`, then the empty channel goes and the orchestrators move to the next channel that every member sees. Nobody deletes a channel otherwise. `403` for a channel that every member sees, which copies a Slack channel and stays until Slack archives it, and for a person's own channel; `409` while an agent of the channel works. Agents merge with `merge_channel` when a person asks; a private channel merges into one that every member sees only after its owner allows it |
 | `GET /api/v1/companies/:companyId/facts` | | `{ text }`: facts that the admins write about the company, such as its teams, products, and customers; every agent of the company reads them; `""` until someone writes them |
 | `PUT /api/v1/companies/:companyId/facts` | `{ text }` | `{ text }`; only an admin writes them, `403` for others; `400` over 20,000 characters |
@@ -251,7 +251,7 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | Request | Body | Response |
 | --- | --- | --- |
 | `GET /api/v1/companies/:companyId/orchestrator` | | `ThreadSummary` of the person's own orchestrator in the company; the first call makes it |
-| `GET /api/v1/companies/:companyId/threads?channel=&since=&before=&order=` | | `{ threads: ListedThread[] }`; all channel threads the person sees, including settled ones. All parameters are optional: `channel` is a name with or without `#`; `since` is inclusive and `before` exclusive, both filter last activity with an ISO 8601 date (UTC) or timestamp with a UTC offset; `order` is `newest` (default) or `oldest`. `400` for invalid dates, date ranges, or order; `404` for a channel the person does not see. Orchestrators are not channel threads |
+| `GET /api/v1/companies/:companyId/threads?channel=&since=&before=&order=` | | `{ threads: ListedThread[] }`; all channel threads the person sees, including settled ones. All parameters are optional: `channel` is a name with or without `#`; `since` is inclusive and `before` exclusive, both filter last activity with an ISO 8601 date, from midnight of the server's time zone, or a time with its offset; `order` is `newest` (default) or `oldest`. `400` for invalid dates, date ranges, or order; `404` for a channel the person does not see. Orchestrators are not channel threads |
 | `POST /api/v1/companies/:companyId/threads` | `{ channelId, text }` | `ThreadSummary`; `text` becomes the first message, and its first line the title until the model names the subject in a few words |
 | `GET /api/v1/threads/:threadId` | | `ThreadState` |
 | `POST /api/v1/companies/:companyId/threads/:threadId/settled` | `{ settled: boolean }` | `ThreadSummary`; settled threads stay available in their channel, and any new message in one, such as a routine's answer, opens it again; `400` for the orchestrator |
@@ -596,9 +596,15 @@ others.
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `GET /api/v1/companies/:companyId/slack/goals` | | `SlackGoal[]`: `{ channelId, channelName, wakeWhen: string \| null, engagement: string \| null }`, each channel that copies a Slack channel, with its goal for listening; null where Shadow answers only mentions |
-| `PUT /api/v1/companies/:companyId/slack/goals/:channelId` | `{ wakeWhen, engagement }` | `SlackGoal`; the goal is the consent for Shadow to listen in the channel. `404` for a channel that copies no Slack channel |
-| `DELETE /api/v1/companies/:companyId/slack/goals/:channelId` | | `204`; Shadow stops listening there and still answers mentions |
+| `GET /api/v1/companies/:companyId/slack/default-goal` | | `SlackDefaultGoal`: `{ wakeWhen: string \| null, engagement: string \| null }`, the goal of every channel without its own goal; null where Shadow listens only in channels with their own goal |
+| `PUT /api/v1/companies/:companyId/slack/default-goal` | `{ wakeWhen, engagement }` | `SlackDefaultGoal`; the default goal is the consent for Shadow to listen in every channel that copies a Slack channel, except the ones that are off |
+| `DELETE /api/v1/companies/:companyId/slack/default-goal` | | `204`; Shadow listens only in channels with their own goal |
+| `POST /api/v1/companies/:companyId/slack/default-goal/suggest` | | `{ wakeWhen, engagement }` that the fast model writes from the company's facts and channels; nothing is saved |
+| `GET /api/v1/companies/:companyId/slack/goals` | | `SlackGoal[]`: `{ channelId, channelName, wakeWhen: string \| null, engagement: string \| null, off: boolean }`, each channel that copies a Slack channel, with its own goal; null where it uses the default goal. Where `off`, Shadow answers only mentions |
+| `PUT /api/v1/companies/:companyId/slack/goals/:channelId` | `{ wakeWhen, engagement }` | `SlackGoal`; the channel's own goal, which comes before the default goal, is the consent for Shadow to listen in the channel, and turns `off` back. `404` for a channel that copies no Slack channel |
+| `DELETE /api/v1/companies/:companyId/slack/goals/:channelId` | | `204`; the channel uses the default goal, or, without one, Shadow answers only mentions there |
+| `PUT /api/v1/companies/:companyId/slack/goals/:channelId/off` | | `204`; Shadow stops listening in the channel, also in threads it follows, whatever the goals say, and still answers mentions. `404` for a channel that copies no Slack channel |
+| `DELETE /api/v1/companies/:companyId/slack/goals/:channelId/off` | | `204`; Shadow listens again with the channel's goal |
 | `POST /api/v1/companies/:companyId/slack/goals/:channelId/suggest` | | `{ wakeWhen, engagement }` that the fast model writes from the channel's brief; nothing is saved |
 | `GET /api/v1/companies/:companyId/slack/decisions` | | `SlackDecision[]`: `{ channelName, slackChannelId, ts, reason, probability, outcome, at }`, the 100 newest decisions of listening, newest first, never with the text of a message. `outcome`: `skipped`, `quiet`, `replied`, `capped`, `muted`, or `failed` |
 

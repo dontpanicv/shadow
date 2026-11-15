@@ -64,7 +64,7 @@ test("a merge writes a new version of the brief from the old one and the new mes
   expect(briefs.through("b")).toBe(5);
   expect(prompts[0]).toContain("<brief>\n(none yet)\n</brief>");
   expect(prompts[0]).toContain(
-    "[Thread a](thread:a) Alice, 2026-10-25 12:03 UTC: Prague in May"
+    "[Thread a](thread:a) Alice, 2026-10-25T12:03+00:00: Prague in May"
   );
 
   await briefs.merge(trips, [message("a", 7, "Book it")], signal);
@@ -165,7 +165,7 @@ test("Slack messages go into the same brief, each with the link of its day file,
   );
   expect(summary).toBe("Customer support.");
   expect(prompts[0]).toContain(
-    "[slack-2026-11-14.md](file:f1) Bob Smith, 2026-11-14 09:12 UTC: The invoice is paid"
+    "[slack-2026-11-14.md](file:f1) Bob Smith, 2026-11-14T09:12+00:00: The invoice is paid"
   );
   expect(systems[0]).not.toContain("What each person wants");
   expect(briefs.latest("support")?.text).toContain("The invoice is paid");

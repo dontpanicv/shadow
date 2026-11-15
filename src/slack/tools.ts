@@ -100,7 +100,7 @@ export function noticeTools(
         at: Type.Optional(
           Type.String({
             description:
-              "For a reminder: when, as a local date and time, such as 2026-11-20T09:00",
+              "For a reminder: when, as a local date and time with its offset, such as 2026-11-20T09:00+01:00",
           })
         ),
       }),

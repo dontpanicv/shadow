@@ -7,6 +7,7 @@ import {
   type SlackMessage,
   slackConnector,
 } from "./slack.ts";
+import { slackPermalink, slackTime } from "./slack-text.ts";
 
 const directory = await mkdtemp(join(tmpdir(), "shadow-slack-test-"));
 const slackcli = join(directory, "slackcli");
@@ -90,48 +91,53 @@ test("source selection follows direct participation and the same thread, not cha
   const message: SlackMessage = {
     channel: { id: "C1", name: "work" },
     user: "U2",
+    author: "Bob Smith",
+    mentions: [],
     ts: "1.2",
     text: "The update",
     permalink: "https://example.slack.com/archives/C1/p1200000",
   };
-  expect(observedSlackMessage(message, "U1", new Set())).toBeNull();
+  const owner = { id: "U1", name: "Alice Novak" };
+  expect(observedSlackMessage(message, owner, new Set())).toBeNull();
   expect(
     observedSlackMessage(
-      { ...message, text: "<!channel> urgent" },
-      "U1",
+      { ...message, text: "@channel urgent" },
+      owner,
       new Set()
     )
   ).toBeNull();
   expect(
-    observedSlackMessage({ ...message, user: "U1" }, "U1", new Set())?.fromOwner
+    observedSlackMessage({ ...message, user: "U1" }, owner, new Set())
+      ?.fromOwner
   ).toBe(true);
   expect(
     observedSlackMessage(
-      { ...message, text: "<@U1> please check" },
-      "U1",
+      { ...message, text: "@Alice Novak please check", mentions: ["U1"] },
+      owner,
       new Set()
     )?.text
   ).toBe("@me please check");
   expect(
     observedSlackMessage(
       { ...message, channel: { id: "D1", is_im: true } },
-      "U1",
+      owner,
       new Set()
     )?.group
   ).toBe(false);
   expect(
     observedSlackMessage(
       { ...message, channel: { id: "G1", is_mpim: true } },
-      "U1",
+      owner,
       new Set()
     )?.group
   ).toBe(true);
   const followed = new Set(["C1/1.0"]);
   expect(
-    observedSlackMessage({ ...message, thread_ts: "1.0" }, "U1", followed)?.chat
+    observedSlackMessage({ ...message, thread_ts: "1.0" }, owner, followed)
+      ?.chat
   ).toBe("C1/1.0");
   expect(
-    observedSlackMessage({ ...message, thread_ts: "0.9" }, "U1", followed)
+    observedSlackMessage({ ...message, thread_ts: "0.9" }, owner, followed)
   ).toBeNull();
 });
 
@@ -151,7 +157,10 @@ test("source reads keep the same personal Slack scope, including untagged partic
       channel,
       ts: "1.1",
       thread_ts: "1.1",
+      type: "message",
       user: "U1",
+      author: "Alice Novak",
+      mentions: [],
       text: "Please confirm",
       permalink: "https://example.com/1",
     },
@@ -159,15 +168,21 @@ test("source reads keep the same personal Slack scope, including untagged partic
       channel,
       ts: "1.2",
       thread_ts: "1.1",
+      type: "message",
       user: "U2",
+      author: "Bob Smith",
+      mentions: [],
       text: "Confirmed",
       permalink: "https://example.com/2",
     },
     {
       channel,
       ts: "2.1",
+      type: "message",
       user: "U2",
-      text: "<!channel> An unrelated announcement",
+      author: "Bob Smith",
+      mentions: [],
+      text: "@channel An unrelated announcement",
       permalink: "https://example.com/3",
     },
   ];
@@ -198,10 +213,10 @@ test("source polling retains untagged thread replies and a partial thread cursor
     `#!/usr/bin/env bun
 const args=process.argv.slice(2);
 const channel={id:"C1",name:"work",is_im:false,is_mpim:false};
-const messages=[{ts:"1.1",user:"U1",text:"Please reply"},{ts:"1.2",user:"U2",text:"Here is the reply"},{ts:"1.3",user:"U2",text:"An unrelated message"}];
+const messages=[{type:"message",ts:"1.1",user:"U1",text:"Please reply"},{type:"message",ts:"1.2",user:"U2",text:"Here is the reply"},{type:"message",ts:"1.3",user:"U2",text:"An unrelated message"}];
 if(args[0]==="search") console.log(JSON.stringify({pages:1,matches:messages.map(m=>({...m,channel,permalink:"https://example.slack.com/archives/C1/p"+m.ts.replace(".","")+(m.ts==="1.2"?"?thread_ts=1.1":"")}))}));
 else if(args[1]==="get") {const arg=args.find(a=>a.startsWith("--permalink="));if(arg.includes("p12"))throw new Error("Reply parent must come from its link");const ts=arg.endsWith("p11")?"1.1":arg.endsWith("p12")?"1.2":"1.3";console.log(JSON.stringify({message:{ts,thread_ts:ts==="1.3"?"1.3":"1.1"}}));}
-else { const next=args.includes("--oldest=1.2"); console.log(JSON.stringify({messages:next?[{ts:"1.4",user:"U2",text:"And one more answer"}]:messages.slice(0,2),has_more:!next,next_oldest:next?"1.4":"1.2"})); }
+else { const next=args.includes("--oldest=1.2"); console.log(JSON.stringify({messages:next?[{type:"message",ts:"1.4",user:"U2",text:"And one more answer"}]:messages.slice(0,2),has_more:!next,next_oldest:next?"1.4":"1.2"})); }
 `
   );
   await chmod(binary, 0o755);
@@ -243,3 +258,53 @@ else { const next=args.includes("--oldest=1.2"); console.log(JSON.stringify({mes
   expect(second[0]!.chat).toBe("C1/1.1");
   expect(coverage.at(-1)).toBe(true);
 }, 15_000);
+
+test("the tools give messages in the form of the bot's copy: names, the text with names, the time, and the link", async () => {
+  const binary = join(directory, "form-slackcli");
+  await Bun.write(
+    binary,
+    `#!/usr/bin/env bun
+const args=process.argv.slice(2);
+if(args[0]==="users") console.log(JSON.stringify(args.at(-1)==="U1"?{id:"U1",name:"alice",real_name:"Alice Novak"}:{}));
+else console.log(JSON.stringify({channel_id:"C1",messages:[{type:"message",ts:"1731668700.000100",thread_ts:"1731668600.000200",user:"U2",text:"<@U1> the invoice is <https://pay.example/1|here> &amp; due",blocks:[{type:"rich_text"}]}],users:[{id:"U2",name:"bob",real_name:"Bob Smith"}]}));
+`
+  );
+  await chmod(binary, 0o755);
+  const session = JSON.stringify({
+    default_workspace: "T1",
+    workspaces: {
+      T1: {
+        workspace_id: "T1",
+        workspace_url: "https://acme.slack.com",
+        user_id: "U1",
+      },
+    },
+  });
+  const read = slackConnector(binary).tools.find(
+    (tool) => tool.name === "slack_read"
+  )!;
+  const answer = (await read.execute(
+    { channel: "C1" } as never,
+    session,
+    undefined
+  )) as { messages: Record<string, unknown>[] };
+  const [message] = answer.messages;
+  expect(message).toMatchObject({
+    user: "U2",
+    author: "Bob Smith",
+    mentions: ["U1"],
+    // The same text as the day file of the copy has; see the bot's test.
+    text: "@Alice Novak the invoice is [here](https://pay.example/1) & due",
+    time: slackTime("1731668700.000100"),
+    permalink: slackPermalink(
+      "https://acme.slack.com/",
+      "C1",
+      "1731668700.000100",
+      "1731668600.000200"
+    ),
+  });
+  expect(message!.permalink).toBe(
+    "https://acme.slack.com/archives/C1/p1731668700000100?thread_ts=1731668600.000200&cid=C1"
+  );
+  expect(message).not.toHaveProperty("blocks");
+});

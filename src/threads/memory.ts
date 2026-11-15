@@ -7,6 +7,7 @@ import {
   type Extension,
   hook,
 } from "@earendil-works/pi-durable";
+import { localTime } from "../platform/time.ts";
 
 /** The name the orchestrators' conversations select the memory extension by. */
 export const MEMORY_EXTENSION = "shadow.memory";
@@ -283,11 +284,7 @@ export class Memory {
         at + PAGE_CHARACTERS < message.text.length
           ? `\n[The text goes on: zoom(${id}, 1, ${at + PAGE_CHARACTERS}) gives the next part of its ${message.text.length} characters.]`
           : "";
-      const date = new Date(message.time)
-        .toISOString()
-        .slice(0, 16)
-        .replace("T", " ");
-      return `Message ${id}, ${date} UTC:\n${page}${rest}`;
+      return `Message ${id}, ${localTime(message.time)}:\n${page}${rest}`;
     }
     const half = size / 2;
     return [id, id + half]

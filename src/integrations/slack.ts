@@ -8,13 +8,26 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Static, type TSchema, Type } from "@earendil-works/pi-ai";
+import { localDay } from "../platform/time.ts";
 import type {
   Connector,
   ConnectorTool,
   WatchedItem,
   WatchSource,
 } from "./integrations.ts";
+import {
+  type SlackUser,
+  slackMarkdown,
+  slackMentions,
+  slackPermalink,
+  slackPersonName,
+  slackTime,
+} from "./slack-text.ts";
 
+/** A channel, group, or direct message ID; a user's ID starts with U or W. */
+const CHANNEL = /^[CDG][A-Z0-9]+$/;
+/** The most users that one answer looks up by name. */
+const LOOKUPS = 20;
 /** How long one slackcli command may take. */
 const RUN_MS = 60 * 1000;
 const LIMIT = Type.Optional(
@@ -41,7 +54,7 @@ export function slackConnector(binary: string): Connector {
     id: "slack",
     name: "Slack",
     description:
-      "The person's Slack: search messages, read channels, threads, unread messages, and canvases, find people, draft messages, and send messages after the person allows each one.",
+      "The Slack account of the person, not the Shadow bot: search messages, read channels, threads, unread messages, and canvases, find people, draft messages, and send messages as the person after they allow each one. It sees what the copy of the public channels does not, such as direct messages and private channels. The bot posts your answer to a request in Slack; never post it with these tools.",
     secretLabel: "cURL",
     guide: [
       "Open your Slack workspace in Chrome or Firefox, at [app.slack.com](https://app.slack.com).",
@@ -55,11 +68,17 @@ export function slackConnector(binary: string): Connector {
       if (tool !== "slack_search" && tool !== "slack_read") {
         return [];
       }
-      return readSlack(tool, args, result, slackOwnerId(await source.secret()));
+      return readSlack(
+        tool,
+        args,
+        result,
+        await slack.owner(await source.secret(), undefined)
+      );
     },
     tools: [
       slackTool(slack, {
         name: "slack_search",
+        messages: true,
         description:
           "Messages that match a query, newest first. The query takes Slack's search operators, such as `in:#sales` or `from:@ada`.",
         parameters: Type.Object({
@@ -96,6 +115,7 @@ export function slackConnector(binary: string): Connector {
       }),
       slackTool(slack, {
         name: "slack_read",
+        messages: true,
         description:
           "The newest messages of a channel or direct message, or of one thread. `oldest` and `latest` are Slack timestamps or Unix seconds.",
         parameters: Type.Object({
@@ -120,6 +140,7 @@ export function slackConnector(binary: string): Connector {
       }),
       slackTool(slack, {
         name: "slack_unread",
+        messages: true,
         description:
           "The conversations with unread messages, and those messages and thread replies.",
         parameters: Type.Object({
@@ -213,7 +234,7 @@ export function slackConnector(binary: string): Connector {
 /** The pages of each search that one watch reads at most. */
 const WATCH_PAGES = 5;
 
-/** A message as `slackcli search messages --json` gives it. */
+/** A message of `slackcli search messages --json`, in Shadow's form (`SlackCli.messages`). */
 export interface SlackMessage {
   readonly channel: {
     readonly id: string;
@@ -221,19 +242,29 @@ export interface SlackMessage {
     readonly is_im?: boolean;
     readonly is_mpim?: boolean;
   };
+  /** The author's user ID; a bot's message has none. */
   readonly user?: string;
-  readonly username?: string;
+  /** The author's name, as the bot's copy of the channels gives it. */
+  readonly author: string;
+  /** The user IDs that the text mentions as `@name`. */
+  readonly mentions: readonly string[];
   readonly ts: string;
   readonly thread_ts?: string;
   readonly text: string;
   readonly permalink: string;
 }
 
+/** The person whose Slack account it is: their user ID, and their name, as the text of messages has it. */
+interface SlackOwner {
+  readonly id: string;
+  readonly name: string;
+}
+
 function readSlack(
   tool: string,
   args: Record<string, unknown>,
   result: unknown,
-  ownerId: string
+  owner: SlackOwner
 ): WatchedItem[] {
   const response = result as {
     matches?: SlackMessage[];
@@ -266,13 +297,13 @@ function readSlack(
   });
   const followed = new Set(
     normalized
-      .filter((message) => personalSlackMessage(message, ownerId))
+      .filter((message) => personalSlackMessage(message, owner))
       .map(
         (message) => `${message.channel.id}/${message.thread_ts ?? message.ts}`
       )
   );
   return normalized.flatMap((message) => {
-    const item = observedSlackMessage(message, ownerId, followed);
+    const item = observedSlackMessage(message, owner, followed);
     return item && Number.isFinite(item.at) ? [item] : [];
   });
 }
@@ -297,7 +328,7 @@ async function watchSlack(
   source: WatchSource
 ): Promise<WatchedItem[]> {
   const session = await source.secret();
-  const ownerId = slackOwnerId(session);
+  const owner = await slack.owner(session, source.signal);
   const saved = (source.checkpoint?.value ?? {}) as {
     page?: number;
     complete?: boolean;
@@ -316,14 +347,14 @@ async function watchSlack(
     items: new Map(),
   };
   const through = saved.through ?? Date.now();
-  const query = `after:${new Date(source.since - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}`;
+  const query = `after:${localDay(source.since - 24 * 60 * 60 * 1000)}`;
   let page = saved.page ?? 1,
     complete = saved.complete ?? false;
   await readSlackMessages(
     slack,
     session,
     source,
-    ownerId,
+    owner,
     saved.pending ?? [],
     state
   );
@@ -335,7 +366,7 @@ async function watchSlack(
     !state.pending.length;
     scanned += 1
   ) {
-    const response = (await slack.run(
+    const response = (await slack.messages(
       session,
       [
         "search",
@@ -360,7 +391,7 @@ async function watchSlack(
       slack,
       session,
       source,
-      ownerId,
+      owner,
       response.matches ?? [],
       state
     );
@@ -370,7 +401,7 @@ async function watchSlack(
     }
     page += 1;
   }
-  await readSlackThreads(slack, session, source, ownerId, state);
+  await readSlackThreads(slack, session, source, owner, state);
   const resolved = Object.fromEntries(
     Object.entries(state.resolved).filter(
       ([, value]) => value.at >= source.since - 24 * 60 * 60 * 1000
@@ -401,39 +432,36 @@ async function watchSlack(
   return [...state.items.values()];
 }
 
-function slackOwnerId(session: string): string {
+/** The workspace that slackcli uses with a session: its default, or its only one. */
+function workspaceOf(session: string): SlackWorkspace | undefined {
   const credentials = JSON.parse(session) as SlackWorkspaces;
   const choices = Object.values(credentials.workspaces);
-  let workspace = choices.length === 1 ? choices[0] : undefined;
   if (credentials.default_workspace) {
-    workspace = credentials.workspaces[credentials.default_workspace];
+    return credentials.workspaces[credentials.default_workspace];
   }
-  if (!workspace?.user_id) {
-    throw new Error("The Slack session has no user identity");
-  }
-  return workspace.user_id;
+  return choices.length === 1 ? choices[0] : undefined;
 }
 
 async function readSlackMessages(
   slack: SlackCli,
   session: string,
   source: WatchSource,
-  ownerId: string,
+  owner: SlackOwner,
   messages: SlackMessage[],
   state: SlackWatchState
 ): Promise<void> {
   // Discover participation first, so an earlier untagged reply in this page is included too.
   const ordered = messages.toSorted(
     (a, b) =>
-      Number(personalSlackMessage(b, ownerId)) -
-      Number(personalSlackMessage(a, ownerId))
+      Number(personalSlackMessage(b, owner)) -
+      Number(personalSlackMessage(a, owner))
   );
   for (const message of ordered) {
     if (!message.text.trim() || Number(message.ts) * 1000 < source.since) {
       continue;
     }
     const direct = message.channel.is_im || message.channel.is_mpim;
-    const personal = personalSlackMessage(message, ownerId);
+    const personal = personalSlackMessage(message, owner);
     const followedChannel = [...state.roots].some((root) =>
       root.startsWith(`${message.channel.id}/`)
     );
@@ -446,14 +474,14 @@ async function readSlackMessages(
           slack,
           session,
           source,
-          ownerId,
+          owner,
           message,
           state
         );
     if (!resolved) {
       continue;
     }
-    const item = observedSlackMessage(resolved, ownerId, state.roots);
+    const item = observedSlackMessage(resolved, owner, state.roots);
     if (item) {
       state.items.set(item.id, item);
     }
@@ -464,7 +492,7 @@ async function resolveSlackMessage(
   slack: SlackCli,
   session: string,
   source: WatchSource,
-  ownerId: string,
+  owner: SlackOwner,
   message: SlackMessage,
   state: SlackWatchState
 ): Promise<SlackMessage | undefined> {
@@ -501,7 +529,7 @@ async function resolveSlackMessage(
     await Bun.sleep(1500);
   }
   const threadKey = `${message.channel.id}/${root}`;
-  if (personalSlackMessage(message, ownerId) && !state.roots.has(threadKey)) {
+  if (personalSlackMessage(message, owner) && !state.roots.has(threadKey)) {
     state.roots.add(threadKey);
     state.threads.push({
       message,
@@ -516,7 +544,7 @@ async function readSlackThreads(
   slack: SlackCli,
   session: string,
   source: WatchSource,
-  ownerId: string,
+  owner: SlackOwner,
   state: SlackWatchState
 ): Promise<void> {
   const pending: FollowedThread[] = [];
@@ -527,7 +555,7 @@ async function readSlackThreads(
     }
     state.remaining -= 1;
     try {
-      const response = (await slack.run(
+      const response = (await slack.messages(
         session,
         [
           "conversations",
@@ -540,7 +568,9 @@ async function readSlackThreads(
         ],
         source.signal
       )) as {
-        messages?: Omit<SlackMessage, "channel" | "permalink">[];
+        messages?: (Omit<SlackMessage, "channel" | "permalink"> & {
+          permalink?: string;
+        })[];
         has_more?: boolean;
         next_oldest?: string;
       };
@@ -549,10 +579,7 @@ async function readSlackThreads(
         if (Number(message.ts) * 1000 < source.since) {
           continue;
         }
-        const permalink = thread.message.permalink.replace(
-          /\/p\d+/,
-          `/p${message.ts.replace(".", "")}`
-        );
+        const permalink = replyLink(message, thread.message.permalink);
         state.resolved[`${thread.message.channel.id}/${message.ts}`] = {
           root: thread.root,
           at: Number(message.ts) * 1000,
@@ -564,7 +591,7 @@ async function readSlackThreads(
             permalink,
             thread_ts: thread.root,
           },
-          ownerId,
+          owner,
           state.roots
         );
         if (item) {
@@ -590,14 +617,28 @@ async function readSlackThreads(
   state.threads = pending;
 }
 
-function personalSlackMessage(message: SlackMessage, ownerId: string): boolean {
-  return message.user === ownerId || message.text.includes(`<@${ownerId}>`);
+/** The link of a reply; without the workspace's address in the session, from the link of its thread. */
+function replyLink(
+  reply: { readonly ts: string; readonly permalink?: string },
+  rootLink: string
+): string {
+  return (
+    reply.permalink ??
+    rootLink.replace(/\/p\d+/, `/p${reply.ts.replace(".", "")}`)
+  );
+}
+
+function personalSlackMessage(
+  message: SlackMessage,
+  owner: SlackOwner
+): boolean {
+  return message.user === owner.id || message.mentions.includes(owner.id);
 }
 
 /** The source selection rule, also used when replaying captured Slack records. */
 export function observedSlackMessage(
   message: SlackMessage,
-  ownerId: string,
+  owner: SlackOwner,
   followed: ReadonlySet<string>
 ): WatchedItem | null {
   const direct = message.channel.is_im === true;
@@ -608,7 +649,7 @@ export function observedSlackMessage(
       message.text.trim() &&
       (direct ||
         groupDirect ||
-        personalSlackMessage(message, ownerId) ||
+        personalSlackMessage(message, owner) ||
         followed.has(`${message.channel.id}/${root}`))
     )
   ) {
@@ -630,11 +671,10 @@ export function observedSlackMessage(
         : `${message.channel.id}/${root}`,
     chatName,
     group: !direct,
-    sender:
-      message.user === ownerId ? "" : (message.username ?? message.user ?? ""),
-    fromOwner: message.user === ownerId,
+    sender: message.user === owner.id ? "" : message.author,
+    fromOwner: message.user === owner.id,
     at: Math.floor(Number(message.ts) * 1000),
-    text: message.text.replaceAll(`<@${ownerId}>`, "@me"),
+    text: message.text.replaceAll(`@${owner.name}`, "@me"),
     url: message.permalink ?? null,
   };
 }
@@ -644,7 +684,99 @@ export function observedSlackMessage(
  * machine's user. The session is slackcli's `workspaces.json`, which Shadow keeps encrypted.
  */
 class SlackCli {
+  /**
+   * The names of users by workspace and user ID, as the bot's copy keeps them in `slack_user`.
+   * shortcut: a name that changes in Slack shows only after a restart, as in the copy; read it again when that matters.
+   */
+  private readonly names = new Map<string, string>();
+
   constructor(private readonly binary: string) {}
+
+  /**
+   * Runs a command that answers with messages, and gives them in Shadow's form, as the bot's copy has them: each
+   * message adds `author`, the name of its user or bot, `mentions`, the user IDs that its text mentions, `time`, and a
+   * `permalink`, and its text has names in place of Slack's markup. `blocks` go, as they repeat the text in markup.
+   */
+  async messages(
+    session: string,
+    command: readonly string[],
+    signal: AbortSignal | undefined
+  ): Promise<unknown> {
+    const answer = await this.run(session, command, signal);
+    const { found, listed } = messagesIn(answer);
+    const ids = found.flatMap(({ message }) => [
+      ...(typeof message.user === "string" ? [message.user] : []),
+      ...slackMentions(message.text as string),
+    ]);
+    const names = await this.namesOf(
+      session,
+      [...new Set(ids)],
+      listed,
+      signal
+    );
+    const workspaceUrl = workspaceOf(session)?.workspace_url;
+    for (const { message, channel } of found) {
+      inShadowForm(message, channel, names, workspaceUrl);
+    }
+    return answer;
+  }
+
+  /** The person whose session it is. */
+  async owner(
+    session: string,
+    signal: AbortSignal | undefined
+  ): Promise<SlackOwner> {
+    const id = workspaceOf(session)?.user_id;
+    if (!id) {
+      throw new Error("The Slack session has no user identity");
+    }
+    const names = await this.namesOf(session, [id], new Map(), signal);
+    return { id, name: names.get(id)! };
+  }
+
+  /**
+   * The names of users: known ones, then those that an answer lists, then users.info, as the bot's copy asks it, for
+   * at most `LOOKUPS` users; a user whose lookup fails or waits keeps their ID.
+   */
+  private async namesOf(
+    session: string,
+    ids: readonly string[],
+    listed: ReadonlyMap<string, string>,
+    signal: AbortSignal | undefined
+  ): Promise<Map<string, string>> {
+    const workspace = workspaceOf(session)?.workspace_id ?? "";
+    const names = new Map<string, string>();
+    const unknown: string[] = [];
+    for (const id of ids) {
+      const name = this.names.get(`${workspace}/${id}`) ?? listed.get(id);
+      if (name) {
+        names.set(id, name);
+        this.names.set(`${workspace}/${id}`, name);
+      } else {
+        unknown.push(id);
+      }
+    }
+    await Promise.all(
+      unknown.map(async (id, index) => {
+        let name = id;
+        if (index < LOOKUPS) {
+          try {
+            const user = (await this.run(
+              session,
+              ["users", "info", "--", id],
+              signal
+            )) as SlackUser;
+            name = slackPersonName(user, id);
+            this.names.set(`${workspace}/${id}`, name);
+          } catch {
+            // The ID stays; another answer looks the user up again.
+          }
+        }
+        names.set(id, name);
+      })
+    );
+    return names;
+  }
 
   /** Signs in with the cURL command of a request of Slack's web app; gives the session and the workspace's name. */
   signIn(curl: string): Promise<{ secret: string; label: string }> {
@@ -737,6 +869,101 @@ class SlackCli {
   }
 }
 
+interface FoundMessage {
+  readonly message: Record<string, unknown>;
+  readonly channel: string | undefined;
+}
+
+/** The messages of a slackcli answer, each with its channel, and the names of the users that the answer lists. */
+function messagesIn(answer: unknown): {
+  found: FoundMessage[];
+  listed: Map<string, string>;
+} {
+  const found: FoundMessage[] = [];
+  const listed = new Map<string, string>();
+  const walk = (value: unknown, channel: string | undefined): void => {
+    if (Array.isArray(value)) {
+      for (const each of value) {
+        walk(each, channel);
+      }
+      return;
+    }
+    if (!value || typeof value !== "object") {
+      return;
+    }
+    const object = value as Record<string, unknown>;
+    const here = channelOf(object) ?? channel;
+    if (
+      object.type === "message" &&
+      typeof object.ts === "string" &&
+      typeof object.text === "string"
+    ) {
+      found.push({ message: object, channel: here });
+    }
+    if (Array.isArray(object.users)) {
+      listNames(object.users as SlackUser[], listed);
+    }
+    for (const child of Object.values(object)) {
+      walk(child, here);
+    }
+  };
+  walk(answer, undefined);
+  return { found, listed };
+}
+
+/** The names of the users that an answer lists; it is the name that users.info gives only with a real name. */
+function listNames(
+  users: readonly SlackUser[],
+  listed: Map<string, string>
+): void {
+  for (const user of users) {
+    if (user.id && user.real_name) {
+      listed.set(user.id, slackPersonName(user, user.id));
+    }
+  }
+}
+
+/** The channel of a message, a conversation, or a thread of an answer. */
+function channelOf(object: Record<string, unknown>): string | undefined {
+  return [
+    (object.channel as { id?: unknown } | undefined)?.id,
+    object.channel_id,
+    object.id,
+  ].find(
+    (candidate): candidate is string =>
+      typeof candidate === "string" && CHANNEL.test(candidate)
+  );
+}
+
+/** Puts a message of an answer in Shadow's form; see `SlackCli.messages`. */
+function inShadowForm(
+  message: Record<string, unknown>,
+  channel: string | undefined,
+  names: ReadonlyMap<string, string>,
+  workspaceUrl: string | undefined
+): void {
+  const ts = message.ts as string;
+  const text = message.text as string;
+  const bot = message.bot_profile as { name?: string } | undefined;
+  // A bot's message has no user, as in the copy.
+  message.author =
+    typeof message.user === "string"
+      ? names.get(message.user)
+      : String(message.username ?? bot?.name ?? "Slack");
+  message.mentions = slackMentions(text);
+  message.text = slackMarkdown(text, names);
+  message.time = slackTime(ts);
+  if (typeof message.permalink !== "string" && workspaceUrl && channel) {
+    message.permalink = slackPermalink(
+      workspaceUrl,
+      channel,
+      ts,
+      message.thread_ts as string | undefined
+    );
+  }
+  Reflect.deleteProperty(message, "blocks");
+}
+
 /** Where slackcli keeps its sessions in a home. */
 function workspacesOf(home: string): string {
   return join(home, ".config", "slackcli", "workspaces.json");
@@ -744,10 +971,14 @@ function workspacesOf(home: string): string {
 
 interface SlackWorkspaces {
   readonly default_workspace?: string;
-  readonly workspaces: Record<
-    string,
-    { readonly workspace_name?: string; readonly user_id?: string }
-  >;
+  readonly workspaces: Record<string, SlackWorkspace>;
+}
+interface SlackWorkspace {
+  readonly workspace_id?: string;
+  readonly workspace_name?: string;
+  /** Such as https://acme.slack.com, for a session of the browser. */
+  readonly workspace_url?: string;
+  readonly user_id?: string;
 }
 
 /**
@@ -787,6 +1018,8 @@ function slackTool<Parameters extends TSchema>(
     description: string;
     parameters: Parameters;
     command: (args: Static<Parameters>) => string[];
+    /** Whether it answers with messages, which it gives in Shadow's form. */
+    messages?: boolean;
   }
 ): ConnectorTool<Parameters> {
   return {
@@ -794,7 +1027,9 @@ function slackTool<Parameters extends TSchema>(
     description: tool.description,
     parameters: tool.parameters,
     execute: (args, session, signal) =>
-      slack.run(session, tool.command(args), signal),
+      tool.messages
+        ? slack.messages(session, tool.command(args), signal)
+        : slack.run(session, tool.command(args), signal),
   };
 }
 

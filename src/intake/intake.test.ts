@@ -1,17 +1,14 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { HttpRouter } from "effect/http";
 import { startTestApp, type TestApp, until } from "../../test/harness.ts";
 import { routes } from "../app/http.ts";
 import type { WatchedItem } from "../integrations/integrations.ts";
+import { afterCalendarDays } from "../platform/time.ts";
 import type { LearnedItem, ThreadMessages } from "../threads/threads.ts";
 import { intakeApiRoutes } from "./api.ts";
-import {
-  type Assessment,
-  type AssessmentInput,
-  afterCalendarDays,
-} from "./assess.ts";
+import type { Assessment, AssessmentInput } from "./assess.ts";
 import { Audit } from "./audit.ts";
 import { saveCheck } from "./future.ts";
 import {
@@ -25,6 +22,15 @@ import {
   type MorningPlan,
 } from "./morning.ts";
 import { IntakeRecall } from "./recall.ts";
+
+// Intake reads times on the company's clock, which the tests set to Prague's for its daylight-saving changes.
+const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+beforeAll(() => {
+  process.env.TZ = "Europe/Prague";
+});
+afterAll(() => {
+  process.env.TZ = zone;
+});
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
