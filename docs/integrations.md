@@ -56,8 +56,8 @@ under it, and its attachments as files of the channel that it links. Then each n
 comes as an event; the days they change are written again within a minute, only when their text changes, and older
 versions stay. A new connection, as after a restart, reads only what came since the last event; a connection that
 Slack refreshes reads nothing, as the events go to the new one. Once a day Shadow reads the last 36 hours again, for an
-event that never came. Events, readings, and the day files with the briefs each wait only for their own kind of work,
-so a mention never waits for the first reading of a large workspace, which can take hours. Search finds the files, and
+event that never came. Events, readings, day files, and briefs each wait only for their own kind of work, so a mention
+never waits for the first reading of a large workspace, which can take hours, and a day file never waits for a brief. Search finds the files, and
 the brief of a channel quiet for 10 minutes reads each new or changed message once.
 
 ### Shadow in Slack

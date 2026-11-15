@@ -184,22 +184,37 @@ export class SlackHistory {
     }
   }
 
-  /**
-   * Writes each day that changed, and gives each channel quiet for `SLACK_BRIEF_QUIET_MS`, or every channel with
-   * `now` past them all, the messages that its brief has not read. A channel that a reading keeps now waits for it.
-   * Events and readings run beside it, so it runs one at a time.
-   */
+  /** Writes each day that changed, then gives the briefs what they have not read, as `writeDays` and `brief` do. */
   async flush(companyId: string, now = Date.now()): Promise<void> {
-    const channels = this.slackChannels(companyId).filter(
-      (channel) => !this.reading.has(`${companyId}:${channel.slackId}`)
+    await this.writeChangedDays(companyId);
+    await this.brief(companyId, now);
+  }
+
+  /** Writes each day that changed; a channel that a reading keeps now waits for it. Runs one at a time. */
+  writeChangedDays(companyId: string): Promise<void> {
+    return this.eachChannel(companyId, (channel) =>
+      this.writeDays(companyId, channel)
     );
-    // Every day file first, as a brief waits for the model; a channel that fails leaves the others to go on.
+  }
+
+  /**
+   * Gives each channel quiet for `SLACK_BRIEF_QUIET_MS`, or every channel with `now` past them all, the messages that
+   * its brief has not read. It waits for the model, so it runs beside `writeChangedDays`, one at a time.
+   */
+  brief(companyId: string, now = Date.now()): Promise<void> {
+    return this.eachChannel(companyId, (channel) =>
+      this.briefWhenQuiet(companyId, channel, now)
+    );
+  }
+
+  /** Runs `step` for each channel that no reading keeps now; a channel that fails leaves the others to go on. */
+  private async eachChannel(
+    companyId: string,
+    step: (channel: SlackChannelOf) => Promise<void>
+  ): Promise<void> {
     const failures: unknown[] = [];
-    for (const step of [
-      (channel: SlackChannelOf) => this.writeDays(companyId, channel),
-      (channel: SlackChannelOf) => this.briefWhenQuiet(companyId, channel, now),
-    ]) {
-      for (const channel of channels) {
+    for (const channel of this.slackChannels(companyId)) {
+      if (!this.reading.has(`${companyId}:${channel.slackId}`)) {
         await step(channel).catch((error: unknown) => failures.push(error));
       }
     }

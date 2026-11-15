@@ -108,11 +108,12 @@ export interface SlackBotOptions {
 }
 
 /**
- * The three kinds of work of a company, each one task after the other: `live` keeps each event and gives it to the
- * module that talks in Slack, `reading` reads Slack's history, which can take hours in a large workspace, and `flush`
- * writes the changed days and the briefs, which wait for the model. So an event never waits for a reading or a brief.
+ * The kinds of work of a company, each one task after the other: `live` keeps each event and gives it to the module
+ * that talks in Slack, `reading` reads Slack's history, which can take hours in a large workspace, `days` writes the
+ * changed day files, and `brief` gives the briefs their new messages, which waits for the model. So an event never
+ * waits for a reading, and a day file never waits for a brief.
  */
-type Lane = "live" | "reading" | "flush";
+type Lane = "live" | "reading" | "days" | "brief";
 
 /**
  * The company's Slack bot, which listens: an admin gives Shadow its bot token (`xoxb-…`) and its app token (`xapp-…`),
@@ -493,10 +494,15 @@ export class SlackBot {
     });
   }
 
-  /** Writes the changed days and the briefs that wait, unless a flush already waits or runs. */
+  /** Writes the changed days, and gives the briefs what waits, unless that work already waits or runs. */
   private flushSoon(companyId: string): void {
-    if (!this.busy(companyId, "flush")) {
-      this.enqueue(companyId, "flush", () => this.history.flush(companyId));
+    if (!this.busy(companyId, "days")) {
+      this.enqueue(companyId, "days", () =>
+        this.history.writeChangedDays(companyId)
+      );
+    }
+    if (!this.busy(companyId, "brief")) {
+      this.enqueue(companyId, "brief", () => this.history.brief(companyId));
     }
   }
 
@@ -614,7 +620,7 @@ export class SlackBot {
   }
 }
 
-const LANES: readonly Lane[] = ["live", "reading", "flush"];
+const LANES: readonly Lane[] = ["live", "reading", "days", "brief"];
 
 interface SlackApiChannel {
   id: string;
