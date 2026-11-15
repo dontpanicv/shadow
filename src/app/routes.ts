@@ -7,6 +7,7 @@ import { feedbackApiRoutes } from "../feedback/api.ts";
 import { intakeApiRoutes } from "../intake/api.ts";
 import { integrationApiRoutes } from "../integrations/api.ts";
 import { llmApiRoutes } from "../llm/api.ts";
+import { mcpApiRoutes } from "../mcp/api.ts";
 import { notificationApiRoutes } from "../notifications/api.ts";
 import { HttpError } from "../platform/errors.ts";
 import { routineApiRoutes } from "../routines/api.ts";
@@ -23,6 +24,7 @@ const APP_PATHS = [
   "/login",
   "/settings",
   "/companies/new",
+  "/consent",
   "/c/*",
 ] as const;
 
@@ -48,6 +50,7 @@ export const allRoutes: readonly Route[] = [
   ...agendaApiRoutes,
   ...feedbackApiRoutes,
   ...slackApiRoutes,
+  ...mcpApiRoutes,
   [
     "POST",
     "/api/v1/server/restart",

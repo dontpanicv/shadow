@@ -4,6 +4,7 @@ import {
   createRouter,
   Outlet,
 } from "@tanstack/react-router";
+import { ConsentPage } from "../accounts/consent.tsx";
 import { LoginPage } from "../accounts/login.tsx";
 import { SuggestionCards, UpcomingPage } from "../agenda/page.tsx";
 import { CompanyHome, Home, OrchestratorPage } from "../companies/pages.tsx";
@@ -50,6 +51,12 @@ const login = createRoute({
     error: text(search.error_description) ?? text(search.error),
   }),
   component: LoginPage,
+});
+
+const consent = createRoute({
+  getParentRoute: () => root,
+  path: "/consent",
+  component: ConsentPage,
 });
 
 const signedIn = createRoute({
@@ -145,6 +152,7 @@ const companySettings = createRoute({
 export const router = createRouter({
   routeTree: root.addChildren([
     login,
+    consent,
     signedIn.addChildren([
       home,
       settings,

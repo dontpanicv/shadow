@@ -2,13 +2,6 @@ import { Type } from "@earendil-works/pi-ai";
 import { type ConversationId, defineTool } from "@earendil-works/pi-durable";
 import type { Artifact, ArtifactCompanies, Artifacts } from "./artifacts.ts";
 
-const RUNTIME = `An artifact is one self-contained HTML page: a schedule, an invite, an explainer, a poll, a sign-up list, a game for the kids, or any small app. People open its link on their phones, often from Slack or mail, so make it mobile-first and good-looking. Put the CSS and JavaScript inline; scripts, styles, and fonts may also come from cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, and Google Fonts. Pictures must be in the page: SVG, CSS, emoji, or data: URLs. The page cannot use fetch or reach other sites: it keeps data only through the \`shadow\` object, which is ready when \`await shadow.ready\` returns. Every call returns a promise.
-- \`shadow.me\`: { id, name, member } of the person looking. Members have their name; a public visitor's name is null until \`await shadow.setName(name)\`, so ask for a name before you save anything that needs one.
-- \`shadow.mine.get(key)\`, \`.set(key, value)\`, \`.delete(key)\`, \`.list(prefix?)\`: data of the person looking, such as their vote, their score, or their progress. Only they can change it. \`list\` gives [{ key, value, updatedAt }].
-- \`shadow.everyone.list(prefix?)\`: the data of every visitor, read-only, as [{ visitor, name, key, value, updatedAt }]. Use it for results, a leaderboard, or who brings what.
-- \`shadow.shared.get/set/delete/list\`: one copy for everyone, such as game levels or a closed flag. Everyone reads it; only members and you change it.
-Values are JSON, up to 64 KB each. A write replaces the value. Keep each person's answers in \`mine\`, so that people never overwrite each other. There are no live updates: to show what others do, call \`everyone.list\` again every few seconds. A call fails with an Error whose message says why; show it.`;
-
 const idParameter = Type.String({ description: "The artifact id" });
 
 /** The tools that let agents make artifacts in their channel, change them, and read the data their visitors keep. */
@@ -67,7 +60,7 @@ export function artifactTools(
   return [
     defineTool({
       name: "artifacts_create",
-      description: `Make an artifact and give its link to the people. It belongs to the channel of this thread, or to another channel you name, and stays there after the thread is settled; the orchestrator's belong to the company. Before you make one, look for an artifact to change with artifacts_list or recall. Never use an artifact to keep facts or a list; save files and say them in your answer. ${RUNTIME}`,
+      description: `Make an artifact and give its link to the people. It belongs to the channel of this thread, or to another channel you name, and stays there after the thread is settled; the orchestrator's belong to the company. Before you make one, look for an artifact to change with artifacts_list or recall. Never use an artifact to keep facts or a list; save files and say them in your answer. ${artifacts.runtime}`,
       parameters: Type.Object({
         title: Type.String({
           description: "A short title; link previews show it",

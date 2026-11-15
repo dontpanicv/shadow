@@ -25,6 +25,8 @@ export function LoginPage() {
       body: JSON.stringify({
         provider: "google",
         callbackURL: localPath(next) ?? "/",
+        // After Google, better-auth goes on with an agent's OAuth sign-in, to the consent page.
+        ...(oauthQuery("/login") ? { oauth_query: oauthQuery("/login") } : {}),
       }),
     });
     const body = (await response.json().catch(() => null)) as {
@@ -57,6 +59,20 @@ export function LoginPage() {
       </form>
     </main>
   );
+}
+
+/** The address the server sent the page for, before the router reads it and writes it again. */
+const loaded = {
+  // Tests load the module without a page.
+  path: globalThis.location?.pathname,
+  search: globalThis.location?.search.slice(1) ?? "",
+};
+
+/** The signed query of an agent's OAuth sign-in that opened `path`, which better-auth checks. */
+export function oauthQuery(path: string): string | undefined {
+  return loaded.path === path && new URLSearchParams(loaded.search).has("sig")
+    ? loaded.search
+    : undefined;
 }
 
 /** Signs out on this device and forgets what the app saved. When Shadow does not confirm it, the page stays. */

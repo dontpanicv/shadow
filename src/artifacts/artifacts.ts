@@ -9,6 +9,14 @@ import { artifactTools } from "./tools.ts";
 
 export type Visibility = "public" | "members";
 
+/** How an artifact's page works, for the agents that write one. */
+const RUNTIME = `An artifact is one self-contained HTML page: a schedule, an invite, an explainer, a poll, a sign-up list, a game for the kids, or any small app. People open its link on their phones, often from Slack or mail, so make it mobile-first and good-looking. Put the CSS and JavaScript inline; scripts, styles, and fonts may also come from cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, and Google Fonts. Pictures must be in the page: SVG, CSS, emoji, or data: URLs. The page cannot use fetch or reach other sites: it keeps data only through the \`shadow\` object, which is ready when \`await shadow.ready\` returns. Every call returns a promise.
+- \`shadow.me\`: { id, name, member } of the person looking. Members have their name; a public visitor's name is null until \`await shadow.setName(name)\`, so ask for a name before you save anything that needs one.
+- \`shadow.mine.get(key)\`, \`.set(key, value)\`, \`.delete(key)\`, \`.list(prefix?)\`: data of the person looking, such as their vote, their score, or their progress. Only they can change it. \`list\` gives [{ key, value, updatedAt }].
+- \`shadow.everyone.list(prefix?)\`: the data of every visitor, read-only, as [{ visitor, name, key, value, updatedAt }]. Use it for results, a leaderboard, or who brings what.
+- \`shadow.shared.get/set/delete/list\`: one copy for everyone, such as game levels or a closed flag. Everyone reads it; only members and you change it.
+Values are JSON, up to 64 KB each. A write replaces the value. Keep each person's answers in \`mine\`, so that people never overwrite each other. There are no live updates: to show what others do, call \`everyone.list\` again every few seconds. A call fails with an Error whose message says why; show it.`;
+
 /**
  * A page or small app that an agent made. It belongs to a channel, or to the company when `channelId` is null, as the
  * orchestrator's do, and stays when its thread is settled. Its HTML runs in a sandbox and keeps data through `shadow`.
@@ -172,6 +180,8 @@ const ARTIFACT_COLUMNS =
 export class Artifacts {
   /** The longest HTML of an artifact, in UTF-16 units. */
   readonly maxHtml = MAX_HTML;
+  /** How an artifact's page works, for the agents and MCP clients that write one. */
+  readonly runtime = RUNTIME;
 
   constructor(
     private readonly database: Database,

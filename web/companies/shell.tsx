@@ -14,6 +14,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { ConnectAgentButton } from "../accounts/connect-agent.tsx";
 import { request } from "../app/api.ts";
 import type { Channel, ThreadSummary } from "../app/types.ts";
 import {
@@ -198,6 +199,7 @@ function Sidebar({ companyId }: { companyId: string | undefined }) {
         <div className="sidebar-channels" />
       )}
       <nav className="nav sidebar-footer">
+        <ConnectAgentButton />
         {company?.role === "admin" ? (
           <Link
             activeOptions={{ exact: true }}

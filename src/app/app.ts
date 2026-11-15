@@ -52,6 +52,7 @@ export interface App {
   readonly feedback: FeedbackReports;
   readonly slack: SlackSurface;
   readonly sources: Sources;
+  readonly computer: Computer;
 }
 
 /** Everything the modules need from this machine, checked before Shadow starts. */
@@ -282,6 +283,7 @@ export async function createApp(
     feedback,
     slack,
     sources,
+    computer,
   };
 }
 

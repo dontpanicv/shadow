@@ -85,6 +85,9 @@ addresses, or code and data from employers or clients.
   uses the `all…` reads.
 - An orchestrator (`ThreadRef.ownerId` set) belongs to one member: every route, tool, search, and memory that reads
   threads leaves out the orchestrators of other people.
+- People's own agents, such as Claude Code or Codex, reach Shadow only through `/mcp` (`src/mcp/`), with an OAuth
+  access token of better-auth's OAuth provider, never a session token. Each MCP tool acts as that person, through the
+  same service calls and realm as the JSON routes; `ask` reaches everything else through their orchestrator.
 - Serve HTML that an agent or a person wrote only from `/a/:id/content`, with its `sandbox` content policy; never run
   it on Shadow's origin.
 
@@ -105,7 +108,7 @@ addresses, or code and data from employers or clients.
 ## Modules
 
 - `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `artifacts`,
-  `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`) holds one domain: its service, routes, and tests. `src/platform/`
+  `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`, `mcp`) holds one domain: its service, routes, and tests. `src/platform/`
   is shared code that knows no domain; `src/app/` composes the services and holds the route helpers.
 - A module uses only the modules before it in that list, through their `<module>.ts` file, or their `pages.ts` from
   routes. A module reads only the tables it owns. `test/architecture.test.ts` enforces these rules;

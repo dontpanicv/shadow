@@ -40,6 +40,8 @@ src/
 ├── reminders/               One-time company reminders and their agent tools
 ├── agenda/                  Each person's Upcoming, and the automations Shadow suggests to them
 ├── feedback/                What agents report about Shadow itself, for the server's owner
+├── slack/                   Shadow in the company's Slack
+└── mcp/                     The MCP server that people's own agents, such as Claude Code, sign in to as them
 ```
 
 Each module has the same files, when it needs them:
@@ -67,7 +69,7 @@ module uses only `app/`, `ui/`, and the modules before it, and never the server'
 
 1. **One direction.** The modules are in this order: `accounts`, `companies`, `llm`, `integrations`, `artifacts`,
    `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`,
-   `feedback`, `slack`. A module uses only the modules before it. `platform/` uses no module.
+   `feedback`, `slack`, `mcp`. A module uses only the modules before it. `platform/` uses no module.
 2. **Entry files only.** A service uses another module only through its `<module>.ts`. Routes and pages can also
    use another module's `pages.ts`. Only `app/routes.ts` imports `web.ts` and `api.ts`.
    Biome's `noBarrelFile` stays on, so an entry file holds real code and does not re-export.

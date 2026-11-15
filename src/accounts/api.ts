@@ -1,8 +1,18 @@
-import type { Route } from "../app/http.ts";
+import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider";
+import type { Route, RouteInput } from "../app/http.ts";
 import { emailAllowed } from "../platform/auth.ts";
 
-/** better-auth itself. */
+/**
+ * better-auth itself, and the metadata of its OAuth server at the root, where MCP clients look for it: with the
+ * issuer's path `/api/auth` after it (RFC 8414), and without it for clients that leave the path out.
+ */
 export const accountApiRoutes: readonly Route[] = [
+  ["GET", "/.well-known/oauth-authorization-server", authServerMetadata],
+  [
+    "GET",
+    "/.well-known/oauth-authorization-server/api/auth",
+    authServerMetadata,
+  ],
   [
     "*",
     "/api/auth/*",
@@ -22,3 +32,7 @@ export const accountApiRoutes: readonly Route[] = [
     },
   ],
 ];
+
+function authServerMetadata({ app, request }: RouteInput): Promise<Response> {
+  return oauthProviderAuthServerMetadata(app.auth)(request);
+}

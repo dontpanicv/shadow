@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
@@ -11,6 +12,12 @@ export interface AuthOptions {
   readonly allowedEmails: readonly string[];
   readonly google: { readonly clientId: string; readonly clientSecret: string };
 }
+
+/** The address of Shadow's MCP server, which people's own agents use with an OAuth sign-in. */
+export const mcpUrl = (baseUrl: string) => `${baseUrl}/mcp`;
+
+/** The scopes that an MCP client asks for: who the person is, and a refresh token so it stays signed in. */
+export const MCP_SCOPES = ["openid", "profile", "email", "offline_access"];
 
 export interface User {
   readonly id: string;
@@ -61,6 +68,20 @@ export function createAuth(options: AuthOptions) {
         },
       }),
       bearer(),
+      // People's own agents, such as Claude Code or Codex, register themselves and sign in as the person.
+      oauthProvider({
+        loginPage: "/login",
+        consentPage: "/consent",
+        scopes: MCP_SCOPES,
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        // Native clients wait on a loopback address and do not always say that they are native.
+        clientRegistrationDefaultApplicationType: "infer",
+        resources: [mcpUrl(options.baseUrl)],
+        clientRegistrationDefaultResources: [mcpUrl(options.baseUrl)],
+        // Access tokens are opaque and checked on each call, so a token stops when its grant goes.
+        disableJwtPlugin: true,
+      }),
     ],
     databaseHooks: {
       user: { create: { before: async (user) => requireAllowed(user.email) } },
@@ -115,4 +136,29 @@ export async function currentUser(
     name: session.user.name,
     email: session.user.email,
   };
+}
+
+/**
+ * The person of an MCP request, from the OAuth access token that their own agent got when they signed in. A token of
+ * an email that left `allowedEmails` signs in nobody. Session tokens do not count here.
+ */
+export async function oauthUser(
+  auth: Auth,
+  request: Request,
+  allowedEmails: readonly string[]
+): Promise<User | undefined> {
+  if (!request.headers.get("authorization")?.startsWith("Bearer ")) {
+    return undefined;
+  }
+  const info = await auth.api
+    .oauth2UserInfo({ headers: request.headers })
+    .catch(() => null);
+  const user =
+    typeof info?.sub === "string"
+      ? await (await auth.$context).internalAdapter.findUserById(info.sub)
+      : null;
+  if (!(user && emailAllowed(allowedEmails, user.email))) {
+    return undefined;
+  }
+  return { id: user.id, name: user.name, email: user.email };
 }

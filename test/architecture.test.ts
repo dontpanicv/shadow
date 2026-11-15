@@ -22,6 +22,7 @@ const MODULES = [
   "intake",
   "feedback",
   "slack",
+  "mcp",
 ];
 /** The files of a module that route or render; the other files are its service. */
 const UI_FILES = new Set(["web.ts", "api.ts", "pages.ts"]);

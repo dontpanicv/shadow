@@ -55,7 +55,7 @@
     },
     {
       // TypeScript checks imports; Biome cannot read the `./*` exports of the MCP SDK
-      "includes": ["src/integrations/**"],
+      "includes": ["src/integrations/**", "src/mcp/**"],
       "linter": {
         "rules": { "correctness": { "noUnresolvedImports": "off" } }
       }
