@@ -48,22 +48,28 @@ The channels that every member sees copy the public channels of the company's Sl
 admin connects the bot once in Company settings:
 
 1. At [api.slack.com/apps](https://api.slack.com/apps), make an app from scratch in the company's Slack workspace.
-2. Under **OAuth & Permissions**, add the bot token scopes `channels:read`, `channels:history`, `channels:join`,
-   `files:read`, and `users:read`, and install the app to the Slack workspace. Keep it an app of your own workspace:
-   Slack gives such an app the normal limits on reading history.
-3. Copy the **Bot User OAuth Token** (`xoxb-…`), and paste it under **Slack** in Company settings.
+   Keep it an app of your own workspace: Slack gives such an app the normal limits on reading history.
+2. Under **Socket Mode**, turn it on, and make an app-level token with the scope `connections:write` (`xapp-…`).
+   Shadow opens the connection to Slack, so it needs no public address.
+3. Under **OAuth & Permissions**, add the bot token scopes `channels:read`, `channels:history`, `channels:join`,
+   `files:read`, and `users:read`.
+4. Under **Event Subscriptions**, turn events on, and subscribe to the bot events `message.channels`,
+   `channel_created`, `channel_rename`, `channel_archive`, `channel_unarchive`, and `channel_deleted`.
+5. Install the app to the Slack workspace, copy the **Bot User OAuth Token** (`xoxb-…`), and paste both tokens under
+   **Slack** in Company settings.
 
-Shadow checks the token with Slack, keeps it encrypted, and lists the public channels at once and then every 5
-minutes. A new Slack channel gets its channel, with Slack's purpose as its summary; a renamed one is renamed; one that
-Slack archives or deletes is hidden with its threads until Slack has it again. Slack's general channel takes over
-`#general`, where each person's own thread lives.
+Shadow checks both tokens with Slack, keeps them encrypted, lists the public channels at once, and then listens: Slack
+sends each event over the connection, and nothing reads Slack on a timer. A new Slack channel gets its channel, with
+Slack's purpose as its summary; a renamed one is renamed; one that Slack archives or deletes is hidden with its threads
+until Slack has it again. Slack's general channel takes over `#general`, where each person's own thread lives.
 
-A new channel also gets the last 30 days of its Slack channel at once, and every 15 minutes what happened since. The bot
-joins each public channel, and keeps each day as one Markdown file of the channel, `slack-YYYY-MM-DD.md`: each
-message with its author and time, the replies of its thread under it, and its attachments as files of the channel that
-it links. Each sync reads the last 30 days again, so a new reply to an older message, an edit, and a delete all reach
-the files; a day file is written again only when its text changes, and older versions stay. Search finds the files, and
-the channel's brief reads each new or changed message once. Each person's own Slack account below stays theirs.
+A new channel also gets the last 30 days of its Slack channel at once: the bot joins it, and keeps each day as one
+Markdown file of the channel, `slack-YYYY-MM-DD.md`: each message with its author and time, the replies of its thread
+under it, and its attachments as files of the channel that it links. Then each new message, reply, edit, and delete
+comes as an event; the days they change are written again within a minute, only when their text changes, and older
+versions stay. A new connection, as after a restart, reads only what came since the last event, and once a day Shadow
+reads the last 30 days again, for an event that never came. Search finds the files, and the brief of a channel quiet
+for 10 minutes reads each new or changed message once. Each person's own Slack account below stays theirs.
 
 Agents search and read messages, channels, threads, unread messages, and canvases, find people, make drafts that you
 send from Slack, and send messages after you allow each one. Each command runs in a home of its own, which Shadow

@@ -7,6 +7,7 @@ import type {
   SlackHistoryMessage,
   SlackHistoryPorts,
 } from "./slack-history.ts";
+import type { SocketLike } from "./slack-socket.ts";
 
 let shadow: TestApp;
 let alice: User;
@@ -26,9 +27,27 @@ beforeAll(async () => {
 
 afterAll(() => shadow.close());
 
+/** A Socket Mode connection that a test speaks for Slack on; it keeps what Shadow sends back. */
+class FakeSocket implements SocketLike {
+  onmessage: ((message: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  readonly sent: string[] = [];
+  closed = false;
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    this.closed = true;
+    this.onclose?.();
+  }
+}
+
 /**
  * A Slack whose channels, messages, and replies a test changes. It answers the methods that the bot calls, lists the
- * channels in two pages, and answers `not_in_channel` until the bot joins a channel.
+ * channels in two pages, answers `not_in_channel` until the bot joins a channel, and speaks Socket Mode on the newest
+ * connection.
  */
 function fakeSlack() {
   const slack = {
@@ -39,15 +58,39 @@ function fakeSlack() {
     users: { U1: "Alice Novak", U2: "Bob Smith" } as Record<string, string>,
     joined: new Set<string>(),
     token: "xoxb-good",
-    calls: [] as string[],
+    appToken: "xapp-good",
+    /** Each call, with its query. */
+    calls: [] as { method: string; query: URLSearchParams }[],
+    sockets: [] as FakeSocket[],
+    connectTo: (_url: string) => {
+      const socket = new FakeSocket();
+      slack.sockets.push(socket);
+      return socket;
+    },
+    /** Sends an envelope on the newest connection. */
+    send(envelope: Record<string, unknown>) {
+      slack.sockets.at(-1)!.onmessage!({
+        data: JSON.stringify({ envelope_id: crypto.randomUUID(), ...envelope }),
+      });
+    },
+    event(event: Record<string, unknown>) {
+      slack.send({ type: "events_api", payload: { event } });
+    },
     fetch: (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(String(input));
-      slack.calls.push(url.pathname);
-      const headers = new Headers(init?.headers);
-      if (headers.get("authorization") !== `Bearer ${slack.token}`) {
+      const query = url.searchParams;
+      slack.calls.push({ method: url.pathname, query });
+      const auth = new Headers(init?.headers).get("authorization");
+      if (url.pathname === "/api/apps.connections.open") {
+        return Response.json(
+          auth === `Bearer ${slack.appToken}`
+            ? { ok: true, url: "wss://socket.slack.example/1" }
+            : { ok: false, error: "invalid_auth" }
+        );
+      }
+      if (auth !== `Bearer ${slack.token}`) {
         return Response.json({ ok: false, error: "invalid_auth" });
       }
-      const query = url.searchParams;
       const channel = query.get("channel") ?? "";
       switch (url.pathname) {
         case "/api/auth.test":
@@ -131,17 +174,23 @@ async function setup() {
     shadow.app.companies,
     (companyId) => changed.push(companyId),
     ports,
-    slack.fetch
+    { fetch: slack.fetch, connectTo: slack.connectTo }
   );
   const names = () =>
     shadow.app.companies
       .channels(company.id, alice)
       .map((channel) => [channel.name, channel.ownerId === null]);
-  return { slack, bot, company, changed, names, writes, briefed };
+  /** The bot's connection opens, and it does what a new connection does. */
+  const connected = async () => {
+    await Bun.sleep(0);
+    slack.send({ type: "hello" });
+    await bot.flush(company.id);
+  };
+  return { slack, bot, company, changed, names, writes, briefed, connected };
 }
 
-test("an admin connects the Slack bot, and its public channels become the channels that every member sees", async () => {
-  const { slack, bot, company, changed, names } = await setup();
+test("an admin connects the Slack bot with its two tokens, and its public channels become the channels that every member sees", async () => {
+  const { slack, bot, company, changed, names, connected } = await setup();
   slack.channels = [
     { id: "C1", name: "company", is_general: true, purpose: { value: "" } },
     { id: "C2", name: "sales", purpose: { value: "Deals and leads" } },
@@ -153,19 +202,29 @@ test("an admin connects the Slack bot, and its public channels become the channe
   expect(() => bot.status(company.id, bob)).toThrow(
     "Only an admin can do this"
   );
-  await expect(bot.connect(company.id, bob, "xoxb-good")).rejects.toThrow(
-    "Only an admin can do this"
-  );
-  await expect(bot.connect(company.id, alice, "xoxp-user")).rejects.toThrow(
-    "Use the bot token of the Slack app"
-  );
-  await expect(bot.connect(company.id, alice, "xoxb-bad")).rejects.toThrow(
-    "Slack refused the token: invalid_auth"
-  );
+  await expect(
+    bot.connect(company.id, bob, "xoxb-good", "xapp-good")
+  ).rejects.toThrow("Only an admin can do this");
+  await expect(
+    bot.connect(company.id, alice, "xoxp-user", "xapp-good")
+  ).rejects.toThrow("Use the bot token of the Slack app");
+  await expect(
+    bot.connect(company.id, alice, "xoxb-good", "xoxb-good")
+  ).rejects.toThrow("Use the app-level token of the Slack app");
+  await expect(
+    bot.connect(company.id, alice, "xoxb-bad", "xapp-good")
+  ).rejects.toThrow("Slack refused the bot token: invalid_auth");
+  await expect(
+    bot.connect(company.id, alice, "xoxb-good", "xapp-bad")
+  ).rejects.toThrow("Slack refused the app token: invalid_auth");
 
-  const status = await bot.connect(company.id, alice, " xoxb-good ");
+  const status = await bot.connect(
+    company.id,
+    alice,
+    " xoxb-good ",
+    "xapp-good"
+  );
   expect(status).toMatchObject({ connected: true, team: "Acme", error: null });
-  expect(status.syncedAt).toBeNumber();
   // Slack's general channel takes over #general, where the orchestrators live.
   expect(names()).toEqual([
     ["company", true],
@@ -178,24 +237,32 @@ test("an admin connects the Slack bot, and its public channels become the channe
     channels.find((channel) => channel.name === "sales-slack")
   ).toMatchObject({ slackId: "C2", summary: "Deals and leads" });
   expect(changed).toEqual([company.id]);
-  // The token stays encrypted on the server.
+  // The tokens stay encrypted on the server.
   const row = shadow.app.database
-    .query("SELECT token FROM slack_bot WHERE company_id = ?")
-    .get(company.id) as { token: Uint8Array };
+    .query("SELECT token, app_token FROM slack_bot WHERE company_id = ?")
+    .get(company.id) as { token: Uint8Array; app_token: Uint8Array };
   expect(Buffer.from(row.token).toString()).not.toContain("xoxb-good");
+  expect(Buffer.from(row.app_token).toString()).not.toContain("xapp-good");
 
+  await connected();
+  expect(bot.status(company.id, alice)).toMatchObject({ listening: true });
+  // Shadow acknowledges each envelope, as Socket Mode asks.
+  expect(JSON.parse(slack.sockets.at(-1)!.sent[0]!)).toHaveProperty(
+    "envelope_id"
+  );
   // Nothing changed in Slack, so nothing changes here.
-  await bot.sync(company.id);
   expect(changed).toHaveLength(1);
+  await bot.close();
 });
 
-test("the sync follows a renamed Slack channel, hides an archived one with its threads, and brings it back", async () => {
-  const { slack, bot, company, names } = await setup();
+test("a channel event lists the channels again: a rename follows, an archived channel hides with its threads, and it comes back", async () => {
+  const { slack, bot, company, names, connected } = await setup();
   slack.channels = [
     { id: "C1", name: "general", is_general: true },
     { id: "C2", name: "support" },
   ];
-  await bot.connect(company.id, alice, "xoxb-good");
+  await bot.connect(company.id, alice, "xoxb-good", "xapp-good");
+  await connected();
   const support = shadow.app.companies
     .channels(company.id, alice)
     .find((channel) => channel.name === "support")!;
@@ -210,19 +277,22 @@ test("the sync follows a renamed Slack channel, hides an archived one with its t
     { id: "C1", name: "general", is_general: true },
     { id: "C2", name: "customer-care" },
   ];
-  await bot.sync(company.id);
+  slack.event({ type: "channel_rename", channel: { id: "C2" } });
+  await bot.flush(company.id);
   expect(names()).toEqual([
     ["general", true],
     ["customer-care", true],
   ]);
 
   slack.channels = [{ id: "C1", name: "general", is_general: true }];
-  await bot.sync(company.id);
+  slack.event({ type: "channel_archive", channel: "C2" });
+  await bot.flush(company.id);
   expect(names()).toEqual([["general", true]]);
   expect(() => shadow.app.companies.thread(thread.id, alice)).toThrow();
 
   slack.channels.push({ id: "C2", name: "customer-care" });
-  await bot.sync(company.id);
+  slack.event({ type: "channel_unarchive", channel: "C2" });
+  await bot.flush(company.id);
   expect(names()).toEqual([
     ["general", true],
     ["customer-care", true],
@@ -230,44 +300,43 @@ test("the sync follows a renamed Slack channel, hides an archived one with its t
   expect(shadow.app.companies.thread(thread.id, alice).channelId).toBe(
     support.id
   );
+  await bot.close();
 });
 
-test("a failed sync keeps the error until a sync works, and a disconnect keeps the channels", async () => {
-  const { slack, bot, company, names } = await setup();
+test("a failed reading keeps its error until one works, and a disconnect stops listening and keeps the channels", async () => {
+  const { slack, bot, company, names, connected } = await setup();
   slack.channels = [
     { id: "C1", name: "general", is_general: true },
     { id: "C2", name: "design" },
   ];
-  await bot.connect(company.id, alice, "xoxb-good");
+  await bot.connect(company.id, alice, "xoxb-good", "xapp-good");
+  await connected();
   slack.token = "xoxb-rotated";
-  await bot.sync(company.id);
+  slack.event({ type: "channel_created", channel: { id: "C3" } });
+  await bot.flush(company.id);
   expect(bot.status(company.id, alice)).toMatchObject({
     connected: true,
     error: "invalid_auth",
   });
-  expect(names()).toEqual([
-    ["general", true],
-    ["design", true],
-  ]);
 
   bot.disconnect(company.id, alice);
+  expect(slack.sockets.at(-1)!.closed).toBe(true);
   expect(bot.status(company.id, alice)).toEqual({
     connected: false,
+    listening: false,
     team: null,
     syncedAt: null,
     error: null,
   });
-  const calls = slack.calls.length;
-  await bot.sync(company.id);
-  expect(slack.calls).toHaveLength(calls);
   expect(names()).toEqual([
     ["general", true],
     ["design", true],
   ]);
+  await bot.close();
 });
 
-test("a new channel gets the last 30 days of its Slack channel in day files, and each sync brings what changed", async () => {
-  const { slack, bot, company, writes, briefed } = await setup();
+test("a new channel gets its last 30 days at once, events bring each change, and a new connection reads only what it missed", async () => {
+  const { slack, bot, company, writes, briefed, connected } = await setup();
   const now = Date.now() / 1000;
   const ts = (secondsAgo: number) => (now - secondsAgo).toFixed(6);
   const day = (stamp: string) =>
@@ -309,7 +378,8 @@ test("a new channel gets the last 30 days of its Slack channel in day files, and
     { ts: paid, thread_ts: invoice, user: "U1", text: "Paid" },
   ];
 
-  await bot.connect(company.id, alice, "xoxb-good");
+  await bot.connect(company.id, alice, "xoxb-good", "xapp-good");
+  await connected();
   expect(bot.status(company.id, alice).error).toBeNull();
   expect(slack.joined.has("C2")).toBe(true);
   const support = shadow.app.companies
@@ -327,9 +397,7 @@ test("a new channel gets the last 30 days of its Slack channel in day files, and
   const pdf = await fileText("invoice.pdf");
   expect(pdf.text).toBe("bytes of /F1/invoice.pdf");
   const invoiceDay = await fileText(`slack-${day(invoice)}.md`);
-  expect(invoiceDay.text).toContain(
-    "**Bob Smith**, " // the author, then the local time
-  );
+  expect(invoiceDay.text).toContain("**Bob Smith**, ");
   expect(invoiceDay.text).toContain(
     "@Alice Novak the invoice is [here](https://pay.example/1) & due"
   );
@@ -358,14 +426,35 @@ test("a new channel gets the last 30 days of its Slack channel in day files, and
     name: `slack-${day(invoice)}.md`,
   });
 
-  // An edit, a new reply to an older thread, and a deleted reply.
-  slack.messages.C2[0]!.text = "Shipping tomorrow";
+  // Events: an edit, a new reply to an older thread, and a deleted reply. Slack is not read for them.
+  const reads = slack.calls.filter(
+    (call) => call.method === "/api/conversations.history"
+  ).length;
+  slack.event({
+    type: "message",
+    subtype: "message_changed",
+    channel: "C2",
+    message: { ts: shipping, user: "U1", text: "Shipping tomorrow" },
+  });
   const late = ts(60);
-  slack.messages.C2[2]!.latest_reply = late;
-  slack.replies[invoice] = [
-    { ts: late, thread_ts: invoice, user: "U2", text: "Receipt sent" },
-  ];
-  await bot.sync(company.id, true);
+  slack.event({
+    type: "message",
+    channel: "C2",
+    ts: late,
+    thread_ts: invoice,
+    user: "U2",
+    text: "Receipt sent",
+  });
+  slack.event({
+    type: "message",
+    subtype: "message_deleted",
+    channel: "C2",
+    deleted_ts: paid,
+  });
+  await bot.flush(company.id);
+  expect(
+    slack.calls.filter((call) => call.method === "/api/conversations.history")
+  ).toHaveLength(reads);
   const changedDay = await fileText(`slack-${day(invoice)}.md`);
   expect(changedDay.id).toBe(invoiceDay.id);
   expect(changedDay.text).toContain("> Receipt sent");
@@ -379,8 +468,23 @@ test("a new channel gets the last 30 days of its Slack channel in day files, and
     "Receipt sent",
   ]);
 
+  // Slack refreshes the connection; a message came between the two. The new one reads only from the last event.
+  slack.messages.C2.unshift({ ts: ts(1), user: "U1", text: "Back online" });
+  slack.send({ type: "disconnect", reason: "refresh_requested" });
+  await connected();
+  const history = slack.calls.filter(
+    (call) => call.method === "/api/conversations.history"
+  );
+  expect(Number(history.at(-1)!.query.get("oldest"))).toBeGreaterThan(
+    now - 3600
+  );
+  expect((await fileText(`slack-${day(ts(1))}.md`)).text).toContain(
+    "Back online"
+  );
+
   // Nothing changed: no file is written again, and the brief reads nothing.
   const before = [writes.length, briefed.length];
-  await bot.sync(company.id, true);
+  await bot.flush(company.id);
   expect([writes.length, briefed.length]).toEqual(before);
+  await bot.close();
 });

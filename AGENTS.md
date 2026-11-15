@@ -59,11 +59,12 @@ addresses, or code and data from employers or clients.
   clients, reads agent feedback, and restarts Shadow. Check with `Companies.requireAdmin` (`403`), or `isAdmin` for
   what all companies share. The first of `allowed_emails` starts the company as its first admin; one admin stays.
 - The channels that every member sees copy the public channels of the company's Slack: only the Slack bot
-  (`src/integrations/slack-bot.ts`, every 5 minutes, through `Companies.syncSlackChannels`) makes, renames, or hides
-  them, by `channel.slack_id`. People and agents make, rename, and merge away only private channels. Every 15
-  minutes `src/integrations/slack-history.ts` copies the last 30 days of each such Slack channel into one
-  `slack-YYYY-MM-DD.md` file of the channel per day, with attachments as files, and gives new or changed messages to
-  the channel's brief (`Threads.briefFromSlack`).
+  (`src/integrations/slack-bot.ts`, through `Companies.syncSlackChannels`) makes, renames, or hides them, by
+  `channel.slack_id`. People and agents make, rename, and merge away only private channels. The bot listens over
+  Socket Mode (`slack-socket.ts`); never poll Slack on a timer. `slack-history.ts` keeps each message event, reads a
+  new channel's last 30 days once, a gap from the last event, and the whole window once a day, writes one
+  `slack-YYYY-MM-DD.md` file of the channel per changed day each minute, and gives a channel quiet for 10 minutes to
+  its brief (`Threads.briefFromSlack`).
 - Shadow has one company; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
   of it belong to one member. Every read of channels, threads, files, artifacts, routines, reminders, search, or memory
   names the `Realm` it serves: the person, or for an agent's turn `Threads.realm`, which is its thread's realm, or in a

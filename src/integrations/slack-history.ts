@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import type { Channel, Companies } from "../companies/companies.ts";
 import type { SlackApi } from "./slack-api.ts";
 
-/** How far back the history of a Slack channel reaches, and the window that every sync reads again. */
+/** How far back the history of a Slack channel reaches when Shadow first reads it, and the daily check reads again. */
 export const SLACK_HISTORY_DAYS = 30;
+/** How long a channel is quiet before its brief reads its new messages: one brief for each burst of conversation. */
+export const SLACK_BRIEF_QUIET_MS = 10 * 60_000;
 /** The largest attachment that Shadow keeps; a larger one stays a name with a link to Slack. */
 const LARGEST_FILE = 50 * 1024 * 1024;
 /** Messages that say only who came or left. */
@@ -38,6 +40,17 @@ export interface SlackHistoryPorts {
   ) => Promise<void>;
 }
 
+/** A message event of the Slack Events API, as Socket Mode gives it. */
+export interface SlackMessageEvent {
+  readonly type: "message";
+  readonly channel: string;
+  readonly subtype?: string;
+  readonly ts?: string;
+  readonly deleted_ts?: string;
+  readonly message?: SlackMessage;
+  readonly previous_message?: SlackMessage;
+}
+
 interface SlackMessage {
   ts: string;
   thread_ts?: string;
@@ -68,14 +81,16 @@ interface StoredMessage {
   day: string;
 }
 type Kept = { id: string; name: string } | { name: string; link: string };
+type SlackChannelOf = Channel & { slackId: string };
 
 /**
- * The history of the public Slack channels in their channels' files. The first sync of a channel reads its last
- * `SLACK_HISTORY_DAYS` days, with thread replies and attachments; each later sync reads that window again, so new
- * messages, new replies to older ones, edits, and deletes all arrive. Each day of a channel is one Markdown file,
- * `slack-YYYY-MM-DD.md`, with the replies of a thread under the message that started it, and each attachment is a file
- * of the channel that its message links. The messages stay in `slack_message`, so a file is written again only when
- * its text changes, and the brief of the channel reads each new or changed message once.
+ * The history of the public Slack channels in their channels' files. Slack's events bring each new message, reply,
+ * edit, delete, and attachment as it happens (`event`); a channel that Shadow has not read yet gets its last
+ * `SLACK_HISTORY_DAYS` days at once, and a gap, such as a restart, is read from the time it began (`catchUp`). The
+ * messages stay in `slack_message`, and each change marks its day in `slack_day` to write again, so nothing waits only
+ * in memory. `flush` writes each marked day as one Markdown file, `slack-YYYY-MM-DD.md`, with the replies of a thread
+ * under the message that started it and each attachment a file of the channel that its message links, and gives the
+ * brief of a quiet channel the messages that it has not read.
  */
 export class SlackHistory {
   constructor(
@@ -85,14 +100,17 @@ export class SlackHistory {
     private readonly ports: SlackHistoryPorts
   ) {}
 
-  /** Syncs the channels that copy a Slack channel; with `onlyNew`, only those that never synced. */
-  async sync(
+  /**
+   * Reads what Slack has that the events may have missed: the last `SLACK_HISTORY_DAYS` days of each channel that
+   * Shadow has not read yet, and of the others the messages from `since`, in ms, or the whole window without it.
+   */
+  async catchUp(
     companyId: string,
     token: string,
-    onlyNew: boolean,
+    since: number | null,
     signal?: AbortSignal
   ): Promise<void> {
-    const synced = new Set(
+    const read = new Set(
       (
         this.database
           .query(
@@ -101,25 +119,75 @@ export class SlackHistory {
           .all(companyId) as { id: string }[]
       ).map((row) => row.id)
     );
-    for (const channel of this.companies.channelsIn(companyId, null)) {
+    const window = Date.now() - SLACK_HISTORY_DAYS * 86_400_000;
+    for (const channel of this.slackChannels(companyId)) {
       if (signal?.aborted) {
         return;
       }
-      if (channel.slackId && !(onlyNew && synced.has(channel.slackId))) {
-        await this.syncChannel(
-          companyId,
-          channel as Channel & { slackId: string },
-          token,
-          signal
-        );
-      }
+      const from =
+        read.has(channel.slackId) && since !== null
+          ? Math.max(since, window)
+          : window;
+      await this.read(companyId, channel, token, from, signal);
     }
   }
 
-  private async syncChannel(
+  /** Keeps what one message event changed: a new message or reply, an edit, or a delete. */
+  async event(
     companyId: string,
-    channel: Channel & { slackId: string },
     token: string,
+    event: SlackMessageEvent,
+    signal?: AbortSignal
+  ): Promise<void> {
+    const channel = this.slackChannels(companyId).find(
+      (candidate) => candidate.slackId === event.channel
+    );
+    if (!channel || SKIPPED.has(event.subtype ?? "")) {
+      return;
+    }
+    if (event.subtype === "message_deleted" && event.deleted_ts) {
+      this.remove(companyId, channel.slackId, event.deleted_ts);
+      return;
+    }
+    const message =
+      event.subtype === "message_changed"
+        ? event.message
+        : (event as unknown as SlackMessage);
+    if (message?.ts && !SKIPPED.has(message.subtype ?? "")) {
+      await this.keep(companyId, channel, token, message, signal);
+    }
+  }
+
+  /**
+   * Writes each day that changed, and gives each channel quiet for `SLACK_BRIEF_QUIET_MS`, or every channel with
+   * `now` past them all, the messages that its brief has not read.
+   */
+  async flush(companyId: string, now = Date.now()): Promise<void> {
+    for (const channel of this.slackChannels(companyId)) {
+      const days = this.database
+        .query(
+          "SELECT day FROM slack_day WHERE company_id = ? AND slack_channel_id = ? AND dirty = 1"
+        )
+        .all(companyId, channel.slackId) as { day: string }[];
+      for (const { day } of days) {
+        await this.writeDay(companyId, channel, day);
+      }
+      await this.briefWhenQuiet(companyId, channel, now);
+    }
+  }
+
+  private slackChannels(companyId: string): SlackChannelOf[] {
+    return this.companies
+      .channelsIn(companyId, null)
+      .filter((channel): channel is SlackChannelOf => channel.slackId !== null);
+  }
+
+  /** Keeps the messages of a channel from `from`, in ms, with their threads, and marks what Slack deleted since. */
+  private async read(
+    companyId: string,
+    channel: SlackChannelOf,
+    token: string,
+    from: number,
     signal?: AbortSignal
   ): Promise<void> {
     const call = (method: string, params: Record<string, string>) =>
@@ -129,13 +197,9 @@ export class SlackHistory {
         { channel: channel.slackId, ...params },
         signal
       );
-    const oldest = String(
-      (Date.now() - SLACK_HISTORY_DAYS * 86_400_000) / 1000
-    );
-    const listed = await this.history(call, oldest);
-    const changedDays = new Set<string>();
+    const oldest = String(from / 1000);
     const seen = new Set<string>();
-    for (const message of listed) {
+    for (const message of await this.history(call, oldest)) {
       // A reply also sent to the channel comes with its thread.
       if (
         SKIPPED.has(message.subtype ?? "") ||
@@ -144,50 +208,23 @@ export class SlackHistory {
         continue;
       }
       seen.add(message.ts);
-      const day = dayOf(message.ts);
       const before = this.stored(companyId, channel.slackId, message.ts);
-      await this.keep(
-        companyId,
-        channel,
-        token,
-        message,
-        day,
-        changedDays,
-        signal
-      );
+      await this.keep(companyId, channel, token, message, signal);
       if (
         (message.reply_count ?? 0) > 0 &&
         (!before ||
           (message.latest_reply ?? "") >
             this.latestReply(companyId, channel.slackId, message.ts))
       ) {
-        await this.replies(
-          call,
-          companyId,
-          channel,
-          token,
-          message,
-          day,
-          changedDays,
-          signal
-        );
+        await this.replies(call, companyId, channel, token, message, signal);
       }
     }
     // A message of the window that Slack no longer lists was deleted there.
     for (const gone of this.storedSince(companyId, channel.slackId, oldest)) {
       if (!seen.has(gone.ts)) {
         this.remove(companyId, channel.slackId, gone.ts);
-        changedDays.add(gone.day);
       }
     }
-    const files = new Map<string, { id: string; name: string }>();
-    for (const day of changedDays) {
-      const file = await this.writeDay(companyId, channel, day);
-      if (file) {
-        files.set(day, file);
-      }
-    }
-    await this.brief(companyId, channel, files);
     this.database
       .query(
         "INSERT INTO slack_history (company_id, slack_channel_id, synced_at) VALUES (?, ?, ?) ON CONFLICT (company_id, slack_channel_id) DO UPDATE SET synced_at = excluded.synced_at"
@@ -195,7 +232,7 @@ export class SlackHistory {
       .run(companyId, channel.slackId, Date.now());
   }
 
-  /** The messages of the window, newest first, page by page; the bot joins a channel that it is not in yet. */
+  /** The messages from `oldest`, newest first, page by page; the bot joins a channel that it is not in yet. */
   private async history(
     call: (
       method: string,
@@ -225,18 +262,16 @@ export class SlackHistory {
     return messages;
   }
 
-  /** Every reply of a thread, which goes in the day file of the message that started it. */
+  /** Every reply of a thread; Slack's reply list is whole, so a stored reply it no longer has was deleted. */
   private async replies(
     call: (
       method: string,
       params: Record<string, string>
     ) => Promise<Record<string, unknown>>,
     companyId: string,
-    channel: Channel & { slackId: string },
+    channel: SlackChannelOf,
     token: string,
     parent: SlackMessage,
-    day: string,
-    changedDays: Set<string>,
     signal?: AbortSignal
   ): Promise<void> {
     const seen = new Set<string>();
@@ -250,15 +285,7 @@ export class SlackHistory {
       for (const reply of page.messages as SlackMessage[]) {
         if (reply.ts !== parent.ts) {
           seen.add(reply.ts);
-          await this.keep(
-            companyId,
-            channel,
-            token,
-            reply,
-            day,
-            changedDays,
-            signal
-          );
+          await this.keep(companyId, channel, token, reply, signal);
         }
       }
       cursor = nextCursor(page);
@@ -271,19 +298,19 @@ export class SlackHistory {
     for (const { ts } of stored) {
       if (!seen.has(ts)) {
         this.remove(companyId, channel.slackId, ts);
-        changedDays.add(day);
       }
     }
   }
 
-  /** Stores a new or changed message with its attachments; a change makes its day file and the brief read it again. */
+  /**
+   * Stores a new or changed message with its attachments, and marks its day to write again. A reply belongs to the day
+   * of the message that started its thread.
+   */
   private async keep(
     companyId: string,
-    channel: Channel & { slackId: string },
+    channel: SlackChannelOf,
     token: string,
     message: SlackMessage,
-    day: string,
-    changedDays: Set<string>,
     signal?: AbortSignal
   ): Promise<void> {
     const author = await this.author(companyId, token, message, signal);
@@ -298,6 +325,7 @@ export class SlackHistory {
       message.thread_ts && message.thread_ts !== message.ts
         ? message.thread_ts
         : null;
+    const day = dayOf(thread ?? message.ts);
     const before = this.stored(companyId, channel.slackId, message.ts);
     const filesJson = JSON.stringify(files);
     if (
@@ -308,21 +336,47 @@ export class SlackHistory {
     ) {
       return;
     }
+    this.database.transaction(() => {
+      this.database
+        .query(
+          "INSERT INTO slack_message (company_id, slack_channel_id, ts, thread_ts, author, text, files, day, briefed, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL) ON CONFLICT (company_id, slack_channel_id, ts) DO UPDATE SET thread_ts = excluded.thread_ts, author = excluded.author, text = excluded.text, files = excluded.files, day = excluded.day, briefed = 0, deleted_at = NULL"
+        )
+        .run(
+          companyId,
+          channel.slackId,
+          message.ts,
+          thread,
+          author,
+          text,
+          filesJson,
+          day
+        );
+      this.markDay(companyId, channel.slackId, day);
+    })();
+  }
+
+  /** Marks a message deleted, with the replies of a thread it started, and its day to write again. */
+  private remove(companyId: string, slackChannelId: string, ts: string): void {
+    const days = this.database
+      .query(
+        "UPDATE slack_message SET deleted_at = ? WHERE company_id = ? AND slack_channel_id = ? AND (ts = ? OR thread_ts = ?) AND deleted_at IS NULL RETURNING day"
+      )
+      .all(Date.now(), companyId, slackChannelId, ts, ts) as { day: string }[];
+    for (const { day } of days) {
+      this.markDay(companyId, slackChannelId, day);
+    }
+  }
+
+  private markDay(
+    companyId: string,
+    slackChannelId: string,
+    day: string
+  ): void {
     this.database
       .query(
-        "INSERT INTO slack_message (company_id, slack_channel_id, ts, thread_ts, author, text, files, day, briefed, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL) ON CONFLICT (company_id, slack_channel_id, ts) DO UPDATE SET thread_ts = excluded.thread_ts, author = excluded.author, text = excluded.text, files = excluded.files, day = excluded.day, briefed = 0, deleted_at = NULL"
+        "INSERT INTO slack_day (company_id, slack_channel_id, day, file_id, content_hash, dirty) VALUES (?, ?, ?, NULL, '', 1) ON CONFLICT (company_id, slack_channel_id, day) DO UPDATE SET dirty = 1"
       )
-      .run(
-        companyId,
-        channel.slackId,
-        message.ts,
-        thread,
-        author,
-        text,
-        filesJson,
-        day
-      );
-    changedDays.add(day);
+      .run(companyId, slackChannelId, day);
   }
 
   /** An attachment as a file of the channel, downloaded once; a large or hidden one stays a link to Slack. */
@@ -363,12 +417,12 @@ export class SlackHistory {
     return { id: kept.id, name: kept.name };
   }
 
-  /** Writes the Markdown file of one day of a channel again when its text changed; null when nothing changed. */
+  /** Writes the Markdown file of one day of a channel when its text changed, or deletes it when no message is left. */
   private async writeDay(
     companyId: string,
-    channel: Channel & { slackId: string },
+    channel: SlackChannelOf,
     day: string
-  ): Promise<{ id: string; name: string } | null> {
+  ): Promise<void> {
     const messages = this.database
       .query(
         "SELECT ts, thread_ts, author, text, files, day FROM slack_message WHERE company_id = ? AND slack_channel_id = ? AND day = ? AND deleted_at IS NULL ORDER BY CAST(ts AS REAL)"
@@ -382,47 +436,41 @@ export class SlackHistory {
       fileId: string | null;
       hash: string;
     } | null;
+    let fileId = before?.fileId ?? null;
+    let hash = before?.hash ?? "";
     if (messages.length === 0) {
-      if (before?.fileId) {
-        await this.ports.deleteFile(companyId, before.fileId);
+      if (fileId) {
+        await this.ports.deleteFile(companyId, fileId);
       }
-      this.saveDay(companyId, channel.slackId, day, null, "");
-      return null;
+      fileId = null;
+      hash = "";
+    } else {
+      const text = dayText(channel.name, day, messages);
+      const next = createHash("sha256").update(text).digest("hex");
+      if (!(fileId && hash === next)) {
+        fileId = (
+          await this.ports.writeFile(
+            companyId,
+            channel.id,
+            new File([text], `slack-${day}.md`, { type: "text/markdown" }),
+            fileId ?? undefined
+          )
+        ).id;
+        hash = next;
+      }
     }
-    const text = dayText(channel.name, day, messages);
-    const hash = createHash("sha256").update(text).digest("hex");
-    if (before?.fileId && before.hash === hash) {
-      return null;
-    }
-    const file = await this.ports.writeFile(
-      companyId,
-      channel.id,
-      new File([text], `slack-${day}.md`, { type: "text/markdown" }),
-      before?.fileId ?? undefined
-    );
-    this.saveDay(companyId, channel.slackId, day, file.id, hash);
-    return file;
-  }
-
-  private saveDay(
-    companyId: string,
-    slackChannelId: string,
-    day: string,
-    fileId: string | null,
-    hash: string
-  ): void {
     this.database
       .query(
-        "INSERT INTO slack_day (company_id, slack_channel_id, day, file_id, content_hash) VALUES (?, ?, ?, ?, ?) ON CONFLICT (company_id, slack_channel_id, day) DO UPDATE SET file_id = excluded.file_id, content_hash = excluded.content_hash"
+        "UPDATE slack_day SET file_id = ?, content_hash = ?, dirty = 0 WHERE company_id = ? AND slack_channel_id = ? AND day = ?"
       )
-      .run(companyId, slackChannelId, day, fileId, hash);
+      .run(fileId, hash, companyId, channel.slackId, day);
   }
 
-  /** Gives the brief of the channel the messages that it has not read, each with the link of its day file. */
-  private async brief(
+  /** Gives the brief of a quiet channel the messages that it has not read, each with the link of its day file. */
+  private async briefWhenQuiet(
     companyId: string,
-    channel: Channel & { slackId: string },
-    written: ReadonlyMap<string, { id: string; name: string }>
+    channel: SlackChannelOf,
+    now: number
   ): Promise<void> {
     const rows = this.database
       .query(
@@ -435,17 +483,15 @@ export class SlackHistory {
       day: string;
       fileId: string;
     }[];
-    if (rows.length === 0) {
+    const newest = Number(rows.at(-1)?.ts ?? 0) * 1000;
+    if (rows.length === 0 || now - newest < SLACK_BRIEF_QUIET_MS) {
       return;
     }
     await this.ports.brief(
       companyId,
       channel.id,
       rows.map((row) => ({
-        file: {
-          id: row.fileId,
-          name: written.get(row.day)?.name ?? `slack-${row.day}.md`,
-        },
+        file: { id: row.fileId, name: `slack-${row.day}.md` },
         author: row.author,
         text: row.text,
         time: Number(row.ts) * 1000,
@@ -577,15 +623,6 @@ export class SlackHistory {
         "SELECT ts, day FROM slack_message WHERE company_id = ? AND slack_channel_id = ? AND thread_ts IS NULL AND deleted_at IS NULL AND CAST(ts AS REAL) >= CAST(? AS REAL)"
       )
       .all(companyId, slackChannelId, oldest) as { ts: string; day: string }[];
-  }
-
-  /** Marks a message deleted, and the replies of a thread with the message that started it. */
-  private remove(companyId: string, slackChannelId: string, ts: string): void {
-    this.database
-      .query(
-        "UPDATE slack_message SET deleted_at = ? WHERE company_id = ? AND slack_channel_id = ? AND (ts = ? OR thread_ts = ?) AND deleted_at IS NULL"
-      )
-      .run(Date.now(), companyId, slackChannelId, ts, ts);
   }
 }
 

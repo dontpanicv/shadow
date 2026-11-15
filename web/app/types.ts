@@ -42,9 +42,10 @@ export interface Channel {
   readonly threads: readonly ThreadSummary[];
 }
 
-/** The Slack bot of a company, which copies the public channels of Slack every 5 minutes; for its admins. */
+/** The Slack bot of a company, which listens to its Slack over Socket Mode; for its admins. */
 export interface SlackBotStatus {
   readonly connected: boolean;
+  readonly listening: boolean;
   readonly team: string | null;
   readonly syncedAt: number | null;
   readonly error: string | null;

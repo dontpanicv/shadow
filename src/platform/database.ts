@@ -721,6 +721,13 @@ const migrations = [
     name TEXT NOT NULL,
     PRIMARY KEY (company_id, user_id)
   );`,
+  // integrations: the Slack bot listens over Socket Mode with its encrypted `app_token`. `listened_at` is the time of
+  // its last event, from which a new connection reads what it missed, and `checked_at` the last daily check of the
+  // whole window. A day of a Slack channel is `dirty` until its file is written again.
+  `ALTER TABLE slack_bot ADD COLUMN app_token BLOB;
+  ALTER TABLE slack_bot ADD COLUMN listened_at INTEGER;
+  ALTER TABLE slack_bot ADD COLUMN checked_at INTEGER;
+  ALTER TABLE slack_day ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 export function openDatabase(path: string): Database {

@@ -34,10 +34,10 @@ server, with no cloud service between your company and its data.
   <img alt="A person asks their shadow, their own endless thread, or writes in a channel thread. The shadow sends work to channel threads with send_to_thread, and the answers come back to it. Channel threads run code mode scripts. When a thread goes quiet, the channel brief is written again, the learning loop updates the learned facts, and the messages go into the search index. The brief, the learned facts, and the company facts become prompt sections that every turn reads." src="docs/assets/conversation-flow-light.svg">
 </picture>
 
-- **The company has one company.** Its channels that every member sees, such as `#general`, `#sales`, or
-  `#hiring`, copy the public channels of the company's Slack: the Slack bot lists them every 5 minutes, makes a new
-  one, follows a rename, and hides one that Slack archives, with its threads, until Slack has it again. Nobody makes
-  them by hand. Each person also makes private channels of their own.
+- **Channels come from Slack.** The channels that every member sees, such as `#general`, `#sales`, or `#hiring`,
+  copy the public channels of the company's Slack. The Slack bot listens to Slack's events over Socket Mode: a new
+  channel appears, a rename follows, and a channel that Slack archives hides with its threads until Slack has it
+  again. Nobody makes them by hand. Each person also makes private channels of their own.
 - **Admins and users.** An admin runs Company settings: the Slack bot, the people and their roles, the company
   facts, and what Shadow learned. Admins also choose the model and read the agents' feedback. A user works in Shadow.
   The first of `allowed_emails` is the first admin.
@@ -50,9 +50,11 @@ server, with no cloud service between your company and its data.
   that workers send back. Their internal work stays in their threads. Old messages fold into the tree, and the agent
   opens a summary again with `zoom` when it needs the details.
 - **The channel's Slack history.** A new channel gets the last 30 days of its Slack channel at once: one Markdown
-  file for each day, with thread replies under their message and attachments as files. Every 15 minutes it gets new
-  messages, new replies, edits, and deletes. Search and the agents find all of it.
-- **The channel brief.** When a thread is quiet for 10 minutes, or settled, and after new Slack messages, the cheap
+  file for each day, with thread replies under their message and attachments as files. Then each new message, reply,
+  edit, and delete arrives as an event, and the changed day files are written within a minute. Nothing reads Slack on
+  a timer: after a restart Shadow reads only what it missed, and once a day it checks the last 30 days again. Search
+  and the agents find all of it.
+- **The channel brief.** When a thread is quiet for 10 minutes, or settled, and when its Slack channel is quiet for 10 minutes, the cheap
   fast model (ChatGPT's Luna), thinking hard, writes the channel's brief again: its purpose, what is happening now, the
   decisions, and the open questions. Every thread of the channel starts from it.
 - **Learned facts.** The learning loop reads the new messages and keeps only lasting facts about each person, such

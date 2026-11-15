@@ -21,7 +21,14 @@ export const integrationApiRoutes: readonly Route[] = [
     "PUT",
     "/api/v1/companies/:company/slack-bot",
     api(async ({ app, user, params, body }) =>
-      json(await app.slackBot.connect(params.company!, user, body.token))
+      json(
+        await app.slackBot.connect(
+          params.company!,
+          user,
+          body.token,
+          body.appToken
+        )
+      )
     ),
   ],
   [

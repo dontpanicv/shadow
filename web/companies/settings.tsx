@@ -176,7 +176,7 @@ const ROLES = [
   { value: "member", label: "User" },
 ] as const;
 
-/** The company's Slack bot, whose public channels the channels that every member sees copy every 5 minutes. */
+/** The company's Slack bot, which listens to Slack: its public channels and their history become the shared channels. */
 export function SlackBotSection({ companyId }: { companyId: string }) {
   const bot = useQuery(slackBotQuery(companyId)).data;
   const done = (status: SlackBotStatus | undefined) => {
@@ -184,10 +184,10 @@ export function SlackBotSection({ companyId }: { companyId: string }) {
     return refreshCompany(companyId);
   };
   const connect = useMutation({
-    mutationFn: (token: string) =>
+    mutationFn: (tokens: { token: string; appToken: string }) =>
       request<SlackBotStatus>(`/companies/${companyId}/slack-bot`, {
         method: "PUT",
-        body: { token },
+        body: tokens,
       }),
     onSuccess: done,
   });
@@ -203,13 +203,7 @@ export function SlackBotSection({ companyId }: { companyId: string }) {
   return (
     <SettingsCard>
       {bot.connected ? (
-        <SettingsRow
-          description={
-            bot.error ??
-            (bot.syncedAt ? `Synced ${dayTime(bot.syncedAt)}` : null)
-          }
-          label={bot.team}
-        >
+        <SettingsRow description={bot.error ?? botState(bot)} label={bot.team}>
           <Button label="Disconnect" onClick={() => disconnect.mutate()} />
         </SettingsRow>
       ) : (
@@ -217,9 +211,11 @@ export function SlackBotSection({ companyId }: { companyId: string }) {
           aria-busy={connect.isPending || undefined}
           onSubmit={(event) => {
             event.preventDefault();
-            connect.mutate(
-              String(new FormData(event.currentTarget).get("token"))
-            );
+            const form = new FormData(event.currentTarget);
+            connect.mutate({
+              token: String(form.get("token")),
+              appToken: String(form.get("appToken")),
+            });
           }}
         >
           <SettingsRow label="Bot token">
@@ -232,6 +228,17 @@ export function SlackBotSection({ companyId }: { companyId: string }) {
               required
               type="password"
             />
+          </SettingsRow>
+          <SettingsRow label="App token">
+            <input
+              aria-label="App token"
+              autoComplete="off"
+              className="input"
+              name="appToken"
+              placeholder="xapp-…"
+              required
+              type="password"
+            />
             <Button label="Connect" type="submit" />
           </SettingsRow>
         </form>
@@ -240,8 +247,17 @@ export function SlackBotSection({ companyId }: { companyId: string }) {
   );
 }
 
+/** Whether Slack's events reach Shadow now, or when it last heard from Slack. */
+function botState(bot: SlackBotStatus): string | null {
+  if (bot.listening) {
+    return "Listening";
+  }
+  return bot.syncedAt ? `Last heard ${dayTime(bot.syncedAt)}` : null;
+}
+
 const DISCONNECTED: SlackBotStatus = {
   connected: false,
+  listening: false,
   team: null,
   syncedAt: null,
   error: null,

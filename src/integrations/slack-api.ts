@@ -45,6 +45,23 @@ export class SlackApi {
     }
   }
 
+  /** The address of a new Socket Mode connection, with the app token (`xapp-…`, scope `connections:write`). */
+  async openSocket(appToken: string): Promise<string> {
+    const response = await this.fetchSlack(
+      "https://slack.com/api/apps.connections.open",
+      { method: "POST", headers: { authorization: `Bearer ${appToken}` } }
+    );
+    const body = (await response.json()) as {
+      ok?: boolean;
+      url?: string;
+      error?: string;
+    };
+    if (!(body.ok && body.url)) {
+      throw new Error(body.error ?? `HTTP ${response.status}`);
+    }
+    return body.url;
+  }
+
   /** The bytes of a file that Slack keeps, such as an attachment's `url_private_download`. */
   async download(
     token: string,

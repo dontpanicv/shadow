@@ -4,21 +4,38 @@ import type { User } from "../platform/auth.ts";
 import { HttpError, required } from "../platform/errors.ts";
 import type { Secrets } from "../platform/secrets.ts";
 import { SlackApi } from "./slack-api.ts";
-import { SlackHistory, type SlackHistoryPorts } from "./slack-history.ts";
+import {
+  SlackHistory,
+  type SlackHistoryPorts,
+  type SlackMessageEvent,
+} from "./slack-history.ts";
+import { SlackSocket, type SocketLike } from "./slack-socket.ts";
 
-/** How often the bot lists the public channels of Slack. */
-export const SLACK_SYNC_INTERVAL = 5 * 60_000;
-/** How often the bot copies what happened in the channels into their files. */
-export const SLACK_HISTORY_INTERVAL = 15 * 60_000;
+/** How often the changed days of the channels are written, and quiet channels get their brief. */
+export const SLACK_FLUSH_INTERVAL = 60_000;
+/** How often Shadow reads the whole window of every channel again, for what the events missed. */
+const DAILY_CHECK_MS = 24 * 60 * 60_000;
+/** A new connection reads from a little before the last event, as an event and its reading can cross. */
+const CATCH_UP_OVERLAP_MS = 5 * 60_000;
+/** The events that change the list of public channels. */
+const CHANNEL_EVENTS = new Set([
+  "channel_created",
+  "channel_rename",
+  "channel_archive",
+  "channel_unarchive",
+  "channel_deleted",
+]);
 
-/** The Slack bot of a company, for its admins; the token never leaves the server. */
+/** The Slack bot of a company, for its admins; the tokens never leave the server. */
 export interface SlackBotStatus {
   readonly connected: boolean;
+  /** Whether Slack's events reach Shadow now, over Socket Mode. */
+  readonly listening: boolean;
   /** The Slack workspace of the bot, such as "Acme". */
   readonly team: string | null;
-  /** When the last sync ended, in ms since the epoch; null before the first. */
+  /** When Shadow last heard from Slack: an event, or the end of a reading; null before the first. */
   readonly syncedAt: number | null;
-  /** Why the last sync failed; null when it worked. */
+  /** Why the last reading or connection failed; null when it worked. */
   readonly error: string | null;
 }
 
@@ -29,40 +46,55 @@ type BotCompanies = Pick<
 
 interface BotRow {
   token: Uint8Array;
+  app_token: Uint8Array | null;
   team_name: string;
   synced_at: number | null;
+  listened_at: number | null;
+  checked_at: number | null;
   error: string | null;
 }
 
+/** How a test replaces the network and the clock's work. */
+export interface SlackBotOptions {
+  readonly fetch?: typeof fetch;
+  readonly connectTo?: (url: string) => SocketLike;
+}
+
 /**
- * The company's Slack bot. An admin gives Shadow its bot token (`xoxb-…`), and every 5 minutes the bot lists the
- * public channels of Slack, which the channels that every member sees then copy. A new channel gets the last
- * 30 days of its Slack channel at once, and every 15 minutes each channel gets what happened since,
- * in its files and its brief (`SlackHistory`). The people's own Slack accounts stay in the Slack integration.
+ * The company's Slack bot, which listens: an admin gives Shadow its bot token (`xoxb-…`) and its app token (`xapp-…`),
+ * and Slack sends its events over Socket Mode, so nothing reads Slack on a timer. The public channels become the
+ * channels that every member sees, and a channel event makes the bot list them again. Each message event goes into
+ * `SlackHistory`, which keeps the channel's day files and its brief. A new connection reads what it missed since the
+ * last event, and once a day the bot reads the whole window again, for what an event never brought.
  *
  * @example
  * const bot = new SlackBot(database, secrets, companies, (id) => threads.channelsChanged(id), ports);
- * await bot.connect(companyId, admin, "xoxb-…");
+ * await bot.connect(companyId, admin, "xoxb-…", "xapp-…");
  * bot.start();
  */
 export class SlackBot {
-  private readonly timers: ReturnType<typeof setInterval>[] = [];
-  private running: Promise<void> = Promise.resolve();
-  private readonly stopping = new AbortController();
   private readonly api: SlackApi;
   private readonly history: SlackHistory;
+  private readonly sockets = new Map<string, SlackSocket>();
+  private readonly listening = new Set<string>();
+  /** The work of each company, one task after the other, so events keep their order. */
+  private readonly queues = new Map<string, Promise<void>>();
+  private readonly timers: ReturnType<typeof setInterval>[] = [];
+  private readonly stopping = new AbortController();
+  private readonly connectTo: ((url: string) => SocketLike) | undefined;
 
   constructor(
     private readonly database: Database,
     private readonly secrets: Secrets,
     private readonly companies: BotCompanies,
-    /** Called after a sync changed the channels of a company. */
+    /** Called after the channels of a company changed. */
     private readonly changed: (companyId: string) => void,
     ports: SlackHistoryPorts,
-    fetchSlack: typeof fetch = fetch
+    options: SlackBotOptions = {}
   ) {
-    this.api = new SlackApi(fetchSlack);
+    this.api = new SlackApi(options.fetch);
     this.history = new SlackHistory(database, this.api, companies, ports);
+    this.connectTo = options.connectTo;
   }
 
   status(companyId: string, user: User): SlackBotStatus {
@@ -70,45 +102,68 @@ export class SlackBot {
     const row = this.row(companyId);
     return {
       connected: row !== null,
+      listening: this.listening.has(companyId),
       team: row?.team_name ?? null,
       syncedAt: row?.synced_at ?? null,
       error: row?.error ?? null,
     };
   }
 
-  /** Checks the token with Slack, keeps it encrypted, and syncs the channels at once. */
+  /**
+   * Checks both tokens with Slack, keeps them encrypted, lists the channels at once, and starts to listen; the history
+   * of the channels comes in the background.
+   */
   async connect(
     companyId: string,
     user: User,
-    token: unknown
+    token: unknown,
+    appToken: unknown
   ): Promise<SlackBotStatus> {
     this.companies.requireAdmin(companyId, user);
-    const trimmed = required(token, "Bot token");
-    if (!trimmed.startsWith("xoxb-")) {
+    const bot = required(token, "Bot token");
+    const app = required(appToken, "App token");
+    if (!bot.startsWith("xoxb-")) {
       throw new HttpError(400, "Use the bot token of the Slack app (xoxb-…)");
     }
+    if (!app.startsWith("xapp-")) {
+      throw new HttpError(
+        400,
+        "Use the app-level token of the Slack app (xapp-…)"
+      );
+    }
     const team = await this.api
-      .call(trimmed, "auth.test", {})
+      .call(bot, "auth.test", {})
       .catch((error: unknown) => {
-        throw new HttpError(400, `Slack refused the token: ${message(error)}`);
+        throw new HttpError(
+          400,
+          `Slack refused the bot token: ${message(error)}`
+        );
       });
+    await this.api.openSocket(app).catch((error: unknown) => {
+      throw new HttpError(
+        400,
+        `Slack refused the app token: ${message(error)}`
+      );
+    });
     this.database
       .query(
-        "INSERT INTO slack_bot (company_id, token, team_id, team_name, connected_by, connected_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (company_id) DO UPDATE SET token = excluded.token, team_id = excluded.team_id, team_name = excluded.team_name, connected_by = excluded.connected_by, connected_at = excluded.connected_at, synced_at = NULL, error = NULL, deleted_at = NULL"
+        "INSERT INTO slack_bot (company_id, token, app_token, team_id, team_name, connected_by, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (company_id) DO UPDATE SET token = excluded.token, app_token = excluded.app_token, team_id = excluded.team_id, team_name = excluded.team_name, connected_by = excluded.connected_by, connected_at = excluded.connected_at, synced_at = NULL, listened_at = NULL, checked_at = NULL, error = NULL, deleted_at = NULL"
       )
       .run(
         companyId,
-        this.secrets.encrypt(trimmed),
+        this.secrets.encrypt(bot),
+        this.secrets.encrypt(app),
         String(team.team_id),
         String(team.team),
         user.id,
         Date.now()
       );
-    await this.sync(companyId);
+    await this.listChannels(companyId, bot);
+    this.listen(companyId);
     return this.status(companyId, user);
   }
 
-  /** Stops the sync; the channels it made stay. */
+  /** Stops listening; the channels and files that the bot made stay. */
   disconnect(companyId: string, user: User): void {
     this.companies.requireAdmin(companyId, user);
     this.database
@@ -116,67 +171,169 @@ export class SlackBot {
         "UPDATE slack_bot SET deleted_at = ? WHERE company_id = ? AND deleted_at IS NULL"
       )
       .run(Date.now(), companyId);
+    this.sockets.get(companyId)?.close();
+    this.sockets.delete(companyId);
+    this.listening.delete(companyId);
   }
 
+  /** Listens for every company with a bot, writes changed days every minute, and checks the whole window daily. */
   start(): void {
+    for (const companyId of this.companies.ids()) {
+      if (this.row(companyId)) {
+        this.listen(companyId);
+      }
+    }
     this.timers.push(
-      setInterval(() => this.syncAll(false), SLACK_SYNC_INTERVAL),
-      setInterval(() => this.syncAll(true), SLACK_HISTORY_INTERVAL)
+      setInterval(() => {
+        for (const companyId of this.sockets.keys()) {
+          this.enqueue(companyId, () => this.history.flush(companyId));
+        }
+      }, SLACK_FLUSH_INTERVAL),
+      setInterval(() => {
+        for (const companyId of this.sockets.keys()) {
+          this.dailyCheck(companyId);
+        }
+      }, 60 * 60_000)
     );
-    this.syncAll(true);
   }
 
   async close(): Promise<void> {
     for (const timer of this.timers) {
       clearInterval(timer);
     }
+    for (const socket of this.sockets.values()) {
+      socket.close();
+    }
+    this.sockets.clear();
     this.stopping.abort();
-    await this.running;
+    await Promise.all(this.queues.values());
+  }
+
+  /** Waits for the work of a company, then writes its changed days and every brief that waits, quiet or not. */
+  async flush(companyId: string): Promise<void> {
+    await this.queues.get(companyId);
+    await this.history.flush(companyId, Number.POSITIVE_INFINITY);
+  }
+
+  /** Opens the company's Socket Mode connection, which connects again by itself until the bot is disconnected. */
+  private listen(companyId: string): void {
+    const row = this.row(companyId);
+    if (!row?.app_token || this.sockets.has(companyId)) {
+      return;
+    }
+    const appToken = this.secrets.decrypt(row.app_token);
+    const socket = new SlackSocket(
+      () => this.api.openSocket(appToken),
+      {
+        hello: () => {
+          this.listening.add(companyId);
+          this.catchUp(companyId);
+        },
+        event: (event) => this.event(companyId, event),
+        lost: (error) => {
+          this.listening.delete(companyId);
+          this.fail(companyId, error);
+        },
+      },
+      this.connectTo
+    );
+    this.sockets.set(companyId, socket);
+    socket.start();
   }
 
   /**
-   * Copies the public channels of Slack into the company, then the history of each channel that never got it, or of
-   * every channel with `history`. A failure stays in the status until a sync works.
+   * A new connection: the list of channels, then what the channels got since the last event before it. The time is
+   * read now, before the events of this connection move it on.
    */
-  async sync(companyId: string, history = false): Promise<void> {
-    const row = this.row(companyId);
-    if (!row) {
-      return;
-    }
-    const { signal } = this.stopping;
-    try {
-      const token = this.secrets.decrypt(row.token);
-      const counts = this.companies.syncSlackChannels(
-        companyId,
-        await this.publicChannels(token)
-      );
-      if (Object.values(counts).some((count) => count > 0)) {
-        this.changed(companyId);
+  private catchUp(companyId: string): void {
+    const listened = this.row(companyId)?.listened_at ?? null;
+    const since = listened === null ? null : listened - CATCH_UP_OVERLAP_MS;
+    this.enqueue(companyId, async (token) => {
+      await this.listChannels(companyId, token);
+      await this.history.catchUp(companyId, token, since, this.stopping.signal);
+      await this.history.flush(companyId);
+      this.heard(companyId);
+      if (since === null) {
+        // A reading of the whole window is the daily check of today.
+        this.checked(companyId);
+      } else {
+        this.dailyCheck(companyId);
       }
-      await this.history.sync(companyId, token, !history, signal);
-      this.database
-        .query(
-          "UPDATE slack_bot SET synced_at = ?, error = NULL WHERE company_id = ?"
+    });
+  }
+
+  private event(companyId: string, event: { readonly type: string }): void {
+    this.heard(companyId);
+    if (CHANNEL_EVENTS.has(event.type)) {
+      // A new channel gets its history at once; the others have nothing to read from now.
+      this.enqueue(companyId, async (token) => {
+        await this.listChannels(companyId, token);
+        await this.history.catchUp(
+          companyId,
+          token,
+          Date.now(),
+          this.stopping.signal
+        );
+      });
+    } else if (event.type === "message") {
+      this.enqueue(companyId, (token) =>
+        this.history.event(
+          companyId,
+          token,
+          event as SlackMessageEvent,
+          this.stopping.signal
         )
-        .run(Date.now(), companyId);
-    } catch (error) {
-      if (!signal.aborted) {
-        this.database
-          .query("UPDATE slack_bot SET error = ? WHERE company_id = ?")
-          .run(message(error), companyId);
-      }
+      );
     }
   }
 
-  private syncAll(history: boolean): void {
-    // One failed round must not stop the rounds after it.
-    this.running = this.running
-      .then(async () => {
-        for (const companyId of this.companies.ids()) {
-          await this.sync(companyId, history);
+  /** Reads the whole window of every channel again once a day, for an event that never came. */
+  private dailyCheck(companyId: string): void {
+    const row = this.row(companyId);
+    if (!row || (row.checked_at ?? 0) > Date.now() - DAILY_CHECK_MS) {
+      return;
+    }
+    this.checked(companyId);
+    this.enqueue(companyId, async (token) => {
+      await this.listChannels(companyId, token);
+      await this.history.catchUp(companyId, token, null, this.stopping.signal);
+    });
+  }
+
+  /** Runs `task` after the company's earlier work, with its bot token; a failure goes to the status. */
+  private enqueue(
+    companyId: string,
+    task: (token: string) => Promise<void>
+  ): void {
+    const previous = this.queues.get(companyId) ?? Promise.resolve();
+    this.queues.set(
+      companyId,
+      previous.then(async () => {
+        const row = this.row(companyId);
+        if (!row || this.stopping.signal.aborted) {
+          return;
+        }
+        try {
+          await task(this.secrets.decrypt(row.token));
+          this.database
+            .query("UPDATE slack_bot SET error = NULL WHERE company_id = ?")
+            .run(companyId);
+        } catch (error) {
+          this.fail(companyId, error);
         }
       })
-      .catch((error: unknown) => console.error("Syncing Slack failed", error));
+    );
+  }
+
+  /** Copies the public channels of Slack into the company. */
+  private async listChannels(companyId: string, token: string): Promise<void> {
+    const counts = this.companies.syncSlackChannels(
+      companyId,
+      await this.publicChannels(token)
+    );
+    if (Object.values(counts).some((count) => count > 0)) {
+      this.changed(companyId);
+    }
   }
 
   /** Every public channel that Slack has not archived, page by page. */
@@ -205,10 +362,34 @@ export class SlackBot {
     return channels;
   }
 
+  private checked(companyId: string): void {
+    this.database
+      .query("UPDATE slack_bot SET checked_at = ? WHERE company_id = ?")
+      .run(Date.now(), companyId);
+  }
+
+  /** Notes that Shadow heard from Slack now: a new connection reads from about here. */
+  private heard(companyId: string): void {
+    const now = Date.now();
+    this.database
+      .query(
+        "UPDATE slack_bot SET listened_at = ?, synced_at = ? WHERE company_id = ?"
+      )
+      .run(now, now, companyId);
+  }
+
+  private fail(companyId: string, error: unknown): void {
+    if (!this.stopping.signal.aborted) {
+      this.database
+        .query("UPDATE slack_bot SET error = ? WHERE company_id = ?")
+        .run(message(error), companyId);
+    }
+  }
+
   private row(companyId: string): BotRow | null {
     return this.database
       .query(
-        "SELECT token, team_name, synced_at, error FROM slack_bot WHERE company_id = ? AND deleted_at IS NULL"
+        "SELECT token, app_token, team_name, synced_at, listened_at, checked_at, error FROM slack_bot WHERE company_id = ? AND deleted_at IS NULL"
       )
       .get(companyId) as BotRow | null;
   }

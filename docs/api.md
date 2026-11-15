@@ -264,9 +264,9 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `GET /api/v1/companies/:companyId/members` | | `Member[]` |
 | `POST /api/v1/companies/:companyId/members` | `{ email }` | `Member`, a `member`; the person must have signed in once; `403` for a member who is not an admin |
 | `PUT /api/v1/companies/:companyId/members/:userId` | `{ role: "admin" \| "member" }` | `Member`; `403` for a member who is not an admin, `409` when it would leave the company without an admin |
-| `GET /api/v1/companies/:companyId/slack-bot` | | `SlackBot`: `{ connected: boolean, team: string \| null, syncedAt: number \| null, error: string \| null }`, the Slack bot that copies the public channels of the company's Slack every 5 minutes. Admins only, `403` for others |
-| `PUT /api/v1/companies/:companyId/slack-bot` | `{ token }` | `SlackBot`; checks the bot token (`xoxb-…`) with Slack, keeps it encrypted, and syncs at once. `400` with Slack's reason when it refuses the token |
-| `DELETE /api/v1/companies/:companyId/slack-bot` | | `204`; the sync stops, and the channels it made stay |
+| `GET /api/v1/companies/:companyId/slack-bot` | | `SlackBot`: `{ connected: boolean, listening: boolean, team: string \| null, syncedAt: number \| null, error: string \| null }`, the Slack bot that listens to the company's Slack over Socket Mode. `listening`: Slack's events reach Shadow now; `syncedAt`: when Shadow last heard from Slack. Admins only, `403` for others |
+| `PUT /api/v1/companies/:companyId/slack-bot` | `{ token, appToken }` | `SlackBot`; checks the bot token (`xoxb-…`) and the app-level token (`xapp-…`) with Slack, keeps both encrypted, lists the channels at once, and starts to listen; the history of the channels comes in the background. `400` with Slack's reason when it refuses a token |
+| `DELETE /api/v1/companies/:companyId/slack-bot` | | `204`; Shadow stops listening, and the channels and files it made stay |
 
 ### Threads (`src/threads/`)
 

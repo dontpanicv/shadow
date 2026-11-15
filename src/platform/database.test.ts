@@ -45,7 +45,7 @@ test("the company's one orchestrator from before becomes the own of the person w
 	CREATE UNIQUE INDEX thread_orchestrator ON thread (company_id) WHERE orchestrator = 1;
 	INSERT INTO channel (id, company_id, name, created_by, created_at) VALUES ('general', 'home', 'general', 'alice', 1), ('food', 'home', 'food', 'bob', 2);
 	INSERT INTO thread (id, company_id, channel_id, title, created_by, created_at, updated_at, orchestrator) VALUES ('shadow', 'home', 'food', 'Shadow', 'shadow', 1, 1, 1), ('dinner', 'home', 'food', 'Dinner', 'bob', 1, 1, 0);
-	PRAGMA user_version = ${version - 33};`);
+	PRAGMA user_version = ${version - 34};`);
   migrate(database);
   expect(
     database
@@ -113,7 +113,7 @@ test("own credentials and machines become private ones in their owner's company,
 		('alices-mac', NULL, 'mac', '[]', 1, 'a', 'macos', 'arm64', '1', 4, 'alice'),
 		('bobs-mac', NULL, 'mac', '[]', 1, 'b', 'macos', 'arm64', '1', 5, 'bob');
 	UPDATE machine SET deleted_at = 1 WHERE id = 'old-nas';
-	PRAGMA user_version = ${version - 27};`);
+	PRAGMA user_version = ${version - 28};`);
   migrate(database);
   expect(
     database
@@ -195,7 +195,7 @@ test("notification permission expands the intake schema and leaves queued update
     DROP INDEX place_name;
     ALTER TABLE place DROP COLUMN osm_id;
     CREATE UNIQUE INDEX place_name ON place (company_id, owner_id, name COLLATE NOCASE);
-    PRAGMA user_version = ${version - 14};`);
+    PRAGMA user_version = ${version - 15};`);
   migrate(database);
   expect(
     database
