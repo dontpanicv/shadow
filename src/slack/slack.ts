@@ -217,11 +217,11 @@ export class SlackSurface implements SlackSurfacePort {
     } else if (slack.type === "message" && slack.channel_type === "im") {
       this.detach(() => this.direct(companyId, slack));
     } else if (slack.type === "message" && slack.channel_type === "mpim") {
-      // A group DM wakes Shadow only with a mention; app_mention may bring the same message, which `once` drops.
+      // app_mention may bring a mentioned message twice; `once` drops the copy.
       this.detach(() =>
         slack.text?.includes(`<@${this.bot.client(companyId)?.botUserId}>`)
           ? this.group(companyId, slack, "group DM")
-          : this.recordPrivateMessage(companyId, slack)
+          : this.listenGroup(companyId, slack)
       );
     } else if (slack.type === "message" && slack.channel_type === "group") {
       this.detach(() => this.recordPrivateMessage(companyId, slack));
@@ -815,6 +815,66 @@ export class SlackSurface implements SlackSurfacePort {
     }
   }
 
+  /** A group DM uses the company goal, but only its current participants can see its Shadow channel. */
+  private async listenGroup(
+    companyId: string,
+    event: SlackEvent
+  ): Promise<void> {
+    const client = this.bot.client(companyId);
+    if (!(client && event.user && isAmbient(event, client.botUserId))) {
+      return;
+    }
+    if (!(await this.person(companyId, client, event.user))) {
+      return;
+    }
+    const channel = await this.refreshPrivateConversation(
+      companyId,
+      event.channel,
+      "group DM"
+    );
+    if (!channel || this.isOff(companyId, channel.id)) {
+      return;
+    }
+    const root = event.thread_ts ?? event.ts;
+    const known = this.conversation(companyId, event.channel, root);
+    if (known) {
+      await this.recordPrivateMessage(companyId, event);
+    }
+    const followed = Boolean(
+      event.thread_ts && known && (known.followed_until ?? 0) > Date.now()
+    );
+    const goal = this.goalOf(companyId, channel.id);
+    if (!(followed || (goal && !event.thread_ts))) {
+      return;
+    }
+    const response = (await client.call(
+      event.thread_ts ? "conversations.replies" : "conversations.history",
+      {
+        channel: event.channel,
+        limit: "10",
+        ...(event.thread_ts ? { ts: root } : {}),
+      }
+    )) as { messages?: { user?: string; text?: string; ts: string }[] };
+    const messages = await Promise.all(
+      (response.messages ?? []).slice(0, 10).map(async (message) => ({
+        ts: message.ts,
+        author: message.user
+          ? await this.slackName(companyId, client, message.user)
+          : "Someone",
+        text: await client.plain(message.text ?? ""),
+      }))
+    );
+    messages.sort((left, right) => Number(left.ts) - Number(right.ts));
+    await this.screen(
+      companyId,
+      client,
+      event,
+      channel,
+      { root, known, goal: followed ? null : goal },
+      messages
+    );
+  }
+
   /** The cheap check, after the mute and the hourly cap; a message that passes goes to an agent turn. */
   private async screen(
     companyId: string,
@@ -825,7 +885,12 @@ export class SlackSurface implements SlackSurfacePort {
       readonly root: string;
       readonly known: Conversation | null;
       readonly goal: ChannelGoal | null;
-    }
+    },
+    privateMessages?: {
+      readonly ts: string;
+      readonly author: string;
+      readonly text: string;
+    }[]
   ): Promise<void> {
     const log = this.logger(companyId, channel.id, event, place.root);
     if (place.known?.muted) {
@@ -836,13 +901,13 @@ export class SlackSurface implements SlackSurfacePort {
       log("cap", null, "capped");
       return;
     }
-    const messages = client.transcript(
-      event.channel,
-      event.thread_ts ? place.root : null,
-      10
-    );
+    const messages =
+      privateMessages ??
+      client.transcript(event.channel, event.thread_ts ? place.root : null, 10);
     const member = this.companies.agentMember(companyId);
-    const brief = await this.threads.brief(companyId, channel.id, member);
+    const brief = privateMessages
+      ? null
+      : await this.threads.brief(companyId, channel.id, member);
     const check = await checkMessage(
       (system, text, signal) =>
         this.llm.complete(
@@ -869,7 +934,8 @@ export class SlackSurface implements SlackSurfacePort {
         event,
         channel,
         place,
-        messages.at(-1)?.text ?? "Slack"
+        messages.at(-1)?.text ?? "Slack",
+        privateMessages
       );
       log(check.reason, check.probability, replied ? "replied" : "quiet");
     } catch (error) {
@@ -892,7 +958,12 @@ export class SlackSurface implements SlackSurfacePort {
       readonly known: Conversation | null;
       readonly goal: ChannelGoal | null;
     },
-    title: string
+    title: string,
+    privateMessages?: {
+      readonly ts: string;
+      readonly author: string;
+      readonly text: string;
+    }[]
   ): Promise<boolean> {
     const { root, known } = place;
     const thread = known
@@ -910,12 +981,16 @@ export class SlackSurface implements SlackSurfacePort {
     if (!known) {
       this.saveConversation(companyId, event.channel, root, thread.id);
     }
-    const since = client.transcript(
-      event.channel,
-      event.thread_ts ? root : null,
-      30,
-      known?.last_reply_ts ?? "0"
-    );
+    const since =
+      privateMessages?.filter(
+        (message) => Number(message.ts) > Number(known?.last_reply_ts ?? "0")
+      ) ??
+      client.transcript(
+        event.channel,
+        event.thread_ts ? root : null,
+        30,
+        known?.last_reply_ts ?? "0"
+      );
     const answer = await this.threads.instruct(
       thread,
       ambientTask(channel.name, place.goal, since),

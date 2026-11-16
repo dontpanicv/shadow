@@ -371,6 +371,53 @@ test("the default goal lets Shadow listen in every channel, until an admin switc
   await close();
 });
 
+test("a group DM can answer without a mention under the default goal", async () => {
+  const { surface, company, writes, close } = await setup();
+  surface.setDefaultGoal(company.id, alice, {
+    wakeWhen: "product questions",
+    engagement: "answer with the source",
+  });
+  model.probability = 0.9;
+  model.answer = "Profile API v2 uses the new endpoint.";
+  slack.joined.add("G1");
+  slack.event({
+    type: "message",
+    channel_type: "mpim",
+    channel: "G1",
+    user: "U9",
+    text: "What is the Profile API v2?",
+    ts: (Date.now() / 1000 - 1).toFixed(6),
+  });
+  await Bun.sleep(20);
+  expect(surface.decisions(company.id, alice)).toEqual([]);
+  const message = {
+    type: "message",
+    channel_type: "mpim",
+    channel: "G1",
+    user: "U1",
+    text: "What is the Profile API v2?",
+    ts: (Date.now() / 1000).toFixed(6),
+  };
+  slack.messages.G1 = [message];
+  slack.event(message);
+  await until(
+    async () => surface.decisions(company.id, alice),
+    (decisions) => decisions.some((decision) => decision.outcome === "replied")
+  );
+  expect(
+    writes("chat.postMessage").some((write) => write.body.channel === "G1")
+  ).toBe(true);
+  const group = shadow.app.companies
+    .channels(company.id, alice)
+    .find((channel) => channel.name.startsWith("group-dm"))!;
+  expect(
+    shadow.app.companies
+      .threadsIn(company.id, null)
+      .some((thread) => thread.channelId === group.id)
+  ).toBe(false);
+  await close();
+});
+
 test("a group DM mention answers once in a shared thread that only its participants see", async () => {
   const { company, writes, close } = await setup();
   model.answer = "Acme renewed in May.";
