@@ -607,6 +607,7 @@ others.
 | `DELETE /api/v1/companies/:companyId/slack/goals/:channelId/off` | | `204`; Shadow listens again with the channel's goal |
 | `POST /api/v1/companies/:companyId/slack/goals/:channelId/suggest` | | `{ wakeWhen, engagement }` that the fast model writes from the channel's brief; nothing is saved |
 | `GET /api/v1/companies/:companyId/slack/decisions` | | `SlackDecision[]`: `{ channelName, slackChannelId, ts, reason, probability, outcome, at }`, the 100 newest decisions of listening, newest first, never with the text of a message. `outcome`: `skipped`, `quiet`, `replied`, `capped`, `muted`, or `failed` |
+| `GET /api/v1/companies/:companyId/slack/ambient` | | `SlackAmbientTurn[]`: `{ threadId, threadTitle, channelId, channelName, reason, outcome, at }`, the newest turns that Shadow took on its own in the channels the person sees, newest first, never with the text of a message; any member. `outcome`: `quiet`, `replied`, or `failed` |
 
 ### LLM (`src/llm/`)
 

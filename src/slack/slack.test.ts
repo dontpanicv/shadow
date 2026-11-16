@@ -265,6 +265,13 @@ test("Shadow listens only where a goal or its own reply asks it to: the check sk
   expect(JSON.stringify(reply.blocks)).toContain("shadow_mute");
   // The log keeps why, never what people wrote.
   expect(JSON.stringify(decisions())).not.toContain("invoice");
+  // The turns Shadow took on its own link their Shadow threads; skipped messages are not turns.
+  const turns = surface.ambientTurns(company.id, alice);
+  expect(turns.map((turn) => turn.outcome)).toEqual(["replied", "quiet"]);
+  expect(turns[0]).toMatchObject({ channelId: support.id });
+  expect(turns.every((turn) => turn.threadId && turn.threadTitle !== "")).toBe(
+    true
+  );
 
   // A reply in a thread that Shadow answered goes through the check, until someone mutes the thread.
   slack.send({

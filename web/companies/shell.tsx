@@ -428,6 +428,13 @@ function CompanyNav({
           {sorted
             .filter((channel) => channel.ownerId !== null)
             .map(channelItem)}
+          <Link
+            className="nav-item"
+            params={{ companyId }}
+            to="/c/$companyId/ambient"
+          >
+            <NavContent icon="hand" label="Ambient" />
+          </Link>
           {admin ? (
             <Link
               className="nav-item"

@@ -1,7 +1,7 @@
 import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 
-/** The goals of ambient listening in the Slack channels, and its decisions, for admins. */
+/** The goals of ambient listening in the Slack channels and its decisions, for admins, and its turns, for members. */
 export const slackApiRoutes: readonly Route[] = [
   [
     "GET",
@@ -92,6 +92,13 @@ export const slackApiRoutes: readonly Route[] = [
     "/api/v1/companies/:company/slack/decisions",
     api(async ({ app, user, params }) =>
       json(app.slack.decisions(params.company!, user))
+    ),
+  ],
+  [
+    "GET",
+    "/api/v1/companies/:company/slack/ambient",
+    api(async ({ app, user, params }) =>
+      json(app.slack.ambientTurns(params.company!, user))
     ),
   ],
 ];

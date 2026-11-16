@@ -70,6 +70,18 @@ export interface SlackDecision {
   readonly at: number;
 }
 
+/** A turn that Shadow took on its own in a channel, with its Shadow thread, without the text of messages. */
+export interface SlackAmbientTurn {
+  readonly threadId: string;
+  readonly threadTitle: string;
+  readonly channelId: string;
+  readonly channelName: string;
+  readonly reason: string;
+  /** `quiet`, `replied`, or `failed`. */
+  readonly outcome: string;
+  readonly at: number;
+}
+
 interface Conversation {
   readonly thread_id: string;
   readonly followed_until: number | null;
@@ -118,6 +130,7 @@ type SurfaceCompanies = Pick<
   | "requireAdmin"
   | "requireMember"
   | "threadOf"
+  | "threadsIn"
 >;
 
 /**
@@ -647,7 +660,7 @@ export class SlackSurface implements SlackSurfacePort {
       readonly goal: ChannelGoal | null;
     }
   ): Promise<void> {
-    const log = this.logger(companyId, channel.id, event);
+    const log = this.logger(companyId, channel.id, event, place.root);
     if (place.known?.muted) {
       log("muted", null, "muted");
       return;
@@ -784,12 +797,20 @@ export class SlackSurface implements SlackSurfacePort {
     return true;
   }
 
-  /** Logs what ambient listening decided about a message: its reason, probability, and outcome, never its text. */
-  private logger(companyId: string, channelId: string, event: SlackEvent) {
+  /**
+   * Logs what ambient listening decided about a message: its reason, probability, outcome, and the Shadow thread of
+   * its Slack thread, if there is one, never its text.
+   */
+  private logger(
+    companyId: string,
+    channelId: string,
+    event: SlackEvent,
+    root: string
+  ) {
     return (reason: string, probability: number | null, outcome: string) =>
       this.database
         .query(
-          "INSERT INTO slack_decision (company_id, channel_id, slack_channel_id, ts, reason, probability, outcome, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO slack_decision (company_id, channel_id, slack_channel_id, ts, reason, probability, outcome, at, thread_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT thread_id FROM slack_conversation WHERE company_id = ? AND slack_channel_id = ? AND root_ts = ?))"
         )
         .run(
           companyId,
@@ -799,7 +820,10 @@ export class SlackSurface implements SlackSurfacePort {
           reason,
           probability,
           outcome,
-          Date.now()
+          Date.now(),
+          companyId,
+          event.channel,
+          root
         );
   }
 
@@ -1396,6 +1420,46 @@ export class SlackSurface implements SlackSurfacePort {
       ...decision,
       channelName: names.get(channelId) ?? "",
     }));
+  }
+
+  /**
+   * The newest turns that Shadow took on its own in the channels the person sees, each with its Shadow thread; never
+   * the text of messages.
+   */
+  ambientTurns(companyId: string, user: User): SlackAmbientTurn[] {
+    this.companies.requireMember(companyId, user);
+    const threads = new Map(
+      this.companies
+        .threadsIn(companyId, user.id)
+        .map((thread) => [thread.id, thread])
+    );
+    const names = new Map(
+      this.companies
+        .channelsIn(companyId, user.id)
+        .map((channel) => [channel.id, channel.name])
+    );
+    return (
+      this.database
+        .query(
+          "SELECT thread_id AS threadId, reason, outcome, at FROM slack_decision WHERE company_id = ? AND thread_id IS NOT NULL AND outcome IN ('replied', 'quiet', 'failed') ORDER BY at DESC LIMIT 100"
+        )
+        .all(companyId) as Omit<
+        SlackAmbientTurn,
+        "threadTitle" | "channelId" | "channelName"
+      >[]
+    ).flatMap((turn) => {
+      const thread = threads.get(turn.threadId);
+      return thread
+        ? [
+            {
+              ...turn,
+              threadTitle: thread.title,
+              channelId: thread.channelId,
+              channelName: names.get(thread.channelId) ?? "",
+            },
+          ]
+        : [];
+    });
   }
 
   // Helpers

@@ -117,6 +117,7 @@ const WEB_MODULES = [
   "agenda",
   "intake",
   "feedback",
+  "slack",
   "settings",
 ];
 

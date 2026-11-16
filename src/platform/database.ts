@@ -821,6 +821,8 @@ const migrations = [
     deleted_at INTEGER,
     PRIMARY KEY (company_id, channel_id, user_id)
   );`,
+  // slack: the Shadow thread of each decision of ambient listening, for the log of the turns Shadow took on its own.
+  "ALTER TABLE slack_decision ADD COLUMN thread_id TEXT;",
 ];
 
 export function openDatabase(path: string): Database {

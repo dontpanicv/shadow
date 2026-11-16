@@ -15,6 +15,7 @@ import { InboxPage } from "../notifications/page.tsx";
 import { ChannelDetails } from "../routines/details.tsx";
 import { SearchPage } from "../search/page.tsx";
 import { CompanySettingsPage, SettingsPage } from "../settings/pages.tsx";
+import { AmbientPage } from "../slack/page.tsx";
 import { ChannelPage, ThreadPage } from "../threads/pages.tsx";
 import { TooltipProvider } from "../ui/components.tsx";
 import { FilePreview } from "../ui/file-preview.tsx";
@@ -136,6 +137,12 @@ const feedback = createRoute({
   component: FeedbackPage,
 });
 
+const ambient = createRoute({
+  getParentRoute: () => company,
+  path: "/ambient",
+  component: AmbientPage,
+});
+
 const searchRoute = createRoute({
   getParentRoute: () => company,
   path: "/search",
@@ -165,6 +172,7 @@ export const router = createRouter({
         upcoming,
         following,
         feedback,
+        ambient,
         searchRoute,
         companySettings,
       ]),

@@ -20,6 +20,7 @@ import type { User } from "../src/platform/auth.ts";
 import type { Routine, RoutineRun } from "../src/routines/routines.ts";
 import type { RecentSearch, SearchResponse } from "../src/search/search.ts";
 import type {
+  SlackAmbientTurn,
   SlackDecision,
   SlackDefaultGoal,
   SlackGoal,
@@ -51,6 +52,7 @@ const checks: true[] = [
   true satisfies Fits<SlackGoal, Web.SlackGoal>,
   true satisfies Fits<SlackDefaultGoal, Web.SlackDefaultGoal>,
   true satisfies Fits<SlackDecision, Web.SlackDecision>,
+  true satisfies Fits<SlackAmbientTurn, Web.SlackAmbientTurn>,
   true satisfies Fits<Brief, Web.Brief>,
   true satisfies Fits<Message, Web.Message>,
   true satisfies Fits<SavedFile, Web.SavedFile>,

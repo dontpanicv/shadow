@@ -80,6 +80,17 @@ export interface SlackDecision {
   readonly at: number;
 }
 
+/** A turn that Shadow took on its own in a channel, with its Shadow thread. */
+export interface SlackAmbientTurn {
+  readonly threadId: string;
+  readonly threadTitle: string;
+  readonly channelId: string;
+  readonly channelName: string;
+  readonly reason: string;
+  readonly outcome: string;
+  readonly at: number;
+}
+
 export interface Facts {
   readonly text: string;
 }
