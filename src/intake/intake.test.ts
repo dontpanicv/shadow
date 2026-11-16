@@ -39,8 +39,11 @@ let app: TestApp;
 let intake: Intake;
 /** Runs right after an update is posted to a subject thread, as when the owner answers or a source fails then. */
 let postHook: (() => void) | undefined;
+/** Whether the turn answers no person, as an ambient turn does. */
+let answersNobody = false;
 afterEach(async () => {
   postHook = undefined;
+  answersNobody = false;
   await intake?.close();
   intake?.audit.close();
   await app?.close();
@@ -179,7 +182,7 @@ async function setup(
     learnedFor: (_companyId, person) => options.learned?.(person.id) ?? [],
     writeFile: app.app.threads.writeFile.bind(app.app.threads),
     deleteFile: app.app.threads.deleteFile.bind(app.app.threads),
-    requester: async () => owner,
+    requester: async () => (answersNobody ? null : owner),
     files: app.app.threads.files.bind(app.app.threads),
     place: app.app.threads.place.bind(app.app.threads),
     startAgentThread: async (...args) => {
@@ -1598,6 +1601,31 @@ test("intake_read gives every waiting update whatever the query, and reading lea
       undefined as never
     )
   ).rejects.toThrow("Not found");
+  // An ambient turn answers no person: it reads nothing and says why, and it applies no correction.
+  answersNobody = true;
+  const ambient = await read.execute(
+    { query: "balcony" } as never,
+    { conversationId: open.conversationId } as never,
+    undefined as never
+  );
+  const { text } = ambient.output![0] as { text: string };
+  expect(text).toContain("answers no person");
+  expect(text).not.toContain(update!.id);
+  const correct = intake
+    .tools(run.companyId)
+    .find((tool) => tool.name === "intake_update")!;
+  await expect(
+    correct.execute(
+      {
+        id: update!.id,
+        action: "handled",
+        revision: 1,
+        quote: "done",
+      } as never,
+      { conversationId: open.conversationId } as never,
+      undefined as never
+    )
+  ).rejects.toThrow("only when a person asks");
 });
 
 test("the overview shows a waiting update, takes feedback for the judge, and can post the update now", async () => {

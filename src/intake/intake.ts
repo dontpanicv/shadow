@@ -2481,7 +2481,7 @@ export class Intake {
     ) => {
       const user = await this.threads.requester(companyId, conversationId);
       if (!user) {
-        throw notFound();
+        return null;
       }
       this.companies.requireMember(companyId, user);
       const thread = this.companies
@@ -2500,7 +2500,19 @@ export class Intake {
         parameters: Type.Object({ query: Type.String() }),
         replay: "safe",
         execute: async ({ query }, api) => {
-          const { user } = await actor(api.conversationId);
+          const asked = await actor(api.conversationId);
+          if (!asked) {
+            // An ambient or unattended turn answers no person, so it has no private sources to read.
+            return {
+              output: [
+                {
+                  type: "text",
+                  text: "This turn answers no person, so it reads no one's private sources. Answer from the company's sources.",
+                },
+              ],
+            };
+          }
+          const { user } = asked;
           return {
             output: [
               {
@@ -2533,7 +2545,13 @@ export class Intake {
         }),
         replay: "safe",
         execute: async ({ id, action, revision, quote }, api) => {
-          const { user, thread } = await actor(api.conversationId);
+          const asked = await actor(api.conversationId);
+          if (!asked) {
+            throw new Error(
+              "Apply a correction only when a person asks for it."
+            );
+          }
+          const { user, thread } = asked;
           const state = await this.threads.messages(thread);
           if (
             !(
