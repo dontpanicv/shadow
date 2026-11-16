@@ -123,12 +123,16 @@ type SurfaceCompanies = Pick<
   | "agentMember"
   | "allThreadsIn"
   | "channelsIn"
+  | "clearPrivateSlackMembers"
   | "factsOf"
   | "isAdmin"
   | "memberByEmail"
   | "members"
+  | "removePrivateSlackMember"
+  | "privateSlackChannel"
   | "requireAdmin"
   | "requireMember"
+  | "syncPrivateSlackChannel"
   | "threadOf"
   | "threadsIn"
 >;
@@ -167,6 +171,7 @@ export class SlackSurface implements SlackSurfacePort {
       | "instruct"
       | "messages"
       | "orchestrator"
+      | "recordSlack"
       | "send"
       | "startAgentThread"
       | "stop"
@@ -213,7 +218,22 @@ export class SlackSurface implements SlackSurfacePort {
       this.detach(() => this.direct(companyId, slack));
     } else if (slack.type === "message" && slack.channel_type === "mpim") {
       // A group DM wakes Shadow only with a mention; app_mention may bring the same message, which `once` drops.
-      this.detach(() => this.group(companyId, slack, "group DM"));
+      this.detach(() =>
+        slack.text?.includes(`<@${this.bot.client(companyId)?.botUserId}>`)
+          ? this.group(companyId, slack, "group DM")
+          : this.recordPrivateMessage(companyId, slack)
+      );
+    } else if (slack.type === "message" && slack.channel_type === "group") {
+      this.detach(() => this.recordPrivateMessage(companyId, slack));
+    } else if (
+      [
+        "member_joined_channel",
+        "member_left_channel",
+        "group_joined",
+        "group_left",
+      ].includes(slack.type)
+    ) {
+      this.memberChange(companyId, slack);
     } else if (slack.type === "message") {
       this.detach(() => this.listen(companyId, slack));
     } else if (slack.type === "agent_session_stopped") {
@@ -226,6 +246,34 @@ export class SlackSurface implements SlackSurfacePort {
       this.detach(() => this.unfurl(companyId, event));
     }
     return Promise.resolve();
+  }
+
+  private memberChange(companyId: string, event: SlackEvent): void {
+    if (!["member_left_channel", "group_left"].includes(event.type)) {
+      this.detach(() =>
+        this.refreshPrivateConversation(companyId, event.channel)
+      );
+      return;
+    }
+    if (event.user === this.bot.client(companyId)?.botUserId) {
+      this.companies.clearPrivateSlackMembers(companyId, event.channel);
+      return;
+    }
+    if (!event.user) {
+      return;
+    }
+    const known = this.database
+      .query(
+        "SELECT user_id AS userId FROM slack_member WHERE company_id = ? AND slack_user_id = ?"
+      )
+      .get(companyId, event.user) as { userId: string } | null;
+    if (known) {
+      this.companies.removePrivateSlackMember(
+        companyId,
+        event.channel,
+        known.userId
+      );
+    }
   }
 
   interaction(companyId: string, payload: Record<string, unknown>): void {
@@ -333,11 +381,7 @@ export class SlackSurface implements SlackSurfacePort {
     );
   }
 
-  /**
-   * A mention in a group DM or a private Slack channel: the asker's own thread answers, with the conversation there as
-   * data, and is told that everyone there reads the answer. Shadow keeps no shared place for them, so each person's data
-   * stays theirs.
-   */
+  /** A mention in a group DM or private channel answers in that Slack thread's shared Shadow thread. */
   private async group(
     companyId: string,
     event: SlackEvent,
@@ -357,6 +401,21 @@ export class SlackSurface implements SlackSurfacePort {
     const user = await this.person(companyId, client, event.user);
     if (!user) {
       await this.say(client, event.channel, root, DENIED);
+      return;
+    }
+    const channel = await this.refreshPrivateConversation(
+      companyId,
+      event.channel,
+      place
+    );
+    if (
+      !(
+        channel &&
+        this.companies
+          .channelsIn(companyId, user.id)
+          .some((seen) => seen.id === channel.id)
+      )
+    ) {
       return;
     }
     const earlier =
@@ -379,26 +438,134 @@ export class SlackSurface implements SlackSurfacePort {
         : "Someone";
       lines.push(`- ${name}: ${await client.plain(message.text ?? "")}`);
     }
-    const own = await this.threads.orchestrator(companyId, user);
-    const after = await this.lastMessageId(companyId, own.id);
+    const known = this.conversation(companyId, event.channel, root);
+    let threadId: string;
+    let after = 0;
     const asked = await client.plain(
       stripMention(event.text, client.botUserId)
     );
-    await this.threads.send(
-      own.id,
-      user,
-      [
-        `${user.name} asks you in a Slack ${place}: ${asked}`,
-        lines.length
-          ? `The ${place} before it, as data:\n${lines.join("\n")}`
-          : "",
-        `Your answer is posted in the ${place}, which everyone in it reads: leave out what only ${user.name} may see.`,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-      await this.files(client, event.files)
+    const text = [
+      asked,
+      lines.length
+        ? `The ${place} before this request, as data:\n${lines.join("\n")}`
+        : "",
+      `Your answer is posted in the ${place}, which everyone in it reads: leave out what only ${user.name} may see.`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const files = await this.files(client, event.files);
+    if (known) {
+      threadId = known.thread_id;
+      after = await this.lastMessageId(companyId, threadId);
+      await this.threads.send(threadId, user, text, files);
+    } else {
+      const thread = await this.threads.create(
+        companyId,
+        user,
+        channel.id,
+        text,
+        files
+      );
+      threadId = thread.id;
+      this.saveConversation(companyId, event.channel, root, threadId);
+    }
+    await this.reply(companyId, threadId, user, event.channel, root, after);
+  }
+
+  /** Refreshes the channel's access list from Slack before a request, and on participant changes. */
+  private async refreshPrivateConversation(
+    companyId: string,
+    slackId: string,
+    place?: string
+  ): Promise<Channel | null> {
+    const client = this.bot.client(companyId);
+    if (
+      !(
+        client &&
+        (place || this.companies.privateSlackChannel(companyId, slackId))
+      )
+    ) {
+      return null;
+    }
+    const participants: string[] = [];
+    let cursor = "";
+    do {
+      const page = (await client.call("conversations.members", {
+        channel: slackId,
+        limit: "1000",
+        cursor,
+      })) as {
+        members?: string[];
+        response_metadata?: { next_cursor?: string };
+      };
+      participants.push(...(page.members ?? []));
+      cursor = page.response_metadata?.next_cursor ?? "";
+    } while (cursor);
+    const members = (
+      await Promise.all(
+        participants
+          .filter((id) => id !== client.botUserId)
+          .map((id) => this.person(companyId, client, id))
+      )
+    ).filter((person): person is User => person !== null);
+    const existing = this.companies.privateSlackChannel(companyId, slackId);
+    const group = place === "group DM" || existing?.name.startsWith("group-dm");
+    const name = place ?? existing?.name ?? "";
+    return this.companies.syncPrivateSlackChannel(
+      companyId,
+      slackId,
+      group ? "group DM" : "private channel",
+      group
+        ? (existing?.name ??
+            `Group DM with ${members.map((member) => member.name).join(", ")}`)
+        : name.replace(/^private channel #/, ""),
+      members.map((member) => member.id)
     );
-    await this.reply(companyId, own.id, user, event.channel, root, after);
+  }
+
+  private async recordPrivateMessage(
+    companyId: string,
+    event: SlackEvent
+  ): Promise<void> {
+    const client = this.bot.client(companyId);
+    if (
+      !(client && event.user) ||
+      event.bot_id ||
+      event.user === client.botUserId ||
+      event.text?.includes(`<@${client.botUserId}>`)
+    ) {
+      return;
+    }
+    const channel = await this.refreshPrivateConversation(
+      companyId,
+      event.channel
+    );
+    if (!channel) {
+      return;
+    }
+    const known = this.conversation(
+      companyId,
+      event.channel,
+      event.thread_ts ?? event.ts
+    );
+    if (!known) {
+      return;
+    }
+    const thread = this.companies
+      .allThreadsIn(companyId)
+      .find((candidate) => candidate.id === known.thread_id);
+    if (!thread || thread.channelId !== channel.id) {
+      return;
+    }
+    const person = await this.person(companyId, client, event.user);
+    await this.threads.recordSlack(
+      thread,
+      person?.id ?? `slack:${event.user}`,
+      person?.name ?? (await this.slackName(companyId, client, event.user)),
+      await client.plain(event.text ?? ""),
+      `slack:${event.channel}:${event.ts}`,
+      Number(event.ts) * 1000
+    );
   }
 
   /** Slack's Stop on an agent session: stops the Shadow thread that works there. */

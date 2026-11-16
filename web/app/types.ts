@@ -38,6 +38,8 @@ export interface Channel {
   readonly icon: string | null;
   /** The Slack channel it copies; null for a channel that no Slack channel made. */
   readonly slackId: string | null;
+  /** A Slack conversation visible only to its current participants. */
+  readonly slackPrivate: boolean;
   /** The member's own private channel, which Shadow makes for each member. */
   readonly personal: boolean;
   /** Newest first. */

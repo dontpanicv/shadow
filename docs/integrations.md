@@ -74,9 +74,11 @@ People talk to Shadow in Slack as on the web; `src/slack/` is the second app.
   hands work on to the channels, as on the web, and knows which public channel the person looks at, so "sum up this
   channel" works. The suggested prompts come from the manifest.
 - **Group DMs and private channels**: mention Shadow in a group DM, or in a private channel that someone invited
-  Shadow to. The asker's own thread answers, with the conversation there as data, and it leaves out what only the asker
-  may see, because everyone there reads the answer. Shadow keeps no shared place for them, so their conversation stays
-  in Slack.
+  Shadow to. Shadow makes one channel for that Slack conversation and one thread for each Slack thread where someone
+  mentions it. Only current participants who are Shadow members see that channel and its threads. Later replies in
+  that Slack thread appear in the Shadow thread without starting an agent; later mentions continue its agent conversation.
+  Each turn uses the asker's accounts. The bot posts the
+  answer in Slack, where everyone in that conversation can read it, so Shadow leaves out what only the asker may see.
 - **Who**: a Slack user whose email is in `allowed_emails` becomes a member at their first message; others get one
   answer that they are not allowed.
 - **Listening**: an admin gives a channel a goal on the channel's page, or every channel the default goal in Company

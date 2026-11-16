@@ -70,7 +70,10 @@
         "channel_rename",
         "channel_unarchive",
         "link_shared",
+        "member_joined_channel",
+        "member_left_channel",
         "message.channels",
+        "message.groups",
         "message.im",
         "message.mpim"
       ]

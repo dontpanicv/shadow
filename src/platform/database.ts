@@ -831,6 +831,19 @@ const migrations = [
     changed_by TEXT NOT NULL,
     changed_at INTEGER NOT NULL
   );`,
+  // companies: Slack private conversations have their own channels and a current participant list.
+  `CREATE TABLE slack_private_channel (
+    company_id TEXT NOT NULL,
+    slack_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL UNIQUE REFERENCES channel(id),
+    kind TEXT NOT NULL,
+    PRIMARY KEY (company_id, slack_id)
+  );
+  CREATE TABLE slack_private_member (
+    channel_id TEXT NOT NULL REFERENCES channel(id),
+    user_id TEXT NOT NULL,
+    PRIMARY KEY (channel_id, user_id)
+  );`,
 ];
 
 export function openDatabase(path: string): Database {

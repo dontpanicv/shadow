@@ -279,7 +279,9 @@ function CompanyNav({
       Number(b.pinned) - Number(a.pinned) ||
       a.name.localeCompare(b.name)
   );
-  const shared = sorted.filter((channel) => channel.ownerId === null);
+  const shared = sorted.filter(
+    (channel) => channel.ownerId === null && !channel.slackPrivate
+  );
   // A Slack channel is the person's when they pinned it, wrote or were mentioned there, or it has a thread.
   const theirs = (channel: (typeof channels)[number]) =>
     channel.pinned ||
@@ -309,7 +311,7 @@ function CompanyNav({
               emoji={channel.icon}
               icon="hash"
               label={channel.name}
-              locked={channel.ownerId !== null}
+              locked={channel.ownerId !== null || channel.slackPrivate}
             />
           </Link>
           <span className="channel-actions">
@@ -426,7 +428,9 @@ function CompanyNav({
             />
           </div>
           {sorted
-            .filter((channel) => channel.ownerId !== null)
+            .filter(
+              (channel) => channel.ownerId !== null || channel.slackPrivate
+            )
             .map(channelItem)}
           <Link
             className="nav-item"

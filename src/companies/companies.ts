@@ -62,6 +62,8 @@ export interface Channel {
   readonly icon: string | null;
   /** The ID of the Slack channel it copies; null for a channel that no Slack channel made. */
   readonly slackId: string | null;
+  /** A Slack conversation visible only to its current participants. */
+  readonly slackPrivate: boolean;
   /** The member's own private channel, which Shadow makes for each member, like a DM to oneself in Slack. */
   readonly personal: boolean;
   readonly threads: readonly ThreadSummary[];
@@ -223,7 +225,104 @@ export class Companies {
   /** The channels of a company that `realm` sees, with their threads, newest first, for agents. */
   channelsIn(companyId: string, realm: Realm): Channel[] {
     return this.allChannelsIn(companyId).filter(
-      (channel) => channel.ownerId === null || channel.ownerId === realm
+      (channel) =>
+        (channel.ownerId === null || channel.ownerId === realm) &&
+        (!channel.slackPrivate ||
+          (realm !== null && this.isSlackPrivateMember(channel.id, realm)))
+    );
+  }
+
+  /** A Slack private conversation has one shared Shadow channel, visible only to its current members. */
+  syncPrivateSlackChannel(
+    companyId: string,
+    slackId: string,
+    kind: "group DM" | "private channel",
+    name: string,
+    memberIds: readonly string[]
+  ): Channel {
+    const channelId = this.database.transaction(() => {
+      const known = this.database
+        .query(
+          "SELECT channel_id AS channelId FROM slack_private_channel WHERE company_id = ? AND slack_id = ?"
+        )
+        .get(companyId, slackId) as { channelId: string } | null;
+      const id =
+        known?.channelId ?? this.addChannel(companyId, name, "slack", null).id;
+      if (!known) {
+        this.database
+          .query(
+            "INSERT INTO slack_private_channel (company_id, slack_id, channel_id, kind) VALUES (?, ?, ?, ?)"
+          )
+          .run(companyId, slackId, id, kind);
+      }
+      this.database
+        .query("DELETE FROM slack_private_member WHERE channel_id = ?")
+        .run(id);
+      const add = this.database.query(
+        "INSERT INTO slack_private_member (channel_id, user_id) VALUES (?, ?)"
+      );
+      for (const memberId of new Set(memberIds)) {
+        add.run(id, memberId);
+      }
+      return id;
+    })();
+    return this.allChannelsIn(companyId).find(
+      (channel) => channel.id === channelId
+    )!;
+  }
+
+  privateSlackChannel(companyId: string, slackId: string): Channel | null {
+    const row = this.database
+      .query(
+        "SELECT channel_id AS channelId FROM slack_private_channel WHERE company_id = ? AND slack_id = ?"
+      )
+      .get(companyId, slackId) as { channelId: string } | null;
+    return (
+      this.allChannelsIn(companyId).find(
+        (channel) => channel.id === row?.channelId
+      ) ?? null
+    );
+  }
+
+  clearPrivateSlackMembers(companyId: string, slackId: string): void {
+    const channel = this.privateSlackChannel(companyId, slackId);
+    if (channel) {
+      this.database
+        .query("DELETE FROM slack_private_member WHERE channel_id = ?")
+        .run(channel.id);
+    }
+  }
+
+  removePrivateSlackMember(
+    companyId: string,
+    slackId: string,
+    userId: string
+  ): void {
+    const channel = this.privateSlackChannel(companyId, slackId);
+    if (channel) {
+      this.database
+        .query(
+          "DELETE FROM slack_private_member WHERE channel_id = ? AND user_id = ?"
+        )
+        .run(channel.id, userId);
+    }
+  }
+
+  private isSlackPrivate(channelId: string): boolean {
+    return Boolean(
+      this.database
+        .query("SELECT 1 FROM slack_private_channel WHERE channel_id = ?")
+        .get(channelId)
+    );
+  }
+
+  private isSlackPrivateMember(channelId: string, userId: string): boolean {
+    return Boolean(
+      this.database
+        .query(
+          "SELECT 1 FROM slack_private_member WHERE channel_id = ? AND user_id = ?"
+        )
+        .get(channelId, userId)
     );
   }
 
@@ -231,10 +330,14 @@ export class Companies {
   allChannelsIn(companyId: string): Channel[] {
     const channels = this.database
       .query(
-        `SELECT id, name, owner_id AS ownerId, summary, icon, slack_id AS slackId, personal FROM channel WHERE company_id = ? AND deleted_at IS NULL AND ${LIVE} ORDER BY created_at, rowid`
+        `SELECT id, name, owner_id AS ownerId, summary, icon, slack_id AS slackId, personal, EXISTS (SELECT 1 FROM slack_private_channel s WHERE s.channel_id = channel.id) AS slackPrivate FROM channel WHERE company_id = ? AND deleted_at IS NULL AND ${LIVE} ORDER BY created_at, rowid`
       )
-      .all(companyId) as (Omit<Channel, "threads" | "personal"> & {
+      .all(companyId) as (Omit<
+      Channel,
+      "threads" | "personal" | "slackPrivate"
+    > & {
       personal: number;
+      slackPrivate: number;
     })[];
     const threads = this.database
       .query(
@@ -244,6 +347,7 @@ export class Companies {
     return channels.map((channel) => ({
       ...channel,
       personal: channel.personal === 1,
+      slackPrivate: channel.slackPrivate === 1,
       threads: threads.filter((thread) => thread.channelId === channel.id),
     }));
   }
@@ -303,6 +407,7 @@ export class Companies {
       summary: null,
       icon: null,
       slackId: null,
+      slackPrivate: false,
       personal: false,
       threads: [],
     };
@@ -532,7 +637,7 @@ export class Companies {
   thread(threadId: string, user: User): ThreadSummary & ThreadRef {
     const thread = this.database
       .query(
-        `SELECT ${THREAD} FROM thread t JOIN member m ON m.organizationId = t.company_id JOIN channel c ON c.id = t.channel_id AND c.deleted_at IS NULL WHERE t.id = ? AND m.userId = ? AND (t.orchestrator = 0 OR t.created_by = m.userId) AND (c.owner_id IS NULL OR c.owner_id = m.userId) AND t.${LIVE}`
+        `SELECT ${THREAD} FROM thread t JOIN member m ON m.organizationId = t.company_id JOIN channel c ON c.id = t.channel_id AND c.deleted_at IS NULL WHERE t.id = ? AND m.userId = ? AND (t.orchestrator = 0 OR t.created_by = m.userId) AND (c.owner_id IS NULL OR c.owner_id = m.userId) AND (NOT EXISTS (SELECT 1 FROM slack_private_channel s WHERE s.channel_id = c.id) OR EXISTS (SELECT 1 FROM slack_private_member sm WHERE sm.channel_id = c.id AND sm.user_id = m.userId)) AND t.${LIVE}`
       )
       .get(threadId, user.id) as (ThreadSummary & ThreadRef) | null;
     if (!thread) {
@@ -546,8 +651,13 @@ export class Companies {
    * deleted channels are left out.
    */
   threadsIn(companyId: string, realm: Realm): (ThreadSummary & ThreadRef)[] {
+    const visible = new Set(
+      this.channelsIn(companyId, realm).map((channel) => channel.id)
+    );
     return this.allThreadsIn(companyId).filter(
-      (thread) => thread.realm === null || thread.realm === realm
+      (thread) =>
+        visible.has(thread.channelId) &&
+        (thread.realm === null || thread.realm === realm)
     );
   }
 
@@ -632,6 +742,9 @@ export class Companies {
     }
     if (from.id === to.id) {
       return { thread, from, to };
+    }
+    if (this.isSlackPrivate(from.id) || this.isSlackPrivate(to.id)) {
+      throw new HttpError(403, "A Slack conversation stays in its channel");
     }
     if (from.ownerId !== null && to.ownerId === null) {
       throw new HttpError(

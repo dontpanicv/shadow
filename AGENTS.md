@@ -80,6 +80,10 @@ addresses, or code and data from employers or clients.
   new channel's last 30 days once, a gap from the last event, and the last 36 hours once a day, writes one
   `slack-YYYY-MM-DD.md` file of the channel per changed day each minute, and gives a channel quiet for 10 minutes to
   its brief (`Threads.briefFromSlack`).
+- A group DM or private Slack channel that mentions Shadow has one Shadow channel for its current Slack participants
+  who are company members. Its Slack threads stay in matching Shadow threads. A reply without a mention is recorded
+  there without starting an agent; a mention is the requester's turn with their credentials. Its shared `Realm` does
+  not make it visible to every member: channel membership limits all reads, search, files, and notifications.
 - Shadow has one company; nobody makes or deletes one. A private channel (`channel.owner_id`) and all
   of it belong to one member. Each member has one own private channel (`channel.personal`,
   `Companies.personalChannelOf`), where their orchestrator starts the work that concerns only them. Every read of channels, threads, files, artifacts, routines, reminders, search, or memory

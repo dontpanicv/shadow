@@ -701,6 +701,39 @@ export class Threads {
     this.registry.touchThread(thread.id);
   }
 
+  /** Keeps a Slack reply in its Shadow thread without starting an agent turn. */
+  async recordSlack(
+    thread: ThreadSummary & ThreadRef,
+    authorId: string,
+    author: string,
+    text: string,
+    requestId: string,
+    at: number
+  ): Promise<void> {
+    const conversation = await this.conversation(thread);
+    await conversation.submit(
+      {
+        type: "write",
+        requestId,
+        entry: {
+          kind: AUTHORED,
+          data: { authorId, author, text, files: [] },
+          model: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: `${localTime(at)} ${author}: ${text}` },
+              ],
+              timestamp: at,
+            },
+          ],
+        },
+      },
+      BACKGROUND_CONTEXT
+    );
+    this.registry.touchThread(thread.id);
+  }
+
   /**
    * Moves a thread of the person's company to another channel they see; see `relocate`. `409` while its agent works,
    * so no save of the running turn races the files that move.
@@ -1844,8 +1877,15 @@ export class Threads {
 
   /** The members who see a thread: every member, or the one person of its realm. */
   private membersSeeing(thread: ThreadRef) {
+    const channelId = this.registry
+      .allThreadsIn(thread.companyId)
+      .find((candidate) => candidate.id === thread.id)?.channelId;
     return this.members(thread.companyId).filter(
-      (member) => thread.realm === null || member.userId === thread.realm
+      (member) =>
+        (thread.realm === null || member.userId === thread.realm) &&
+        this.registry
+          .channelsIn(thread.companyId, member.userId)
+          .some((channel) => channel.id === channelId)
     );
   }
 
@@ -2622,6 +2662,15 @@ export class Threads {
     companyId: string,
     thread: ThreadSummary & ThreadRef
   ): Promise<void> {
+    // A Slack private group has a shared realm but its facts must not become company facts.
+    if (
+      thread.realm === null &&
+      !this.registry
+        .channelsIn(companyId, null)
+        .some((candidate) => candidate.id === thread.channelId)
+    ) {
+      return;
+    }
     const learned = this.learned.get(companyId);
     if (!learned || this.background.signal.aborted) {
       return;

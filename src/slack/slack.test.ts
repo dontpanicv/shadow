@@ -371,7 +371,7 @@ test("the default goal lets Shadow listen in every channel, until an admin switc
   await close();
 });
 
-test("a mention in a group DM answers once, from the asker's own thread, with the group's conversation as data", async () => {
+test("a group DM mention answers once in a shared thread that only its participants see", async () => {
   const { company, writes, close } = await setup();
   model.answer = "Acme renewed in May.";
   slack.joined.add("G1");
@@ -399,18 +399,130 @@ test("a mention in a group DM answers once, from the asker's own thread, with th
   expect(
     writes("chat.postMessage").filter((post) => post.body.channel === "G1")
   ).toHaveLength(1);
-  const own = await shadow.app.threads.orchestrator(company.id, alice);
-  const { messages } = await shadow.app.threads.messages(own);
+  const group = shadow.app.companies
+    .channels(company.id, alice)
+    .find((channel) => channel.name.startsWith("group-dm"))!;
+  const thread = shadow.app.companies
+    .threadsIn(company.id, alice.id)
+    .find((candidate) => candidate.channelId === group.id)!;
+  const { messages } = await shadow.app.threads.messages(thread);
   const request = messages.findLast((message) => !message.agent)!.text;
-  expect(request).toContain(
-    "Alice asks you in a Slack group DM: what do we know about Acme?"
-  );
+  expect(request).toContain("what do we know about Acme?");
   expect(request).toContain("- Bob Smith: Are we on for the Acme call?");
   expect(request).toContain("leave out what only Alice may see");
+  const bob = shadow.app.companies
+    .members(company.id, alice)
+    .find((member) => member.email === "bob@example.com")!;
+  expect(
+    shadow.app.companies
+      .threadsIn(company.id, bob.userId)
+      .some((candidate) => candidate.id === thread.id)
+  ).toBe(true);
+  expect(
+    shadow.app.companies
+      .threadsIn(company.id, null)
+      .some((candidate) => candidate.id === thread.id)
+  ).toBe(false);
+  slack.messages.G1!.unshift(mention);
+  slack.replies[mention.ts] = [];
+  const reply = {
+    channel: "G1",
+    user: "U2",
+    text: "Check legal first.",
+    ts: (Date.now() / 1000 + 0.5).toFixed(6),
+    thread_ts: mention.ts,
+  };
+  slack.replies[mention.ts]!.push(reply);
+  slack.event({ type: "message", channel_type: "mpim", ...reply });
+  await until(
+    async () => shadow.app.threads.messages(thread),
+    (state) =>
+      state.messages.some((message) => message.text === "Check legal first.")
+  );
+  expect(
+    (await shadow.app.threads.messages(thread)).messages.filter(
+      (message) => message.agent
+    )
+  ).toHaveLength(1);
+  const second = {
+    channel: "G1",
+    user: "U2",
+    text: "<@B1> and what is next?",
+    ts: (Date.now() / 1000 + 1).toFixed(6),
+    thread_ts: mention.ts,
+  };
+  slack.event({ type: "app_mention", ...second });
+  await until(
+    async () => shadow.app.threads.messages(thread),
+    (state) =>
+      !state.running &&
+      state.messages.filter((message) => message.agent).length === 2
+  );
+  expect(
+    shadow.app.companies
+      .channels(company.id, alice)
+      .filter((channel) => channel.id === group.id)
+  ).toHaveLength(1);
+  expect(
+    shadow.app.companies
+      .threadsIn(company.id, bob.userId)
+      .filter((candidate) => candidate.id === thread.id)
+  ).toHaveLength(1);
+  expect(
+    await shadow.app.threads.realm(company.id, thread.conversationId as never)
+  ).toBe(bob.userId);
+
+  slack.participants.G1 = ["U1", "B1"];
+  slack.event({ type: "member_left_channel", channel: "G1", user: "U2" });
+  await until(
+    async () => shadow.app.companies.channelsIn(company.id, bob.userId),
+    (channels) => !channels.some((channel) => channel.id === group.id)
+  );
+  expect(
+    shadow.app.companies
+      .threadsIn(company.id, bob.userId)
+      .some((candidate) => candidate.id === thread.id)
+  ).toBe(false);
+  expect(() =>
+    shadow.app.companies.thread(thread.id, {
+      id: bob.userId,
+      name: bob.name,
+      email: bob.email,
+    })
+  ).toThrow();
+  await shadow.app.indexer.scan(company.id);
+  expect(
+    (
+      await shadow.app.indexer.search(company.id, "Acme renewed", 10, alice.id)
+    ).results.some((result) => result.uri === `thread:${thread.id}`)
+  ).toBe(true);
+  expect(
+    (
+      await shadow.app.indexer.search(
+        company.id,
+        "Acme renewed",
+        10,
+        bob.userId
+      )
+    ).results.some((result) => result.uri === `thread:${thread.id}`)
+  ).toBe(false);
+  slack.participants.G1 = ["U1", "U2", "B1"];
+  slack.event({ type: "member_joined_channel", channel: "G1", user: "U2" });
+  await until(
+    async () => shadow.app.companies.channelsIn(company.id, bob.userId),
+    (channels) => channels.some((channel) => channel.id === group.id)
+  );
+  expect(
+    shadow.app.companies.thread(thread.id, {
+      id: bob.userId,
+      name: bob.name,
+      email: bob.email,
+    }).id
+  ).toBe(thread.id);
   await close();
 });
 
-test("a mention in a private channel answers from the asker's own thread, with the channel's conversation as data", async () => {
+test("a private channel mention answers in its own restricted Shadow thread", async () => {
   const { company, writes, close } = await setup();
   model.answer = "Acme renewed in May.";
   slack.joined.add("P1");
@@ -433,12 +545,15 @@ test("a mention in a private channel answers from the asker's own thread, with t
     (updates) =>
       updates.some((each) => JSON.stringify(each.body).includes("renewed"))
   );
-  const own = await shadow.app.threads.orchestrator(company.id, alice);
-  const { messages } = await shadow.app.threads.messages(own);
+  const channel = shadow.app.companies
+    .channels(company.id, alice)
+    .find((candidate) => candidate.name === "p1")!;
+  const thread = shadow.app.companies
+    .threadsIn(company.id, alice.id)
+    .find((candidate) => candidate.channelId === channel.id)!;
+  const { messages } = await shadow.app.threads.messages(thread);
   const request = messages.findLast((message) => !message.agent)!.text;
-  expect(request).toContain(
-    "Alice asks you in a Slack private channel #p1: what do we know about Acme?"
-  );
+  expect(request).toContain("what do we know about Acme?");
   expect(request).toContain("- Bob Smith: Did Acme sign?");
   expect(request).toContain("leave out what only Alice may see");
   await close();

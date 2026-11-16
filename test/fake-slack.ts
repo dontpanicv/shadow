@@ -31,6 +31,7 @@ export function fakeSlack() {
     users: { U1: "Alice Novak", U2: "Bob Smith" } as Record<string, string>,
     /** The email of each user, which users.info and users.lookupByEmail give. */
     emails: {} as Record<string, string>,
+    participants: {} as Record<string, string[]>,
     /** What Shadow posted, updated, or published, in order, with the JSON body of each write. */
     writes: [] as {
       method: string;
@@ -96,6 +97,12 @@ export function fakeSlack() {
         case "/api/conversations.join":
           slack.joined.add(channel);
           return Response.json({ ok: true });
+        case "/api/conversations.members":
+          return Response.json({
+            ok: true,
+            members: slack.participants[channel] ?? ["U1", "U2", "B1"],
+            response_metadata: { next_cursor: "" },
+          });
         case "/api/conversations.history": {
           if (slack.messages[channel] && !slack.joined.has(channel)) {
             return Response.json({ ok: false, error: "not_in_channel" });

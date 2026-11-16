@@ -521,6 +521,7 @@ function threadsOver(dataDirectory: string, llm: Llm) {
       summary: null,
       icon: null,
       slackId: null,
+      slackPrivate: false,
       personal: false,
       threads: [],
     }),

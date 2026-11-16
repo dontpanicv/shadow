@@ -592,7 +592,7 @@ a thread they do not see; the agent describes Shadow, not the person.
 
 ### Slack (`src/slack/`)
 
-Shadow's second app is the company's Slack. A mention in a public channel, or a DM, reaches Shadow through the Slack
+Shadow's second app is the company's Slack. A mention in a public channel, a private channel, or a group DM, or a DM, reaches Shadow through the Slack
 bot's Socket Mode connection; `docs/integrations.md` says what people see there. These routes are for admins, `403` for
 others.
 
