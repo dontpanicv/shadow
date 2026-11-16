@@ -688,13 +688,22 @@ test("an unasked turn offers a routine, and it becomes the person's own, posting
       .run(company.id, user, slack.emails[user]!);
   }
   await companies.memberByEmail(company.id, "bob@example.com", "Bob");
-  const [, suggest] = noticeTools(
+  const [tell, suggest] = noticeTools(
     companies,
     shadow.app.notifications,
     shadow.app.agenda,
     shadow.app.slack,
+    async () => alice.id,
     company.id
   );
+  // A turn for Alice sees her private data, so it tells nobody else.
+  await expect(
+    tell!.execute(
+      { person: "bob@example.com", text: "Alice's mail says hi" } as never,
+      { conversationId: thread.conversationId, taskId: "tell-1" } as never,
+      BACKGROUND_CONTEXT
+    )
+  ).rejects.toThrow("tells only them");
   await suggest!.execute(
     {
       text: "",

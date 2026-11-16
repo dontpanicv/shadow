@@ -179,7 +179,14 @@ export async function createApp(
         ...intake.tools(companyId),
         ...feedback.tools(companyId),
         ...observability.tools(companyId),
-        ...noticeTools(companies, notifications, agenda, slack, companyId),
+        ...noticeTools(
+          companies,
+          notifications,
+          agenda,
+          slack,
+          (conversationId) => threads.realm(companyId, conversationId),
+          companyId
+        ),
       ],
       automations: (companyId, personId) =>
         agenda.automations(companyId, personId),

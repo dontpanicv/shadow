@@ -255,7 +255,7 @@ const NAMESPACES: CodemodeNamespace[] = [
     name: "computer",
     prefix: "computer_",
     description:
-      "Shadow's macOS work computer, which all agents share: run shell commands and untrusted code, convert documents, PDFs, pictures, audio, and archives, and use its apps.",
+      "Shadow's macOS work computer, where each person's commands run as their own user: run shell commands and untrusted code, convert documents, PDFs, pictures, audio, and archives, and use its apps.",
   },
   {
     name: "files",
@@ -857,9 +857,8 @@ export class Threads {
   /**
    * Moves a thread that `realm` sees to another channel for `person`, with what belongs to it: its artifacts, the
    * files of its channel that it mentions and no other thread there does, its notifications, routine, and
-   * suggestions, and what Shadow learned from it. The new channel's brief reads the thread from its start; when the move
-   * takes the thread from people, their memories and the old channel's brief lose it. The thread gets a note of who
-   * moved it.
+   * suggestions, and what Shadow learned from it. The new channel's brief reads the thread from its start. A thread
+   * moves only between channels of one realm, so nobody gains or loses it. The thread gets a note of who moved it.
    */
   private async relocate(
     companyId: string,
@@ -872,7 +871,6 @@ export class Threads {
     const { thread, from, to } = this.registry.moveThread(
       companyId,
       realm,
-      person.id,
       threadId,
       channelId
     );
@@ -898,18 +896,8 @@ export class Threads {
       BACKGROUND_CONTEXT
     );
     this.learnedOf(companyId).moveThread(thread.id, to.id, to.ownerId);
-    const briefs = this.briefs.get(companyId)!;
     const reread = [thread.id];
-    if (from.ownerId === null && to.ownerId !== null) {
-      // The others no longer see the thread, so the old channel's brief is written again from the threads that stay.
-      briefs.restart(from.id);
-      reread.push(
-        ...from.threads
-          .filter((candidate) => candidate.id !== thread.id)
-          .map((candidate) => candidate.id)
-      );
-    }
-    briefs.unread(reread);
+    this.briefs.get(companyId)!.unread(reread);
     for (const id of reread) {
       this.caughtUp.delete(id);
       for (const waiting of this.unbriefed.values()) {
@@ -1675,6 +1663,34 @@ export class Threads {
     return input?.kind === RELAYED
       ? (input.data as unknown as Relay).fromThreadId
       : undefined;
+  }
+
+  /** Whether the agent of thread `fromThreadId` ever sent `thread` a message. */
+  private async heardFrom(
+    thread: ThreadRef,
+    fromThreadId: string
+  ): Promise<boolean> {
+    const conversation = await this.conversation(thread);
+    let cursor: Awaited<ReturnType<Conversation["entries"]>>["next"];
+    do {
+      const page = await conversation.entries(
+        { order: "descending" },
+        50,
+        cursor,
+        BACKGROUND_CONTEXT
+      );
+      if (
+        page.items.some(
+          (entry) =>
+            entry.kind === RELAYED &&
+            (entry.data as unknown as Relay).fromThreadId === fromThreadId
+        )
+      ) {
+        return true;
+      }
+      cursor = page.next;
+    } while (cursor);
+    return false;
   }
 
   /** The newest message an agent works on: a person's, another thread's agent's, or work that no person typed. */
@@ -3211,7 +3227,12 @@ export class Threads {
           this.realm(companyId, conversationId)
         ),
         ...this.browser.tools(companyId, requesterOf),
-        ...this.computer.tools(companyId, fileOf, save),
+        ...this.computer.tools(
+          companyId,
+          (conversationId) => this.realm(companyId, conversationId),
+          fileOf,
+          save
+        ),
         ...this.sources.tools(),
         ...hooked,
       ].map(scriptOnly),
@@ -3795,7 +3816,7 @@ export class Threads {
         );
         const requester = await this.requester(companyId, api.conversationId);
         const realm = from.realm ?? requester?.id ?? null;
-        // A thread of a channel may report back to an orchestrator; any other target is one its turn's realm sees.
+        // A thread of a channel answers an orchestrator only after it asked; any other target is one its turn's realm sees.
         const target = this.registry
           .allThreadsIn(companyId)
           .find(
@@ -3811,10 +3832,20 @@ export class Threads {
         if (target.id === from.id) {
           throw new Error("That is this thread. Answer here instead.");
         }
-        // A thread of a channel reports back to a person's own thread; one person's never talks to another's.
-        if (target.ownerId !== null && from.ownerId !== null) {
-          throw new Error(`There is no thread ${args.thread} in this company.`);
+        if (
+          target.ownerId !== null &&
+          (from.ownerId !== null || !(await this.heardFrom(from, target.id)))
+        ) {
+          throw new Error(
+            "A person's own thread gets only the answers to what it asked, so send nothing there."
+          );
         }
+        // An answer to an orchestrator works for its own person, with their realm and credentials.
+        const answering = target.ownerId
+          ? this.members(companyId).find(
+              (member) => member.userId === target.ownerId
+            )
+          : undefined;
         await this.deliver(
           companyId,
           await this.conversation(target),
@@ -3823,7 +3854,9 @@ export class Threads {
             args.message,
             hops,
             `relay:${api.taskId}`,
-            requester,
+            answering
+              ? { id: answering.userId, name: answering.name, email: "" }
+              : requester,
             source
           )
         );

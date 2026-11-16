@@ -632,6 +632,46 @@ test("an agent lists the channels of its company and cannot reach a thread of an
   ).toEqual(["Payroll", "Ok."]);
 });
 
+test("a thread of a channel only answers an orchestrator that asked it, and no orchestrator sends to another", async () => {
+  const home = await shadow.app.companies.create(alice, "Relays");
+  await shadow.app.companies.addMember(home.id, alice, bob.email);
+  const general = shadow.app.companies.channels(home.id, alice)[0]!;
+  const alices = await shadow.app.threads.orchestrator(home.id, alice);
+  const bobs = await shadow.app.threads.orchestrator(home.id, bob);
+  const refused =
+    "A person's own thread gets only the answers to what it asked, so send nothing there.";
+
+  for (const target of [alices, bobs]) {
+    const tell = await shadow.app.threads.create(
+      home.id,
+      alice,
+      general.id,
+      `Tell thread ${target.id} hi`
+    );
+    await idle(home.id, tell.id);
+  }
+  await shadow.app.threads.send(alices.id, alice, `Tell thread ${bobs.id} hi`);
+  await until(
+    () => shadow.app.threads.messages(alices),
+    (state) => !state.running && state.messages.length === 2
+  );
+  expect(toolResults.filter((result) => result.includes(refused))).toHaveLength(
+    3
+  );
+  for (const [orchestrator, owner] of [
+    [alices, alice],
+    [bobs, bob],
+  ] as const) {
+    expect(
+      (
+        await shadow.app.threads.messages(
+          shadow.app.companies.thread(orchestrator.id, owner)
+        )
+      ).messages.filter((message) => message.text === "Hi")
+    ).toEqual([]);
+  }
+});
+
 /** Posts a multipart form with a bearer token or a session cookie. */
 function postForm(
   path: string,
@@ -1384,17 +1424,22 @@ test("memory keeps full worker results across rebuilds without copying worker wo
     ]);
     oldMemory.close();
 
-    await first.send(orchestrator.id, alice, "Keep the result");
-    await until(
-      () => first.messages(orchestrator),
-      (state) => !state.running && state.messages.length === 2
-    );
-    const result = `Complete result: ${"verified detail ".repeat(80)} final reference https://example.com/result`;
     const worker = await first.startAgentThread(
       home.id,
       general!.id,
       "Worker report"
     );
+    // A thread of a channel answers an orchestrator only after the orchestrator asked it.
+    await first.send(orchestrator.id, alice, `Tell thread ${worker.id} hi`);
+    await until(
+      () => first.messages(orchestrator),
+      (state) => !state.running && state.messages.length === 2
+    );
+    await until(
+      () => first.messages(worker),
+      (state) => !state.running && state.messages.at(-1)?.text === "Ok."
+    );
+    const result = `Complete result: ${"verified detail ".repeat(80)} final reference https://example.com/result`;
     await first.send(
       worker.id,
       alice,
@@ -1417,7 +1462,7 @@ test("memory keeps full worker results across rebuilds without copying worker wo
     expect(original).toContain("Shadow: Ok.");
     expect(original).not.toContain("Run code:");
     expect(memory!.view(3)).not.toContain("Unrelated channel history");
-    expect(await memory!.zoom(0, 1)).toContain("Alice: Keep the result");
+    expect(await memory!.zoom(0, 1)).toContain("Alice: Tell thread");
 
     await first.send(
       worker.id,
@@ -1460,7 +1505,7 @@ test("memory keeps full worker results across rebuilds without copying worker wo
       (value) => value?.count() === 4
     );
     expect(await rebuilt!.zoom(2, 1)).toBe(original);
-    expect(await rebuilt!.zoom(0, 1)).toContain("Alice: Keep the result");
+    expect(await rebuilt!.zoom(0, 1)).toContain("Alice: Tell thread");
     expect(await rebuilt!.zoom(3, 1)).toContain("Quiet worker result");
     const context = await until(
       async () =>
@@ -1488,7 +1533,7 @@ test("memory keeps full worker results across rebuilds without copying worker wo
   }
 }, 10_000);
 
-test("a thread moves with its artifacts, its own files, and a note; into a private channel only by its starter, and the others lose it at once", async () => {
+test("a thread moves with its artifacts, its own files, and a note, only to a channel of its own kind", async () => {
   const token = await shadow.signIn("Alice", "alice@example.com");
   const bobToken = await shadow.signIn("Bob", "bob@example.com");
   const home = await shadow.app.companies.create(alice, "Moves");
@@ -1573,16 +1618,23 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
       .then(({ results }) => results.map((result) => result.uri));
   expect(await found(bob)).toContain(`thread:${trip.id}`);
 
-  expect((await move(trip.id, mine.id)).status).toBe(200);
-  // Without a scan, search and the thread leave out what Bob no longer sees.
-  expect(await found(bob)).not.toContain(`thread:${trip.id}`);
-  expect(await found(alice)).toContain(`thread:${trip.id}`);
-  expect(
-    (await shadow.call(`/api/v1/threads/${trip.id}`, { token: bobToken }))
-      .status
-  ).toBe(404);
-  // A thread of a private channel never goes back to a channel that others see.
-  expect((await move(trip.id, general!.id)).status).toBe(403);
+  // A thread stays private or seen by everyone: it never reaches people, and never carries a realm into Slack.
+  expect((await move(trip.id, mine.id)).status).toBe(403);
+  expect(await found(bob)).toContain(`thread:${trip.id}`);
+  const note = await shadow.app.threads.create(
+    home.id,
+    alice,
+    mine.id,
+    "My Rome notes"
+  );
+  await until(
+    () =>
+      shadow.app.threads.messages(shadow.app.companies.thread(note.id, alice)),
+    (state) => !state.running && state.messages.length === 2
+  );
+  expect((await move(note.id, general!.id)).status).toBe(403);
+  const later = shadow.app.companies.createChannel(home.id, alice, "later");
+  expect((await move(note.id, later.id)).status).toBe(200);
   // What Shadow learned is for an admin in Company settings; the morning review reads a member's own.
   expect(
     (
@@ -1592,7 +1644,7 @@ test("a thread moves with its artifacts, its own files, and a note; into a priva
     ).status
   ).toBe(403);
   expect(shadow.app.threads.learnedFor(home.id, bob)).toBeArray();
-  expect(shadow.app.companies.thread(trip.id, alice).channelId).toBe(mine.id);
+  expect(shadow.app.companies.thread(note.id, alice).channelId).toBe(later.id);
 
   const busy = await shadow.app.threads.create(
     home.id,

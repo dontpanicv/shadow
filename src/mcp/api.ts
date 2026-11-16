@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   type Static,
   type ToolCall,
@@ -472,7 +472,7 @@ function mcpTools(app: App, user: User, company: Company): McpTool[] {
     tool({
       name: "computer_run",
       description:
-        "Run a zsh command on Shadow's one macOS work computer, a VM with Homebrew, Python, Node.js, LibreOffice, pandoc, ffmpeg, and more. Every Shadow agent and MCP client shares it and can read its files, and sudo needs no password, so put nothing secret there. The command runs in your own work folder, which keeps its files between calls; files copies Shadow files into it first. The computer starts on the first call, which can take a minute. Save a result with save_file, such as from the output of base64.",
+        "Run a zsh command on Shadow's macOS work computer, a VM with Python, Node.js, LibreOffice, pandoc, ffmpeg, and more, without sudo. The command runs as your own user there, which only your agents use, in its folder ~/work/mcp, which keeps its files between calls; files copies Shadow files into it first. The computer starts on the first call, which can take a minute. Save a result with save_file, such as from the output of base64.",
       parameters: Type.Object({
         command: Type.String({
           description: "A zsh command, run in your work folder",
@@ -497,7 +497,8 @@ function mcpTools(app: App, user: User, company: Company): McpTool[] {
         );
         return success(
           await app.computer.shell(
-            workFolder(company.id, user.id),
+            app.computer.userOf(company.id, user.id),
+            "mcp",
             command,
             copied,
             Math.min(timeout_ms ?? 5 * 60_000, MAX_COMMAND)
@@ -602,11 +603,6 @@ function threadText(
   ]
     .filter(Boolean)
     .join("\n\n");
-}
-
-/** The person's own folder on the shared work computer: `mcp-` and a hash, which a shell command takes as it is. */
-function workFolder(companyId: string, userId: string): string {
-  return `mcp-${createHash("sha256").update(`${companyId}-${userId}`).digest("hex").slice(0, 16)}`;
 }
 
 function artifactLine(artifact: Artifact): string {

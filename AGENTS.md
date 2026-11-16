@@ -43,7 +43,7 @@ addresses, or code and data from employers or clients.
 - In Slack (`src/slack/`), a mention or a DM is a person's request, and an admin's goal is the consent for
   Shadow to listen: a channel's own goal there, the company's default goal in every other channel that an admin did
   not switch off. A message there gets a cheap check, then a turn in the shared realm that answers only when a reply helps,
-  else `QUIET` or `notices_tell` to one person. Ambient turns never act: for a routine or a reminder that someone asks
+  else `QUIET` or `notices_tell` to one person; a turn for a person tells only that person. Ambient turns never act: for a routine or a reminder that someone asks
   for, they `notices_suggest` it, and it becomes that person's own, with their realm and credentials, only when they
   accept. They post at most `AMBIENT_PER_HOUR` replies in a channel, follow a thread for `FOLLOW_MS`, stop when muted,
   and log decisions without message text. A person's own credentials serve only the turns of their own requests,
@@ -56,7 +56,8 @@ addresses, or code and data from employers or clients.
   retain useful context and infer future checks. Hard rule: what intake reads from a person's accounts goes only to
   threads of that person's private channels (`privateThreads` in `src/intake/recall.ts`), never to a channel or
   thread that someone else sees. Only the person's own request in a shared thread brings their sources there. A
-  private thread or channel never moves or merges into a channel that others see. A useful development adds a visible
+  private thread or channel never moves or merges into a channel that others see, and a thread of a channel that
+  others see never moves into a private one. A useful development adds a visible
   source message and files to the existing subject thread; a new matter and silent filing stay in the person's
   private channels. Shadow is the
   person's second brain, not their worker: no source starts an agent, and an agent does research, analysis, or a draft
@@ -91,7 +92,8 @@ addresses, or code and data from employers or clients.
   channel every member sees the person whose message the turn answers. Only background work that acts for no person
   uses the `all…` reads.
 - An orchestrator (`ThreadRef.ownerId` set) belongs to one member: every route, tool, search, and memory that reads
-  threads leaves out the orchestrators of other people.
+  threads leaves out the orchestrators of other people. `send_to_thread` never goes from one orchestrator to
+  another; a thread of a channel sends to an orchestrator only to answer it, after that orchestrator sent it work.
 - People's own agents, such as Claude Code or Codex, reach Shadow only through `/mcp` (`src/mcp/`), with an OAuth
   access token of better-auth's OAuth provider, never a session token. Each MCP tool acts as that person, through the
   same service calls and realm as the JSON routes; `ask` reaches everything else through their orchestrator.
@@ -144,6 +146,8 @@ addresses, or code and data from employers or clients.
 - Only connector tools with an `approval` or in `approvedTools` wait for a person. All web traffic of agents goes through `Egress`
   (`src/platform/egress.ts`), never a plain `fetch`. Only the work computer (`src/computer/`), one VM with its own
   network, reaches the web without it; `scripts/install-computer-firewall.sh` keeps it off private addresses.
+- On the work computer, the commands of each realm run as its own guest user (`guestUser`), without `sudo`; the base
+  user only makes those users and keeps the shared desktop. `docs/computer.md` has the setup.
 
 ## Design System
 

@@ -712,13 +712,12 @@ export class Companies {
   }
 
   /**
-   * Moves a thread of a channel that `realm` sees to another channel it sees; `Threads.move` moves what goes with it.
-   * Only the person who started a thread moves it into a private channel, which takes it from the others.
+   * Moves a thread of a channel that `realm` sees to another channel of the same kind, private or seen by everyone;
+   * `Threads.move` moves what goes with it.
    */
   moveThread(
     companyId: string,
     realm: Realm,
-    personId: string,
     threadId: string,
     channelId: string
   ): {
@@ -746,19 +745,13 @@ export class Companies {
     if (this.isSlackPrivate(from.id) || this.isSlackPrivate(to.id)) {
       throw new HttpError(403, "A Slack conversation stays in its channel");
     }
-    if (from.ownerId !== null && to.ownerId === null) {
+    // A private thread could reach people, and a shared one, such as of Slack, could carry its realm's data there.
+    if ((from.ownerId === null) !== (to.ownerId === null)) {
       throw new HttpError(
         403,
-        "A thread of a private channel stays private, so it moves only to another private channel"
-      );
-    }
-    const { createdBy } = this.database
-      .query("SELECT created_by AS createdBy FROM thread WHERE id = ?")
-      .get(threadId) as { createdBy: string };
-    if (to.ownerId !== null && createdBy !== personId) {
-      throw new HttpError(
-        403,
-        "Only the person who started a thread moves it into a private channel"
+        from.ownerId === null
+          ? "A thread of a channel that everyone sees stays there, so it moves only to another such channel"
+          : "A thread of a private channel stays private, so it moves only to another private channel"
       );
     }
     this.database

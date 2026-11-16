@@ -1,22 +1,27 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool } from "@earendil-works/pi-durable";
+import { type ConversationId, defineTool } from "@earendil-works/pi-durable";
 import type { Agenda } from "../agenda/agenda.ts";
-import type { Companies, Member } from "../companies/companies.ts";
+import type { Companies, Member, Realm } from "../companies/companies.ts";
 import type { Notifications } from "../notifications/notifications.ts";
 import type { SlackSurface } from "./slack.ts";
+
+/** Whose private data a turn's tools see: `Threads.realm`. */
+export type NoticeRealmOf = (conversationId: ConversationId) => Promise<Realm>;
 
 type NoticeCompanies = Pick<Companies, "agentMember" | "members" | "threadOf">;
 
 /**
  * The tools of notices: tell one member something privately, and offer one member a routine or a reminder. An
  * unasked turn, such as one of Slack's ambient listening, uses them in place of acting: what it offers becomes the
- * person's own only when they accept, so it runs with their realm and their credentials.
+ * person's own only when they accept, so it runs with their realm and their credentials. A turn that sees a person's
+ * private data tells only that person, so nothing of theirs reaches another.
  */
 export function noticeTools(
   companies: NoticeCompanies,
   notifications: Pick<Notifications, "notify">,
   agenda: Pick<Agenda, "offer">,
   slack: Pick<SlackSurface, "offerInSlack">,
+  realmOf: NoticeRealmOf,
   companyId: string
 ) {
   const memberNamed = (person: string): Member => {
@@ -46,7 +51,7 @@ export function noticeTools(
     defineTool({
       name: "notices_tell",
       description:
-        "Tell one member of the company something privately, in their inbox and as a Slack DM, with a link to this thread. Use it when one person needs to know, and the channel does not.",
+        "Tell one member of the company something privately, in their inbox and as a Slack DM, with a link to this thread. Use it when one person needs to know, and the channel does not. A turn for a person tells only that person.",
       parameters: Type.Object({
         person: Type.String({
           description: "The member's name or email, as members list it",
@@ -54,9 +59,15 @@ export function noticeTools(
         text: Type.String({ maxLength: 2000 }),
       }),
       replay: "safe",
-      execute: (args, api) => {
+      execute: async (args, api) => {
         const thread = threadOf(api.conversationId);
         const member = memberNamed(args.person);
+        const realm = await realmOf(api.conversationId);
+        if (realm !== null && realm !== member.userId) {
+          throw new Error(
+            "This turn works for one person and sees their private data, so it tells only them."
+          );
+        }
         notifications.notify({
           id: `notice:${api.taskId}:${member.userId}`,
           companyId,
@@ -66,9 +77,9 @@ export function noticeTools(
           title: "From Shadow",
           text: args.text,
         });
-        return Promise.resolve({
+        return {
           output: [{ type: "text", text: `Told ${member.name}.` }],
-        });
+        };
       },
     }),
     defineTool({

@@ -1,4 +1,4 @@
-// Puts Shadow's SSH key and the guest script into the shared folder of the shadow-base VM, which the guest mounts at
+// Puts Shadow's SSH key and the guest scripts into the shared folder of the shadow-base VM, which the guest mounts at
 // "/Volumes/My Shared Files". Run it after `sandbox create shadow-base` finishes; docs/computer.md has the setup.
 import { copyFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -16,10 +16,15 @@ const share = join(
   "share"
 );
 await copyFile(`${key}.pub`, join(share, "shadow.pub"));
-await copyFile(
-  join(import.meta.dir, "../src/computer/guest.sh"),
-  join(share, "shadow-guest.sh")
-);
+for (const [script, name] of [
+  ["guest.sh", "shadow-guest.sh"],
+  ["person.sh", "shadow-person.sh"],
+]) {
+  await copyFile(
+    join(import.meta.dir, "../src/computer", script!),
+    join(share, name!)
+  );
+}
 console.log(
   `In the guest's Terminal, run: sh "/Volumes/My Shared Files/shadow-guest.sh"`
 );

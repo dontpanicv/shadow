@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
 import { mkdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Realm } from "../companies/companies.ts";
 import type { Sources } from "../sources/sources.ts";
-import { computerTools, type FileOf, type SaveFile } from "./tools.ts";
+import {
+  computerTools,
+  type FileOf,
+  type RealmOf,
+  type SaveFile,
+} from "./tools.ts";
 
 /** agent-desktop's native binary, which `bun install` links beside its macOS helper. */
 const CLI = Bun.resolveSync("agent-desktop/bin/agent-desktop", import.meta.dir);
@@ -18,8 +25,10 @@ const IDLE = 15 * 60_000;
 const START_TIMEOUT = 10 * 60_000;
 /** How long one file takes to copy, at most. */
 const COPY_TIMEOUT = 5 * 60_000;
-/** The folder in the guest's home that holds a work folder for each thread. */
+/** The folder in each person's home in the guest that holds a work folder for each thread. */
 const WORK = "work";
+/** The program of `guest.sh` that makes a person's own user in the guest; the base user runs it with sudo. */
+const PERSON = "/Library/Shadow/person";
 /** The most output one command gives the agent: its start and its end. */
 const MAX_OUTPUT = 20_000;
 /** The guest app of `guest.sh` that copies `<user>@<address>` of the guest to its clipboard. */
@@ -46,14 +55,17 @@ export interface DesktopResult {
 
 /**
  * The work computer of this server: one macOS VM that all agents share, cloned from `shadow-base` with agent-desktop,
- * where they run shell commands and untrusted code, convert files, and use apps. Each thread works in a folder of its
- * own, so agents do not overwrite each other's files; any agent can still read them. The computer starts on its first
- * call, keeps its disk, and stops after 15 idle minutes. `docs/computer.md` has the setup.
+ * where they run shell commands and untrusted code, convert files, and use apps. The commands of each person run as
+ * their own user of the guest, without sudo, whose home no other person reads; each thread works in a folder of its
+ * own there. The desktop is the base user's, which all agents share. The computer starts on its first call, keeps its
+ * disk, and stops after 15 idle minutes. `docs/computer.md` has the setup.
  */
 export class Computer {
   private busy = 0;
-  /** `<user>@<address>` of the guest, while it runs. */
+  /** `<user>@<address>` of the guest's base user, while it runs. */
   private address: Promise<string> | undefined;
+  /** The users of people that the running guest has. */
+  private readonly people = new Set<string>();
   private idle: ReturnType<typeof setTimeout> | undefined;
   /** The stop that a new call waits for before it starts the machine again. */
   private stopping: Promise<void> | undefined;
@@ -67,13 +79,28 @@ export class Computer {
     private readonly home = AGENT_DESKTOP_HOME
   ) {}
 
-  /** The agent tools of a company. */
-  tools(companyId: string, fileOf: FileOf, save: SaveFile) {
-    return computerTools(this, companyId, fileOf, save);
+  /**
+   * The own user of a realm in the guest, which `person.sh` makes: `shadow-` and 12 hex digits. A turn for no person
+   * has the company's.
+   */
+  userOf(companyId: string, realm: Realm): string {
+    return `shadow-${createHash("sha256")
+      .update(`${companyId}-${realm ?? ""}`)
+      .digest("hex")
+      .slice(0, 12)}`;
   }
 
-  /** Copies the files into a thread's work folder, runs a shell command there, and gives its output and exit status. */
+  /** The agent tools of a company. */
+  tools(companyId: string, realmOf: RealmOf, fileOf: FileOf, save: SaveFile) {
+    return computerTools(this, companyId, realmOf, fileOf, save);
+  }
+
+  /**
+   * Copies the files into a thread's work folder of `person`'s own user, runs a shell command there as that user, and
+   * gives its output and exit status.
+   */
   shell(
+    person: string,
     folder: string,
     command: string,
     files: readonly { readonly path: string; readonly name: string }[],
@@ -85,28 +112,33 @@ export class Computer {
       if (this.busy === 1) {
         await this.shareSources();
       }
-      await this.ssh(address, `mkdir -p ${work}`, 30_000);
+      const own = await this.person(address, person);
+      await this.ssh(own, `mkdir -p ${work}`, 30_000);
       for (const file of files) {
         await this.copy(
           file.path,
-          `${address}:${work}/${file.name}`,
+          `${own}:${work}/${file.name}`,
           `Copying ${file.name} to the work computer failed`
         );
       }
-      const result = await this.ssh(
-        address,
-        `cd ${work} && ${command}`,
-        timeout
-      );
+      const result = await this.ssh(own, `cd ${work} && ${command}`, timeout);
       return `${clip(result.output) || "(no output)"}\n[exit status ${result.status}]`;
     });
   }
 
-  /** Copies a file of the guest, by its path in a thread's work folder or an absolute one, to `destination` here. */
-  download(folder: string, path: string, destination: string): Promise<void> {
-    return this.use((address) =>
+  /**
+   * Copies a file that `person`'s own user reads, by its path in a thread's work folder or an absolute one, to
+   * `destination` here.
+   */
+  download(
+    person: string,
+    folder: string,
+    path: string,
+    destination: string
+  ): Promise<void> {
+    return this.use(async (address) =>
       this.copy(
-        `${address}:${path.startsWith("/") ? path : `${WORK}/${folder}/${path}`}`,
+        `${await this.person(address, person)}:${path.startsWith("/") ? path : `${WORK}/${folder}/${path}`}`,
         destination,
         `Copying ${path} from the work computer failed`
       )
@@ -170,6 +202,7 @@ export class Computer {
       ) {
         // The next call starts the machine again and asks for its address.
         this.address = undefined;
+        this.people.clear();
       }
       throw error;
     } finally {
@@ -183,6 +216,24 @@ export class Computer {
         this.idle.unref();
       }
     }
+  }
+
+  /** `<user>@<address>` of `person`'s own user, which the base user makes once. */
+  private async person(address: string, person: string): Promise<string> {
+    if (!this.people.has(person)) {
+      const made = await this.ssh(
+        address,
+        `sudo -n ${PERSON} ${person}`,
+        60_000
+      );
+      if (made.status !== 0) {
+        throw new Error(
+          `The work computer has no users of people: an admin sets up its base again with docs/computer.md. ${clip(made.output)}`
+        );
+      }
+      this.people.add(person);
+    }
+    return `${person}@${address.split("@")[1]}`;
   }
 
   /** Clones the machine from the base when it is new, starts it, and gives its `<user>@<address>`. */
@@ -245,6 +296,7 @@ export class Computer {
     }
     clearTimeout(this.idle);
     this.address = undefined;
+    this.people.clear();
     const stopping = this.run(
       [CLI, "sandbox", "stop", MACHINE],
       2 * 60_000

@@ -184,7 +184,7 @@ function Thread({
                   // A thread of a private channel stays private.
                   ...channels
                     .filter(
-                      (candidate) => !channel?.ownerId || candidate.ownerId
+                      (candidate) => !candidate.ownerId === !channel?.ownerId
                     )
                     .map((candidate) => ({
                       kind: "action" as const,

@@ -6,17 +6,23 @@ and cloned from one base VM that has the office tools. Agents use it with the `c
 
 | Tool | Does |
 | --- | --- |
-| `computer_run` | Runs a zsh command in the thread's folder in `~/work`, after it copies company files there by id |
+| `computer_run` | Runs a zsh command as the person's own user, in the thread's folder in `~/work`, after it copies company files there by id |
 | `computer_save` | Saves a file of the computer to the thread's channel |
 | `computer_desktop` | Runs agent-desktop commands on the computer's desktop, with a screenshot when asked |
 
 The base has Homebrew, pandoc, LibreOffice, poppler, qpdf, ghostscript, ImageMagick, ffmpeg, tesseract, ocrmypdf,
 7z, unar, exiftool, jq, Python 3 with python-docx, openpyxl, python-pptx, pypdf, pdfplumber, and pandas, Node.js,
-and agent-browser. Agents install more with brew or pip, and have `sudo` without a password.
+and agent-browser with a Chrome in `/Library/Shadow/browsers`. Root owns these tools, so no command changes what
+the commands of other people run. Agents install more Python and npm packages in their folder; they have no `sudo`.
 
 - Every agent uses the same computer, `shadow-computer`, also in routines and reminders. It is made from the base on
-  its first call and keeps its disk. Each thread works in a folder of its own, `~/work/<thread>`, so agents do not
-  overwrite each other's files; any agent can still read them, so the computer holds no private data for long.
+  its first call and keeps its disk.
+- The commands of each person run as their own user of the guest, `shadow-<hash>` of the turn's realm
+  (`guestUser`), with no admin and no `sudo`, and a home that only that user reads; the files they make are only
+  theirs (`umask 077`). Each thread works in a folder of its own there, `~/work/<thread>`, and an MCP client in
+  `~/work/mcp`. Shadow makes a user on its first command with `/Library/Shadow/person` (`src/computer/person.sh`),
+  the only command that the base user runs as root.
+- The desktop is the base user's, which all agents share. It does not see the files of the users of people.
 - The computer starts on its first call, which takes up to a minute, and stops after 15 idle minutes.
 - The computer has the company's sources, as `[[sources]]` in `config/shadow.toml` lists them, read-only in
   `/Volumes/My Shared Files/sources/<source>`, with the files of the newest commit and `git log`. Older versions of
@@ -55,7 +61,8 @@ Sharing, signed in as the user that runs Shadow.
       commands over SSH, so switch on `/usr/libexec/sshd-keygen-wrapper` under **Accessibility** and **Screen
       Recording** in **Privacy & Security** (**Device Control and Data Access** on macOS 27).
    4. In **Terminal**, run `sh "/Volumes/My Shared Files/shadow-guest.sh"`. It asks for the guest's password once,
-      and installs the tools.
+      installs the tools, and then takes away the base user's `sudo` for all but `/Library/Shadow/person`. Keep the
+      password: a run again asks for it.
 3. On the server, stop the base, which stays stopped from now on, and block the VMs from the private network:
 
    ```sh
@@ -64,4 +71,5 @@ Sharing, signed in as the user that runs Shadow.
    ```
 
 To change the base, start it with `--window` again, change it, and stop it. Only computers made after the change
-have it.
+have it. A computer made before the users of people needs `shadow-guest.sh` too: copy it, `person.sh` as
+`shadow-person.sh`, and `shadow.pub` into its guest and run it there. Until then, Shadow runs no command on it.
