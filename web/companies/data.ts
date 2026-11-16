@@ -15,6 +15,7 @@ import type {
   SlackDecision,
   SlackDefaultGoal,
   SlackGoal,
+  SlackReplies,
   ThreadSummary,
   User,
 } from "../app/types.ts";
@@ -226,6 +227,17 @@ export function slackDefaultGoalQuery(companyId: string) {
     queryKey: ["companies", companyId, "slack", "default-goal"],
     queryFn: ({ signal }) =>
       request<SlackDefaultGoal>(`/companies/${companyId}/slack/default-goal`, {
+        signal,
+      }),
+  });
+}
+
+/** Whether Shadow's ambient replies are paused in all of Slack, for admins. */
+export function slackRepliesQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "slack", "replies"],
+    queryFn: ({ signal }) =>
+      request<SlackReplies>(`/companies/${companyId}/slack/replies`, {
         signal,
       }),
   });

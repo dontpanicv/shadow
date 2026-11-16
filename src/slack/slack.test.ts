@@ -252,10 +252,23 @@ test("Shadow listens only where a goal or its own reply asks it to: the check sk
   expect(decisions()[0]!.outcome).toBe("quiet");
 
   model.answer = "Invoice 42 was paid on Friday.";
-  const asked = say("Was invoice 42 paid?");
+  // While an admin pauses replies, a message still gets the check and a decision, but no turn and no post.
+  surface.setReplies(company.id, alice, true);
+  expect(surface.replies(company.id, alice)).toEqual({ paused: true });
+  const posts = writes("chat.postMessage").length;
+  say("Was invoice 41 paid?");
   await until(
     async () => decisions(),
     (list) => list.length === 3
+  );
+  expect(decisions()[0]!.outcome).toBe("paused");
+  expect(writes("chat.postMessage").length).toBe(posts);
+  surface.setReplies(company.id, alice, false);
+
+  const asked = say("Was invoice 42 paid?");
+  await until(
+    async () => decisions(),
+    (list) => list.length === 4
   );
   expect(decisions()[0]!.outcome).toBe("replied");
   const reply = writes("chat.postMessage").findLast((post) =>
@@ -296,7 +309,7 @@ test("Shadow listens only where a goal or its own reply asks it to: the check sk
   say("Thanks!", asked);
   await until(
     async () => decisions(),
-    (list) => list.length === 4
+    (list) => list.length === 5
   );
   expect(decisions()[0]!.outcome).toBe("muted");
   await close();

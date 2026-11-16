@@ -608,7 +608,9 @@ others.
 | `PUT /api/v1/companies/:companyId/slack/goals/:channelId/off` | | `204`; Shadow stops listening in the channel, also in threads it follows, whatever the goals say, and still answers mentions. `404` for a channel that copies no Slack channel |
 | `DELETE /api/v1/companies/:companyId/slack/goals/:channelId/off` | | `204`; Shadow listens again with the channel's goal |
 | `POST /api/v1/companies/:companyId/slack/goals/:channelId/suggest` | | `{ wakeWhen, engagement }` that the fast model writes from the channel's brief; nothing is saved |
-| `GET /api/v1/companies/:companyId/slack/decisions` | | `SlackDecision[]`: `{ channelName, slackChannelId, ts, reason, probability, outcome, at }`, the 100 newest decisions of listening, newest first, never with the text of a message. `outcome`: `skipped`, `quiet`, `replied`, `capped`, `muted`, or `failed` |
+| `GET /api/v1/companies/:companyId/slack/replies` | | `SlackReplies`: `{ paused: boolean }`, whether an admin paused Shadow's replies without a mention in all of Slack. Admins only, `403` for others |
+| `PUT /api/v1/companies/:companyId/slack/replies` | `{ paused }` | `SlackReplies`; while paused, each message still gets the check and a decision with the outcome `paused`, but no agent turn, so nothing goes to Slack or to a person. Mentions and DMs still get answers |
+| `GET /api/v1/companies/:companyId/slack/decisions` | | `SlackDecision[]`: `{ channelName, slackChannelId, ts, reason, probability, outcome, at }`, the 100 newest decisions of listening, newest first, never with the text of a message. `outcome`: `skipped`, `quiet`, `replied`, `capped`, `muted`, `paused`, or `failed` |
 | `GET /api/v1/companies/:companyId/slack/ambient` | | `SlackAmbientTurn[]`: `{ threadId, threadTitle, channelId, channelName, reason, outcome, at }`, the newest turns that Shadow took on its own in the channels the person sees, newest first, never with the text of a message; any member. `outcome`: `quiet`, `replied`, or `failed` |
 
 ### LLM (`src/llm/`)

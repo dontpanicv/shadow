@@ -25,6 +25,7 @@ import type {
   SlackDecision,
   SlackDefaultGoal,
   SlackGoal,
+  SlackReplies,
 } from "../src/slack/slack.ts";
 import type {
   Brief,
@@ -54,6 +55,7 @@ const checks: true[] = [
   true satisfies Fits<SlackGoal, Web.SlackGoal>,
   true satisfies Fits<SlackDefaultGoal, Web.SlackDefaultGoal>,
   true satisfies Fits<SlackDecision, Web.SlackDecision>,
+  true satisfies Fits<SlackReplies, Web.SlackReplies>,
   true satisfies Fits<SlackAmbientTurn, Web.SlackAmbientTurn>,
   true satisfies Fits<Brief, Web.Brief>,
   true satisfies Fits<Message, Web.Message>,

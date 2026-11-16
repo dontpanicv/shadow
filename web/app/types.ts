@@ -77,6 +77,11 @@ export interface SlackDefaultGoal {
   readonly engagement: string | null;
 }
 
+/** Whether an admin paused Shadow's ambient replies in all of Slack. */
+export interface SlackReplies {
+  readonly paused: boolean;
+}
+
 /** What ambient listening decided about one Slack message, without its text. */
 export interface SlackDecision {
   readonly channelName: string;

@@ -58,6 +58,11 @@ export interface SlackDefaultGoal {
   readonly engagement: string | null;
 }
 
+/** Whether an admin paused Shadow's ambient replies in all of Slack; mentions and DMs still get answers. */
+export interface SlackReplies {
+  readonly paused: boolean;
+}
+
 /** What ambient listening decided about one message, without its text. */
 export interface SlackDecision {
   readonly channelName: string;
@@ -927,6 +932,10 @@ export class SlackSurface implements SlackSurfacePort {
       log(check.reason, check.probability, "skipped");
       return;
     }
+    if (this.repliesPaused(companyId)) {
+      log(check.reason, check.probability, "paused");
+      return;
+    }
     try {
       const replied = await this.takePart(
         companyId,
@@ -1527,6 +1536,31 @@ export class SlackSurface implements SlackSurfacePort {
       .run(Date.now(), companyId);
   }
 
+  /** Whether ambient replies are paused in all of Slack. */
+  replies(companyId: string, user: User): SlackReplies {
+    this.companies.requireAdmin(companyId, user);
+    return { paused: this.repliesPaused(companyId) };
+  }
+
+  /**
+   * Pauses Shadow's ambient replies in all of Slack, or lets it reply again. While paused, each message still gets the
+   * check and a decision in the log, but no agent turn, so nothing goes to Slack or to a person.
+   */
+  setReplies(companyId: string, user: User, paused: unknown): SlackReplies {
+    this.companies.requireAdmin(companyId, user);
+    if (typeof paused !== "boolean") {
+      throw new HttpError(400, "Paused must be true or false");
+    }
+    this.database
+      .query(
+        paused
+          ? "INSERT INTO slack_replies_paused (company_id, changed_by, changed_at) VALUES (?1, ?2, ?3) ON CONFLICT (company_id) DO UPDATE SET changed_by = excluded.changed_by, changed_at = excluded.changed_at, deleted_at = NULL"
+          : "UPDATE slack_replies_paused SET deleted_at = ?3, changed_by = ?2 WHERE company_id = ?1 AND deleted_at IS NULL"
+      )
+      .run(companyId, user.id, Date.now());
+    return { paused };
+  }
+
   /** Stops Shadow listening in a channel whatever the goals say, or lets it listen again; it still answers mentions. */
   setOff(companyId: string, user: User, channelId: string, off: boolean): void {
     this.companies.requireAdmin(companyId, user);
@@ -1707,6 +1741,16 @@ export class SlackSurface implements SlackSurfacePort {
   // Helpers
 
   /** The goal that Shadow listens with in a channel: none when it is off, else its own goal, else the default goal. */
+  private repliesPaused(companyId: string): boolean {
+    return (
+      this.database
+        .query(
+          "SELECT 1 FROM slack_replies_paused WHERE company_id = ? AND deleted_at IS NULL"
+        )
+        .get(companyId) !== null
+    );
+  }
+
   private goalOf(companyId: string, channelId: string): ChannelGoal | null {
     if (this.isOff(companyId, channelId)) {
       return null;

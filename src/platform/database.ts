@@ -844,6 +844,13 @@ const migrations = [
     user_id TEXT NOT NULL,
     PRIMARY KEY (channel_id, user_id)
   );`,
+  // slack: an admin pauses Shadow's ambient replies in all of Slack; it still checks each message and logs the decision.
+  `CREATE TABLE slack_replies_paused (
+    company_id TEXT PRIMARY KEY,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );`,
 ];
 
 export function openDatabase(path: string): Database {

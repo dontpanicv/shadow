@@ -89,6 +89,20 @@ export const slackApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
+    "/api/v1/companies/:company/slack/replies",
+    api(async ({ app, user, params }) =>
+      json(app.slack.replies(params.company!, user))
+    ),
+  ],
+  [
+    "PUT",
+    "/api/v1/companies/:company/slack/replies",
+    api(async ({ app, user, params, body }) =>
+      json(app.slack.setReplies(params.company!, user, body.paused))
+    ),
+  ],
+  [
+    "GET",
     "/api/v1/companies/:company/slack/decisions",
     api(async ({ app, user, params }) =>
       json(app.slack.decisions(params.company!, user))

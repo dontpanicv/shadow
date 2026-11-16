@@ -10,6 +10,7 @@ import type {
   SlackBotStatus,
   SlackDefaultGoal,
   SlackGoal,
+  SlackReplies,
 } from "../app/types.ts";
 import {
   Avatar,
@@ -21,6 +22,7 @@ import {
   Select,
   SettingsCard,
   SettingsRow,
+  Switch,
 } from "../ui/components.tsx";
 import { dayTime } from "../ui/format.ts";
 import { copy, showError, showToast } from "../ui/toast.tsx";
@@ -34,6 +36,7 @@ import {
   slackDecisionsQuery,
   slackDefaultGoalQuery,
   slackGoalsQuery,
+  slackRepliesQuery,
   useMe,
 } from "./data.ts";
 import slackManifest from "./slack-app-manifest.json" with { type: "json" };
@@ -408,11 +411,29 @@ const DISCONNECTED: SlackBotStatus = {
 export function SlackGoalsSection({ companyId }: { companyId: string }) {
   const goals = useQuery(slackGoalsQuery(companyId)).data ?? [];
   const fallback = useQuery(slackDefaultGoalQuery(companyId)).data;
+  const replies = useQuery(slackRepliesQuery(companyId)).data;
+  const pause = useMutation({
+    mutationFn: (paused: boolean) =>
+      request<SlackReplies>(`/companies/${companyId}/slack/replies`, {
+        method: "PUT",
+        body: { paused },
+      }),
+    onSuccess: (saved) =>
+      queryClient.setQueryData(slackRepliesQuery(companyId).queryKey, saved),
+    onError: showError,
+  });
   if (goals.length === 0) {
     return <Empty title="No Slack channels yet" />;
   }
   return (
     <SettingsCard>
+      <SettingsRow label="Reply without a mention">
+        <Switch
+          checked={!(pause.isPending ? pause.variables : replies?.paused)}
+          label="Reply in Slack without a mention"
+          onChange={(checked) => pause.mutate(!checked)}
+        />
+      </SettingsRow>
       <GoalForm
         companyId={companyId}
         goal={fallback ?? { wakeWhen: null, engagement: null }}
@@ -635,5 +656,6 @@ const OUTCOMES: Record<string, string> = {
   replied: "Replied",
   capped: "Hour limit",
   muted: "Muted",
+  paused: "Paused",
   failed: "Failed",
 };
