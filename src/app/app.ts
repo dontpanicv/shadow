@@ -11,6 +11,7 @@ import { FeedbackReports } from "../feedback/feedback.ts";
 import { Intake } from "../intake/intake.ts";
 import type { Connector } from "../integrations/integrations.ts";
 import { Integrations } from "../integrations/integrations.ts";
+import { Observability } from "../integrations/observability.ts";
 import { SlackBot, type SlackBotOptions } from "../integrations/slack-bot.ts";
 import { Llm, type LlmProvider } from "../llm/llm.ts";
 import { transcribeRequirements } from "../llm/transcribe.ts";
@@ -49,6 +50,7 @@ export interface App {
   readonly agenda: Agenda;
   readonly intake: Intake;
   readonly slackBot: SlackBot;
+  readonly observability: Observability;
   readonly feedback: FeedbackReports;
   readonly slack: SlackSurface;
   readonly sources: Sources;
@@ -125,6 +127,7 @@ export async function createApp(
   const artifacts = new Artifacts(database, companies, config, (companyId) =>
     indexer.touch(companyId)
   );
+  const observability = new Observability(database, companies);
   const browser = new Browser();
   const sources = new Sources(
     join(config.dataDirectory, "sources"),
@@ -175,6 +178,7 @@ export async function createApp(
         ...reminders.tools(companyId),
         ...intake.tools(companyId),
         ...feedback.tools(companyId),
+        ...observability.tools(companyId),
         ...noticeTools(companies, notifications, agenda, slack, companyId),
       ],
       automations: (companyId, personId) =>
@@ -280,6 +284,7 @@ export async function createApp(
     agenda,
     intake,
     slackBot,
+    observability,
     feedback,
     slack,
     sources,

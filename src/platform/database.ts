@@ -8,7 +8,7 @@ import { dirname } from "node:path";
  *
  * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `channel_pin`, `thread`, and `company_facts` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
- * `credential`, `oauth_client`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
+ * `credential`, `oauth_client`, `observability`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
  * `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
  * `routines` owns `routine` and `routine_run`, `reminders` owns `reminder`, `agenda` owns `suggestion`, `feedback` owns `feedback`, and `notifications` owns
  * `notification`. No module reads `machine`, `push_device`, or `live_activity` since the machines and the phone apps went,
@@ -823,6 +823,14 @@ const migrations = [
   );`,
   // slack: the Shadow thread of each decision of ambient listening, for the log of the turns Shadow took on its own.
   "ALTER TABLE slack_decision ADD COLUMN thread_id TEXT;",
+  // integrations: the addresses of a company's VictoriaLogs and VictoriaMetrics, which an admin sets.
+  `CREATE TABLE observability (
+    company_id TEXT PRIMARY KEY,
+    logs_url TEXT NOT NULL,
+    metrics_url TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL
+  );`,
 ];
 
 export function openDatabase(path: string): Database {

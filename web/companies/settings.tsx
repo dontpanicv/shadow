@@ -5,6 +5,7 @@ import { queryClient } from "../app/query.ts";
 import type {
   Company,
   Facts,
+  ObservabilitySettings,
   Role,
   SlackBotStatus,
   SlackDefaultGoal,
@@ -27,6 +28,7 @@ import {
   factsQuery,
   membersQuery,
   meQuery,
+  observabilityQuery,
   refreshCompany,
   slackBotQuery,
   slackDecisionsQuery,
@@ -106,6 +108,63 @@ export function FactsSection({ companyId }: { companyId: string }) {
           rows={12}
         />
         <Button label="Save" type="submit" />
+      </form>
+    </SettingsCard>
+  );
+}
+
+/** The addresses of the company's VictoriaLogs and VictoriaMetrics, which every agent queries; for its admins. */
+export function ObservabilitySection({ companyId }: { companyId: string }) {
+  const settings = useQuery(observabilityQuery(companyId)).data;
+  const save = useMutation({
+    mutationFn: (body: ObservabilitySettings) =>
+      request<ObservabilitySettings>(`/companies/${companyId}/observability`, {
+        method: "PUT",
+        body,
+      }),
+    onSuccess: (saved) => {
+      showToast("success", "Saved");
+      queryClient.setQueryData(observabilityQuery(companyId).queryKey, saved);
+    },
+  });
+  if (!settings) {
+    return null;
+  }
+  return (
+    <SettingsCard>
+      <form
+        aria-busy={save.isPending || undefined}
+        key={`${settings.logsUrl} ${settings.metricsUrl}`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          save.mutate({
+            logsUrl: String(form.get("logsUrl")),
+            metricsUrl: String(form.get("metricsUrl")),
+          });
+        }}
+      >
+        <SettingsRow label="VictoriaLogs">
+          <input
+            aria-label="VictoriaLogs"
+            className="input"
+            defaultValue={settings.logsUrl}
+            name="logsUrl"
+            placeholder="https://vl.example.com"
+            type="url"
+          />
+        </SettingsRow>
+        <SettingsRow label="VictoriaMetrics">
+          <input
+            aria-label="VictoriaMetrics"
+            className="input"
+            defaultValue={settings.metricsUrl}
+            name="metricsUrl"
+            placeholder="https://vm.example.com"
+            type="url"
+          />
+          <Button label="Save" type="submit" />
+        </SettingsRow>
       </form>
     </SettingsCard>
   );

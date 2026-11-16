@@ -9,6 +9,7 @@ import {
   CompanySection,
   FactsSection,
   MembersSection,
+  ObservabilitySection,
   SlackBotSection,
   SlackDecisionsSection,
   SlackGoalsSection,
@@ -32,7 +33,7 @@ import { showError, showToast } from "../ui/toast.tsx";
 const companyRoute = getRouteApi("/signed-in/c/$companyId/settings");
 
 /**
- * The company's Slack bot, members, LLM provider, usage, facts, what Shadow learned, name, and server; only its
+ * The company's Slack bot, observability, members, LLM provider, usage, facts, what Shadow learned, name, and server; only its
  * admins open it.
  */
 export function CompanySettingsPage() {
@@ -54,6 +55,9 @@ export function CompanySettingsPage() {
           </PageSection>
           <PageSection title="Listening decisions">
             <SlackDecisionsSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Observability">
+            <ObservabilitySection companyId={companyId} />
           </PageSection>
           <PageSection title="Members">
             <MembersSection company={company} />

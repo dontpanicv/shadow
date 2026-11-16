@@ -10,6 +10,7 @@ import type {
   Facts,
   Inbox,
   Member,
+  ObservabilitySettings,
   SlackBotStatus,
   SlackDecision,
   SlackDefaultGoal,
@@ -236,6 +237,16 @@ export function slackDecisionsQuery(companyId: string) {
     queryKey: ["companies", companyId, "slack", "decisions"],
     queryFn: ({ signal }) =>
       request<SlackDecision[]>(`/companies/${companyId}/slack/decisions`, {
+        signal,
+      }),
+  });
+}
+
+export function observabilityQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "observability"],
+    queryFn: ({ signal }) =>
+      request<ObservabilitySettings>(`/companies/${companyId}/observability`, {
         signal,
       }),
   });

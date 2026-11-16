@@ -53,6 +53,12 @@ export interface SlackBotStatus {
   readonly error: string | null;
 }
 
+/** The addresses of the company's VictoriaLogs and VictoriaMetrics, which every agent queries; `""` when not set. */
+export interface ObservabilitySettings {
+  readonly logsUrl: string;
+  readonly metricsUrl: string;
+}
+
 /** A channel that copies a Slack channel, with its own goal for ambient listening; null when it uses the default goal. */
 export interface SlackGoal {
   readonly channelId: string;

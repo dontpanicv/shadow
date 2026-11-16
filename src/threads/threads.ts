@@ -280,6 +280,12 @@ const NAMESPACES: CodemodeNamespace[] = [
       "Tell one member something privately, in their inbox and their Slack DM, such as what a Slack channel asked of them.",
   },
   {
+    name: "observability",
+    prefix: "observability_",
+    description:
+      "The company's VictoriaLogs and VictoriaMetrics: query the logs of its systems with LogsQL and their metrics with PromQL.",
+  },
+  {
     name: "feedback",
     prefix: "feedback_",
     description:

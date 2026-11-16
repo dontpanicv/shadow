@@ -103,7 +103,7 @@ type SearchResult = {
 	updatedAt: number;
 };
 type RecentSearch = { query: string; searchedAt: number }; // newest first; the same query again, in any case, only moves to the top
-type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
+type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the observability addresses, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
 type Credential = { id: string; label: string; ownerId: string; ownerName: string; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone changes or deletes it; watched: its owner lets Shadow read it for them (`src/intake/`)
 type Integration = { id: string; name: string; connect: "secret" | "sign-in"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
 type RoutineRun = {
@@ -248,6 +248,8 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `GET /api/v1/companies/:companyId/slack-bot/involved` | | `{ channelIds: string[] }`: the channels that copy a Slack channel where the person wrote or a message mentions them, by the name of the Slack account with their email; the sidebar folds the others away. Empty without a bot |
 | `PUT /api/v1/companies/:companyId/slack-bot` | `{ token, appToken }` | `SlackBot`; checks the bot token (`xoxb-…`) and the app-level token (`xapp-…`) with Slack, keeps both encrypted, lists the channels at once, and starts to listen; the history of the channels comes in the background. `400` with Slack's reason when it refuses a token |
 | `DELETE /api/v1/companies/:companyId/slack-bot` | | `204`; Shadow stops listening, and the channels and files it made stay |
+| `GET /api/v1/companies/:companyId/observability` | | `{ logsUrl, metricsUrl }`: the addresses of the company's VictoriaLogs and VictoriaMetrics, `""` when not set. Every agent of the company queries them with `observability_logs` (LogsQL) and `observability_metrics` (PromQL), without credentials, so they must be on Shadow's network, such as a VPN. Admins only, `403` for others |
+| `PUT /api/v1/companies/:companyId/observability` | `{ logsUrl, metricsUrl }` | `{ logsUrl, metricsUrl }`; `""` switches a store off; `400` for an address that is not http or https |
 
 ### Threads (`src/threads/`)
 
