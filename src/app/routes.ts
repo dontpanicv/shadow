@@ -6,6 +6,7 @@ import { companyApiRoutes } from "../companies/api.ts";
 import { feedbackApiRoutes } from "../feedback/api.ts";
 import { intakeApiRoutes } from "../intake/api.ts";
 import { integrationApiRoutes } from "../integrations/api.ts";
+import { linearApiRoutes } from "../linear/api.ts";
 import { llmApiRoutes } from "../llm/api.ts";
 import { mcpApiRoutes } from "../mcp/api.ts";
 import { notificationApiRoutes } from "../notifications/api.ts";
@@ -41,6 +42,7 @@ export const allRoutes: readonly Route[] = [
   ...llmApiRoutes,
   ...integrationApiRoutes,
   ...intakeApiRoutes,
+  ...linearApiRoutes,
   ...artifactApiRoutes,
   ...artifactWebRoutes,
   ...notificationApiRoutes,

@@ -13,9 +13,13 @@ import type {
   FollowingDetail,
   FollowingOverview,
 } from "../src/intake/intake.ts";
-import type { Integration } from "../src/integrations/integrations.ts";
+import type {
+  CompanyKey,
+  Integration,
+} from "../src/integrations/integrations.ts";
 import type { ObservabilitySettings } from "../src/integrations/observability.ts";
 import type { SlackBotStatus } from "../src/integrations/slack-bot.ts";
+import type { LinearFeedStatus } from "../src/linear/linear.ts";
 import type { LlmStatus, UsageReport } from "../src/llm/llm.ts";
 import type { User } from "../src/platform/auth.ts";
 import type { Routine, RoutineRun } from "../src/routines/routines.ts";
@@ -52,6 +56,8 @@ const checks: true[] = [
   true satisfies Fits<Member, Web.Member>,
   true satisfies Fits<SlackBotStatus, Web.SlackBotStatus>,
   true satisfies Fits<ObservabilitySettings, Web.ObservabilitySettings>,
+  true satisfies Fits<CompanyKey, Web.CompanyKey>,
+  true satisfies Fits<LinearFeedStatus, Web.LinearFeedStatus>,
   true satisfies Fits<SlackGoal, Web.SlackGoal>,
   true satisfies Fits<SlackDefaultGoal, Web.SlackDefaultGoal>,
   true satisfies Fits<SlackDecision, Web.SlackDecision>,

@@ -31,6 +31,7 @@ const server = Layer.unwrap(
       app.routines.start();
       app.reminders.start();
       app.intake.start();
+      app.linear.start();
       app.slackBot.start();
       app.slack.start();
       app.pictures.importGoogle();

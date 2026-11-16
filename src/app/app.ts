@@ -11,8 +11,10 @@ import { FeedbackReports } from "../feedback/feedback.ts";
 import { Intake } from "../intake/intake.ts";
 import type { Connector } from "../integrations/integrations.ts";
 import { Integrations } from "../integrations/integrations.ts";
+import { linearGraphql } from "../integrations/linear.ts";
 import { Observability } from "../integrations/observability.ts";
 import { SlackBot, type SlackBotOptions } from "../integrations/slack-bot.ts";
+import { LinearFeed } from "../linear/linear.ts";
 import { Llm, type LlmProvider } from "../llm/llm.ts";
 import { transcribeRequirements } from "../llm/transcribe.ts";
 import { Notifications } from "../notifications/notifications.ts";
@@ -49,6 +51,7 @@ export interface App {
   readonly reminders: Reminders;
   readonly agenda: Agenda;
   readonly intake: Intake;
+  readonly linear: LinearFeed;
   readonly slackBot: SlackBot;
   readonly observability: Observability;
   readonly feedback: FeedbackReports;
@@ -259,6 +262,59 @@ export async function createApp(
     },
     slackOptions
   );
+  // The Linear feed works for no person, with the company's read-only key, and writes as background work does.
+  const linear = new LinearFeed(database, companies, {
+    keys: () => integrations.companyKeys("linear"),
+    graphql: (key, query, variables, signal) =>
+      linearGraphql(key, query, variables, signal),
+    channels: (companyId) =>
+      companies
+        .channelsIn(companyId, null)
+        .filter((channel) => channel.ownerId === null && !channel.slackPrivate),
+    mentioning: (companyId, key) => slackBot.mentioning(companyId, key),
+    search: async (companyId, text) =>
+      (await indexer.search(companyId, text, 8, null)).results.flatMap(
+        (result) => (result.channelId ? [result.channelId] : [])
+      ),
+    ask: (companyId, system, text, signal) =>
+      llm.complete(
+        system,
+        text,
+        signal,
+        llm.fastModel(),
+        { companyId, userId: null, source: "background", threadId: null },
+        "low"
+      ),
+    writeFile: (companyId, channelId, file, replaces) =>
+      threads.writeFile(
+        companyId,
+        channelId,
+        companies.agentMember(companyId),
+        file,
+        replaces
+      ),
+    post: async ({
+      companyId,
+      channelId,
+      issueId,
+      title,
+      text,
+      requestId,
+      file,
+    }) => {
+      const agent = companies.agentMember(companyId);
+      const thread = await threads.startAgentThread(
+        companyId,
+        channelId,
+        title,
+        {
+          id: `linear:${channelId}:${issueId}`,
+          personId: agent.id,
+        }
+      );
+      await threads.observe(thread, text, requestId, agent, false, [file]);
+    },
+  });
   const feedback = new FeedbackReports(database, companies, threads);
   const slack = new SlackSurface(
     database,
@@ -290,6 +346,7 @@ export async function createApp(
     reminders,
     agenda,
     intake,
+    linear,
     slackBot,
     observability,
     feedback,
@@ -304,6 +361,7 @@ export async function closeApp(app: App): Promise<void> {
   await app.slack.close();
   await app.slackBot.close();
   await app.intake.close();
+  await app.linear.close();
   app.reminders.close();
   app.routines.close();
   await app.indexer.close();

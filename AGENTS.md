@@ -69,7 +69,7 @@ addresses, or code and data from employers or clients.
   conversations and keeps incoming and outgoing context. Bounded batches and subject-scoped recall reach the
   configured model provider. Silent filing starts no agent turn and sends no notification.
 - Every company read and write goes through `Companies.requireMember`; answer `404` to non-members.
-- A member is an `admin` or a `member` ("User" in the app). Only an admin opens Company settings: the Slack bot, the
+- A member is an `admin` or a `member` ("User" in the app). Only an admin opens Company settings: the Slack bot, the Linear key and its feed, the
   VictoriaLogs and VictoriaMetrics addresses that every agent queries, the members and their roles, the LLM provider and model, the usage, the facts, what Shadow learned, the name, and the
   server restart; an admin also sets the OAuth clients and reads agent feedback. A person's own Settings has only
   their integrations and account. Check with `Companies.requireAdmin` (`403`), or `isAdmin` for
@@ -81,6 +81,11 @@ addresses, or code and data from employers or clients.
   new channel's last 30 days once, a gap from the last event, and the last 36 hours once a day, writes one
   `slack-YYYY-MM-DD.md` file of the channel per changed day each minute, and gives a channel quiet for 10 minutes to
   its brief (`Threads.briefFromSlack`).
+- `src/linear/` files the company's Linear, read with the company key, into the channels that every member sees: the
+  last 30 days once, then every 5 minutes. It is a company source, not a person's account, so the intake rule of
+  private channels does not apply. An issue goes to channels whose Slack named its key or that got it before, and the
+  fast model chooses for the rest; most go nowhere. Filing writes `linear-YYYY-MM-DD.md`; a post goes only to Shadow,
+  never to Slack, at most `LINEAR_POSTS_PER_HOUR` in a channel, and never from the first read.
 - A group DM or private Slack channel that mentions Shadow has one Shadow channel for its current Slack participants
   who are company members. Its Slack threads stay in matching Shadow threads. A reply without a mention is recorded
   there without starting an agent; a mention is the requester's turn with their credentials. Its shared `Realm` does
@@ -119,7 +124,7 @@ addresses, or code and data from employers or clients.
 ## Modules
 
 - `src/` is a modular monolith. A module (`accounts`, `companies`, `llm`, `integrations`, `artifacts`,
-  `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `feedback`, `slack`, `mcp`) holds one domain: its service, routes, and tests. `src/platform/`
+  `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`, `linear`, `feedback`, `slack`, `mcp`) holds one domain: its service, routes, and tests. `src/platform/`
   is shared code that knows no domain; `src/app/` composes the services and holds the route helpers.
 - A module uses only the modules before it in that list, through their `<module>.ts` file, or their `pages.ts` from
   routes. A module reads only the tables it owns. `test/architecture.test.ts` enforces these rules;
@@ -128,7 +133,9 @@ addresses, or code and data from employers or clients.
   imports from `src/`: `web/app/types.ts` holds the types of `docs/api.md`, and `test/web-types.test.ts` checks them
   against the server's.
 - Register new route tables in `src/app/routes.ts` and new services in `createApp` in `src/app/app.ts`.
-- A person adds integration credentials only in their own Settings, never in Company settings. Like a
+- A person adds integration credentials only in their own Settings, never in Company settings. The one exception is a
+  read-only key of the whole company (`Connector.companyKey`, `company_key`), such as Linear's, which an admin gives in
+  Company settings: a turn of a person without their own account, or of no person, uses it with only the read tools. Like a
   private channel, each one belongs to one member (`credential.owner_id`) and is private to their
   turns; only its owner changes or removes it. A
   tool call uses only the credential of its turn's person (`src/integrations/integrations.ts`). A

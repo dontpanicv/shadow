@@ -1,5 +1,6 @@
 import { googleConnectors } from "./google.ts";
 import type { Connector } from "./integrations.ts";
+import { checkLinearKey, linearReads } from "./linear.ts";
 import { recordingObservations, watchRecordings } from "./plaud.ts";
 import { callbackAddress } from "./sign-in.ts";
 import { slackConnector } from "./slack.ts";
@@ -32,12 +33,15 @@ export function integrationCatalog(
       id: "linear",
       name: "Linear",
       description:
-        "The person's Linear: find and read issues, projects, cycles, documents, and teams, and create or change issues and comment on them when the person asks.",
+        "The person's Linear: find and read issues, projects, cycles, documents, and teams, and create or change issues and comment on them when the person asks. A person who has not connected Linear reads it with the company's read-only key.",
       secretLabel: null,
-      guide: ["Click **Connect**, and sign in to Linear."],
+      guide: [
+        "Click **Connect**, and sign in to Linear. Until then, agents only read Linear for you, with the company's key.",
+      ],
       tools: [],
       mcp: ["https://mcp.linear.app/mcp"],
-      approvedTools: ["create_comment"],
+      approvedTools: ["save_comment", "share_issue"],
+      companyKey: { read: linearReads, check: checkLinearKey },
     },
     {
       id: "jira",

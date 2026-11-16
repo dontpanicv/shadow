@@ -3,8 +3,8 @@ import { json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
 
 /**
- * The integrations, with only a person's own credentials. Shadow's own OAuth client of an integration is the server's. The Slack bot and the
- * observability addresses are the company's, for its admins.
+ * The integrations, with only a person's own credentials. Shadow's own OAuth client of an integration is the server's. The Slack bot, the
+ * observability addresses, and the read-only keys of the whole company, such as Linear's, are the company's, for its admins.
  */
 export const integrationApiRoutes: readonly Route[] = [
   [
@@ -70,6 +70,45 @@ export const integrationApiRoutes: readonly Route[] = [
     api(async ({ app, user, params, body }) =>
       json(app.observability.setSettings(params.company!, user, body))
     ),
+  ],
+  [
+    "GET",
+    "/api/v1/companies/:company/integrations/:integration/company-key",
+    api(async ({ app, user, params }) =>
+      json({
+        key: app.integrations.companyKey(
+          params.company!,
+          user,
+          params.integration!
+        ),
+      })
+    ),
+  ],
+  [
+    "PUT",
+    "/api/v1/companies/:company/integrations/:integration/company-key",
+    api(async ({ app, user, params, body }) =>
+      json(
+        await app.integrations.setCompanyKey(
+          params.company!,
+          user,
+          params.integration!,
+          body.key
+        )
+      )
+    ),
+  ],
+  [
+    "DELETE",
+    "/api/v1/companies/:company/integrations/:integration/company-key",
+    api(async ({ app, user, params }) => {
+      app.integrations.deleteCompanyKey(
+        params.company!,
+        user,
+        params.integration!
+      );
+      return new Response(null, { status: 204 });
+    }),
   ],
   [
     "PUT",

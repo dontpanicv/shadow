@@ -16,6 +16,7 @@ import {
 } from "../companies/settings.tsx";
 import { FloatingSidebarButton, Shell } from "../companies/shell.tsx";
 import { IntegrationsSection } from "../integrations/section.tsx";
+import { LinearDecisionsSection, LinearSection } from "../linear/settings.tsx";
 import { LlmCard, llmQuery } from "../llm/card.tsx";
 import { UsageSection } from "../llm/usage.tsx";
 import { LearnedSection } from "../threads/learned.tsx";
@@ -33,7 +34,7 @@ import { showError, showToast } from "../ui/toast.tsx";
 const companyRoute = getRouteApi("/signed-in/c/$companyId/settings");
 
 /**
- * The company's Slack bot, observability, members, LLM provider, usage, facts, what Shadow learned, name, and server; only its
+ * The company's Slack bot, Linear, observability, members, LLM provider, usage, facts, what Shadow learned, name, and server; only its
  * admins open it.
  */
 export function CompanySettingsPage() {
@@ -55,6 +56,12 @@ export function CompanySettingsPage() {
           </PageSection>
           <PageSection title="Listening decisions">
             <SlackDecisionsSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Linear">
+            <LinearSection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Linear decisions">
+            <LinearDecisionsSection companyId={companyId} />
           </PageSection>
           <PageSection title="Observability">
             <ObservabilitySection companyId={companyId} />

@@ -55,6 +55,29 @@ export interface SlackBotStatus {
   readonly error: string | null;
 }
 
+/** An admin's read-only key of the whole company for an integration, such as Linear's, without the key. */
+export interface CompanyKey {
+  readonly label: string;
+  readonly changedAt: number;
+}
+
+/** What the feed of the company's Linear did; a decision never holds the issue's text. */
+export interface LinearFeedStatus {
+  readonly polledThrough: number | null;
+  readonly backfilledAt: number | null;
+  readonly error: string | null;
+  readonly decisions: readonly LinearDecision[];
+}
+
+export interface LinearDecision {
+  readonly id: number;
+  readonly identifier: string;
+  readonly channelName: string | null;
+  readonly action: string;
+  readonly reason: string;
+  readonly at: number;
+}
+
 /** The addresses of the company's VictoriaLogs and VictoriaMetrics, which every agent queries; `""` when not set. */
 export interface ObservabilitySettings {
   readonly logsUrl: string;

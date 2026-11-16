@@ -8,7 +8,7 @@ import { dirname } from "node:path";
  *
  * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `channel_pin`, `thread`, and `company_facts` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
- * `credential`, `oauth_client`, `observability`, and `integration_setting` (no longer read), `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
+ * `credential`, `oauth_client`, `observability`, `company_key`, and `integration_setting` (no longer read), `linear` owns `linear_feed`, `linear_issue`, `linear_entry`, `linear_day`, and `linear_decision`, `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
  * `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
  * `routines` owns `routine` and `routine_run`, `reminders` owns `reminder`, `agenda` owns `suggestion`, `feedback` owns `feedback`, and `notifications` owns
  * `notification`. No module reads `machine`, `push_device`, or `live_activity` since the machines and the phone apps went,
@@ -851,6 +851,62 @@ const migrations = [
     changed_at INTEGER NOT NULL,
     deleted_at INTEGER
   );`,
+  // integrations: a key of the whole company that an admin gives, such as Linear's read-only API key.
+  `CREATE TABLE company_key (
+    company_id TEXT NOT NULL,
+    integration TEXT NOT NULL,
+    label TEXT NOT NULL,
+    secret BLOB NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    PRIMARY KEY (company_id, integration)
+  );`,
+  // linear: where the feed of a company's Linear read up to, each issue it routed, what each channel's day file keeps,
+  // and each decision, without issue text.
+  `CREATE TABLE linear_feed (
+    company_id TEXT PRIMARY KEY,
+    polled_through INTEGER,
+    backfilled_at INTEGER,
+    failed_at INTEGER,
+    error TEXT
+  );
+  CREATE TABLE linear_issue (
+    company_id TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+    identifier TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    routed_at INTEGER NOT NULL,
+    PRIMARY KEY (company_id, issue_id)
+  );
+  CREATE TABLE linear_entry (
+    company_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    head TEXT NOT NULL,
+    changes TEXT NOT NULL,
+    PRIMARY KEY (company_id, channel_id, day, issue_id)
+  );
+  CREATE INDEX linear_entry_issue ON linear_entry (company_id, issue_id);
+  CREATE TABLE linear_day (
+    company_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    file_id TEXT,
+    PRIMARY KEY (company_id, channel_id, day)
+  );
+  CREATE TABLE linear_decision (
+    id INTEGER PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    identifier TEXT NOT NULL,
+    channel_id TEXT,
+    action TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX linear_decision_at ON linear_decision (company_id, at);`,
 ];
 
 export function openDatabase(path: string): Database {

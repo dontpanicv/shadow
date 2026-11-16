@@ -160,6 +160,16 @@ export interface Connector {
   /** The only tools of its MCP servers that agents get, when the others serve only the server's own agents. */
   readonly shownTools?: readonly string[];
   /**
+   * A key of the whole company that an admin gives in Company settings (`setCompanyKey`), such as Linear's read-only
+   * API key: a turn of a person who has not connected their own account, or of no person, uses it, with only the
+   * tools that `read` allows by their agent name. `check` gives the name of the key's account, and throws when the
+   * key may do more than read.
+   */
+  readonly companyKey?: {
+    readonly read: (tool: string) => boolean;
+    readonly check: (key: string) => Promise<string>;
+  };
+  /**
    * Makes the secret that Shadow keeps, and its label, from what the person pastes, such as a cURL command of Slack's
    * web app; it throws when that does not work. Without it, Shadow keeps the pasted secret, and the person names it.
    */
@@ -784,6 +794,78 @@ export class Integrations {
     };
   }
 
+  /** The company's key of a connector with `companyKey`, for an admin; null when an admin has not given one. */
+  companyKey(
+    companyId: string,
+    user: User,
+    integrationId: string
+  ): CompanyKey | null {
+    this.companies.requireAdmin(companyId, user);
+    const row = this.companyKeyRow(companyId, this.keyed(integrationId));
+    return row ? { label: row.label, changedAt: row.changedAt } : null;
+  }
+
+  /** Saves the company's key of a connector, after `companyKey.check` accepts it; only an admin gives it. */
+  async setCompanyKey(
+    companyId: string,
+    user: User,
+    integrationId: string,
+    key: unknown
+  ): Promise<CompanyKey> {
+    this.companies.requireAdmin(companyId, user);
+    const connector = this.keyed(integrationId);
+    const secret = required(
+      typeof key === "string" ? key : undefined,
+      "Key"
+    ).trim();
+    const label = await connector.companyKey!.check(secret);
+    const changedAt = Date.now();
+    this.database
+      .query(
+        "INSERT INTO company_key (company_id, integration, label, secret, changed_by, changed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (company_id, integration) DO UPDATE SET label = ?3, secret = ?4, changed_by = ?5, changed_at = ?6, deleted_at = NULL"
+      )
+      .run(
+        companyId,
+        connector.id,
+        label,
+        this.secrets.encrypt(secret),
+        user.id,
+        changedAt
+      );
+    this.closeClient(companyKeyId(companyId, connector.id));
+    this.options.changed?.(companyId);
+    return { label, changedAt };
+  }
+
+  /** Stops using the company's key of a connector; only an admin does it. */
+  deleteCompanyKey(companyId: string, user: User, integrationId: string): void {
+    this.companies.requireAdmin(companyId, user);
+    const connector = this.keyed(integrationId);
+    this.database
+      .query(
+        "UPDATE company_key SET deleted_at = ? WHERE company_id = ? AND integration = ? AND deleted_at IS NULL"
+      )
+      .run(Date.now(), companyId, connector.id);
+    this.closeClient(companyKeyId(companyId, connector.id));
+    this.options.changed?.(companyId);
+  }
+
+  /** Every company's key of a connector, for background work that acts for no person, such as the Linear feed. */
+  companyKeys(
+    integrationId: string
+  ): { readonly companyId: string; readonly key: string }[] {
+    return (
+      this.database
+        .query(
+          "SELECT company_id AS companyId, secret FROM company_key WHERE integration = ? AND deleted_at IS NULL"
+        )
+        .all(integrationId) as { companyId: string; secret: Uint8Array }[]
+    ).map((row) => ({
+      companyId: row.companyId,
+      key: this.secrets.decrypt(row.secret),
+    }));
+  }
+
   /** Deletes the person's credential. */
   deleteCredential(companyId: string, user: User, credentialId: string): void {
     this.companies.requireMember(companyId, user);
@@ -979,6 +1061,11 @@ export class Integrations {
           turn.userId,
           account
         );
+        if (credential.readOnly && !connector.companyKey?.read(tool.name)) {
+          throw new Error(
+            `${connector.name} only reads for this person, with the company's key. To change something in ${connector.name}, they connect their own account in Settings.`
+          );
+        }
         const allowed = tool.approval
           ? await tool.approval(rest, credential, turn.signal, turn.file)
           : null;
@@ -1054,9 +1141,13 @@ export class Integrations {
       parameters: Type.Object({}),
       execute: async (_args, turn) => {
         const person = this.turnPerson(companyId, turn.userId);
-        return this.credentialRows(companyId, connector, person).map((row) => ({
-          account: row.label,
-        }));
+        const rows = this.credentialRows(companyId, connector, person);
+        const company = rows.length
+          ? null
+          : this.companyKeyRow(companyId, connector);
+        return company
+          ? [{ account: `${company.label} (the company's, read-only)` }]
+          : rows.map((row) => ({ account: row.label }));
       },
     };
   }
@@ -1075,14 +1166,16 @@ export class Integrations {
         "SELECT id, label, owner_id, secret FROM credential WHERE integration = ? AND company_id = ? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1"
       )
       .get(connector.id, companyId) as CredentialRow | null;
-    if (!row) {
+    const lister = row
+      ? {
+          id: row.id,
+          ownerId: row.owner_id,
+          secret: this.secrets.decrypt(row.secret),
+        }
+      : this.companyCredential(companyId, connector);
+    if (!lister) {
       return [];
     }
-    const lister = {
-      id: row.id,
-      ownerId: row.owner_id,
-      secret: this.secrets.decrypt(row.secret),
-    };
     const prefix = `${connector.id}_`;
     const servers = await Promise.all(
       connector.mcp!.map(async (server) => {
@@ -1245,6 +1338,10 @@ export class Integrations {
       this.turnPerson(companyId, userId)
     );
     if (rows.length === 0) {
+      const company = this.companyCredential(companyId, connector);
+      if (company) {
+        return company;
+      }
       throw new Error(
         `${connector.name} is not connected for this person. Connect it in Settings.`
       );
@@ -1277,6 +1374,54 @@ export class Integrations {
     return this.memberIds(companyId).includes(credential.ownerId)
       ? credential.ownerId
       : userId;
+  }
+
+  /** The company's key of a connector as a credential: an MCP grant with the key as its access token. */
+  private companyCredential(
+    companyId: string,
+    connector: Connector
+  ): Credential | null {
+    const row = this.companyKeyRow(companyId, connector);
+    return row
+      ? {
+          id: companyKeyId(companyId, connector.id),
+          ownerId: "",
+          secret: JSON.stringify({
+            tokens: {
+              access_token: this.secrets.decrypt(row.secret),
+              token_type: "Bearer",
+            },
+          } satisfies McpGrant),
+          readOnly: true,
+        }
+      : null;
+  }
+
+  private companyKeyRow(
+    companyId: string,
+    connector: Connector
+  ): { label: string; secret: Uint8Array; changedAt: number } | null {
+    if (!connector.companyKey) {
+      return null;
+    }
+    return this.database
+      .query(
+        "SELECT label, secret, changed_at AS changedAt FROM company_key WHERE company_id = ? AND integration = ? AND deleted_at IS NULL"
+      )
+      .get(companyId, connector.id) as {
+      label: string;
+      secret: Uint8Array;
+      changedAt: number;
+    } | null;
+  }
+
+  /** A connector that takes a company key. */
+  private keyed(integrationId: string): Connector {
+    const connector = this.connector(integrationId);
+    if (!connector.companyKey) {
+      throw notFound();
+    }
+    return connector;
   }
 
   /** The credentials of a connector that a turn of `person` uses, newest first. */
@@ -1334,6 +1479,15 @@ interface Credential {
   readonly id: string;
   readonly ownerId: string;
   readonly secret: string;
+  /** The company's key of `Connector.companyKey`, which only reads; it has no owner. */
+  readonly readOnly?: boolean;
+}
+
+/** An admin's key of the whole company for a connector with `companyKey`, without the key. */
+export interface CompanyKey {
+  /** The account of the key, such as the Linear workspace. */
+  readonly label: string;
+  readonly changedAt: number;
 }
 
 interface CredentialRow {
@@ -1381,6 +1535,11 @@ export function mcpApproval(
   const text = `${connector.name} ${tool}${details ? `:\n${details}` : ""}`;
   // Slack shows at most 3,000 characters in a block; the person sees that the rest is cut.
   return text.length > 2500 ? `${text.slice(0, 2500)}…` : text;
+}
+
+/** The id of the company key's MCP clients, which no credential row has. */
+function companyKeyId(companyId: string, integrationId: string): string {
+  return `company:${companyId}:${integrationId}`;
 }
 
 function connectionOf(connector: Connector): Integration["connect"] {

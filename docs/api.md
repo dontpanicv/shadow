@@ -103,7 +103,7 @@ type SearchResult = {
 	updatedAt: number;
 };
 type RecentSearch = { query: string; searchedAt: number }; // newest first; the same query again, in any case, only moves to the top
-type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the observability addresses, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
+type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the Linear key, the observability addresses, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
 type Credential = { id: string; label: string; ownerId: string; ownerName: string; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone changes or deletes it; watched: its owner lets Shadow read it for them (`src/intake/`)
 type Integration = { id: string; name: string; connect: "secret" | "sign-in"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
 type RoutineRun = {
@@ -420,6 +420,9 @@ to put that host on the internet while the rest of Shadow stays private.
 | `PUT …/credentials/:credentialId` | `{ watched }` | `Credential`; `404` unless it is the person's own; `400` for `watched: true` when the integration is not `watchable` |
 | `DELETE …/credentials/:credentialId` | | `204`; `404` unless it is the person's own |
 | `PUT /api/v1/integrations/:integrationId/client` | `{ clientId, clientSecret }` | `204`; the next sign-in uses it, at once. `403` unless the person is an admin, `404` unless the integration has `client` |
+| `GET …/integrations/:integrationId/company-key` | | `{ key: CompanyKey \| null }`: the company's read-only key of the integration, without the key. Only Linear has one. Admins only, `403` for others; `404` for another integration |
+| `PUT …/integrations/:integrationId/company-key` | `{ key }` | `CompanyKey`; `400` for a key that the service refuses, or that may do more than read |
+| `DELETE …/integrations/:integrationId/company-key` | | `204`; nobody reads with it again |
 
 A person connects integrations in Settings. Every credential serves only its owner's turns; only its owner deletes it. A turn is
 for the author of the message it answers, the person whose request another thread passes on, the person who last
@@ -438,6 +441,30 @@ An integration with `client` signs in with Shadow's own OAuth client, because it
 clients: Google and HubSpot. Google uses the client in `config/shadow.toml`; an admin sets HubSpot’s client in Settings. Until a client is available, only admins see the integration, and `connect`
 answers `400`.
 `docs/integrations.md` shows how to make the clients.
+
+`type CompanyKey = { label: string; changedAt: number }`: `label` names the key's account, such as the Linear
+workspace. A turn of a person who has not connected the integration, or of no person, uses the company's key, with only
+the read tools: Linear's `linear_get_…` and `linear_list_…` tools except notifications, `linear_search_documentation`,
+and `linear_extract_images`. Any other tool fails and says to connect the account. `<integrationId>_accounts` then
+names the company's account.
+
+### Linear feed (`src/linear/`)
+
+| Request | Body | Response |
+| --- | --- | --- |
+| `GET /api/v1/companies/:companyId/linear` | | `LinearFeedStatus`. Admins only, `403` for others |
+
+```ts
+type LinearFeedStatus = { polledThrough: number | null; backfilledAt: number | null; error: string | null; decisions: LinearDecision[] };
+type LinearDecision = { id: number; identifier: string; channelName: string | null; action: "filed" | "posted" | "capped" | "dropped"; reason: "mentioned" | "model" | "no-fit"; at: number }; // newest 50, without the issue's text
+```
+
+With the company's Linear key, Shadow reads the issues of the last 30 days once, then each 5 minutes what changed. Each
+issue goes to the channels that every member sees and that named its key in Slack or got it before; the fast model
+chooses the channels of the other issues that were made, moved, or commented, and most go nowhere. Each channel gets
+`linear-YYYY-MM-DD.md` with the issues of that day. An issue that finishes, or that the model says matters now, gets a
+message without an agent in the channel's thread of the issue, at most 4 in a channel an hour, never from the first
+read.
 
 ### Routines (`src/routines/`)
 

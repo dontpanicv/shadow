@@ -110,8 +110,28 @@ Each is the service's own MCP server: Notion at `https://mcp.notion.com/mcp`, Li
 and Atlassian's Rovo MCP server at `https://mcp.atlassian.com/v1/mcp` for Jira and Confluence. Click **Connect**, sign
 in; Shadow registers itself with the server, so nobody makes an app.
 Agents get the server's tools with what your account may see and do: they search and read, and they create or change
-pages and issues when you ask. A comment, which other people read, waits until you allow that call. When the Atlassian sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server
+pages and issues when you ask. A comment, which other people read, and a shared Linear issue wait until you allow that call. When the Atlassian sign-in refuses Shadow, an Atlassian admin allows the Rovo MCP server
 for the site.
+
+### The company's Linear
+
+An admin gives Linear's read-only API key once, in Company settings › Linear: in Linear, **Settings › Security & access
+› Personal API keys**, make a key with only **Read** access. Shadow checks with Linear that the key cannot write, and
+keeps it encrypted. Make the key with an account that sees only the teams that every member may read: every member,
+and every channel that every member sees, can read what the key sees.
+
+- **Default access.** A person who has not connected their own Linear, and a turn of no person, such as an answer in
+  a Slack channel, read Linear with the company's key: issues, projects, cycles, documents, and teams. They cannot
+  create or change anything; for that, the person clicks **Connect** on Linear in their own Settings.
+- **The feed.** Shadow reads the last 30 days once, then every 5 minutes what changed. An issue goes to each channel
+  that every member sees and whose Slack channel named its key, such as `PIP-1040`, or that got it before. Luna, the
+  fast model, chooses the channels for the other issues that were made, moved, or commented: a client's channel for
+  the feature that the client waits for, a project's or a team's channel for its work. Most issues go nowhere: this is
+  no copy of Linear. Each channel keeps `linear-YYYY-MM-DD.md` with what it got that day, which search, the brief, and
+  the agents read next to the Slack talk. This is silent. When an issue finishes in a channel that has it, or Luna says
+  it matters now, Shadow posts it in that channel's thread of the issue, without an agent and only in Shadow, never in
+  Slack: at most 4 posts in a channel an hour, and none from the first read. **Linear decisions** shows where each issue
+  went, without its text.
 
 ## HubSpot
 

@@ -1072,3 +1072,84 @@ test("only an opted-in account owner's chat receives verified read observations"
   expect(received).toHaveLength(1);
   await observed.close();
 });
+
+test("without their own account, a person and a turn of no person only read with the company's key", async () => {
+  const tokens: (string | undefined)[] = [];
+  const board: Connector = {
+    id: "board",
+    name: "Board",
+    description: "Issues.",
+    secretLabel: null,
+    tools: [],
+    mcp: [new URL("/mcp", signInServer.url).href],
+    companyKey: {
+      read: (tool) => tool === "board_search_products",
+      check: async (key) => {
+        if (key === "writer") {
+          throw new Error("This key can change issues");
+        }
+        return "Workspace";
+      },
+    },
+  };
+  const { database, companies } = shadow.app;
+  const keyed = new Integrations(database, Secrets.forTests(), companies, {
+    catalog: [board],
+    transport: (_url, provider) => {
+      tokens.push(
+        (provider.tokens() as { access_token: string } | undefined)
+          ?.access_token
+      );
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+      shopServer().connect(serverSide);
+      return clientSide;
+    },
+  });
+  expect(await keyed.tools(companyId)).toEqual([]);
+  await expect(
+    keyed.setCompanyKey(companyId, notOwner, "board", "key")
+  ).rejects.toThrow();
+  await expect(
+    keyed.setCompanyKey(companyId, alice, "board", "writer")
+  ).rejects.toThrow("can change issues");
+  expect(keyed.companyKey(companyId, alice, "board")).toBeNull();
+  expect(
+    (await keyed.setCompanyKey(companyId, alice, "board", " company-key "))
+      .label
+  ).toBe("Workspace");
+  expect(keyed.companyKey(companyId, alice, "board")?.label).toBe("Workspace");
+  expect(keyed.companyKeys("board")).toEqual([
+    { companyId, key: "company-key" },
+  ]);
+
+  const tools = await keyed.tools(companyId);
+  expect(tools.map((tool) => tool.name)).toEqual([
+    "board_search_products",
+    "board_cart",
+    "board_checkout",
+    "board_accounts",
+  ]);
+  const named = (name: string) => tools.find((each) => each.name === name)!;
+  for (const userId of [notOwner.id, null]) {
+    expect(
+      await named("board_search_products").execute(
+        { query: "milk" },
+        { userId }
+      )
+    ).toEqual({ products: [{ name: "milk 1 l" }] });
+  }
+  expect(tokens.at(-1)).toBe("company-key");
+  await expect(
+    named("board_cart").execute({}, { userId: notOwner.id })
+  ).rejects.toThrow("only reads for this person");
+  expect(
+    await named("board_accounts").execute({}, { userId: notOwner.id })
+  ).toEqual([{ account: "Workspace (the company's, read-only)" }]);
+
+  keyed.deleteCompanyKey(companyId, alice, "board");
+  expect(keyed.companyKeys("board")).toEqual([]);
+  await expect(
+    named("board_search_products").execute({ query: "milk" }, { userId: null })
+  ).rejects.toThrow("not connected");
+  await keyed.close();
+});

@@ -69,7 +69,7 @@ module uses only `app/`, `ui/`, and the modules before it, and never the server'
 
 1. **One direction.** The modules are in this order: `accounts`, `companies`, `llm`, `integrations`, `artifacts`,
    `browser`, `sources`, `computer`, `notifications`, `threads`, `search`, `routines`, `reminders`, `agenda`, `intake`,
-   `feedback`, `slack`, `mcp`. A module uses only the modules before it. `platform/` uses no module.
+   `linear`, `feedback`, `slack`, `mcp`. A module uses only the modules before it. `platform/` uses no module.
 2. **Entry files only.** A service uses another module only through its `<module>.ts`. Routes and pages can also
    use another module's `pages.ts`. Only `app/routes.ts` imports `web.ts` and `api.ts`.
    Biome's `noBarrelFile` stays on, so an entry file holds real code and does not re-export.

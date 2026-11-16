@@ -29,7 +29,8 @@ test("the catalog has the work integrations and all six Google MCP servers", () 
   expect(byId.pipes).toMatchObject({ address: true, mcp: ["/mcp"] });
   expect(byId.hubspot).toMatchObject({ registered: true });
   // A tool that posts a comment for other people waits for the person's approval of each call.
-  expect(byId.linear!.approvedTools).toContain("create_comment");
+  // Linear names its comment tool `save_comment`.
+  expect(byId.linear!.approvedTools).toContain("save_comment");
   expect(byId.notion!.approvedTools).toContain("notion-create-comment");
   expect(byId.jira!.approvedTools).toContain("addCommentToJiraIssue");
   expect(byId.hubspot!.approvedTools).toContain("manage_social_posts");

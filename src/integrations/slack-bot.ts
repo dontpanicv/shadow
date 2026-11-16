@@ -223,6 +223,21 @@ export class SlackBot {
       .map((channel) => channel.id);
   }
 
+  /** The channels that every member sees whose Slack channel named an issue key, such as Linear's `PIP-1040`. */
+  mentioning(companyId: string, key: string): string[] {
+    const slackIds = new Set(this.history.mentioning(companyId, key));
+    return this.companies
+      .channelsIn(companyId, null)
+      .filter(
+        (channel) =>
+          channel.ownerId === null &&
+          !channel.slackPrivate &&
+          channel.slackId &&
+          slackIds.has(channel.slackId)
+      )
+      .map((channel) => channel.id);
+  }
+
   /**
    * The time zone of the person with this email, as their Slack profile gives it, such as Asia/Bangkok; null without a
    * bot, without a Slack account, or when Slack does not answer.

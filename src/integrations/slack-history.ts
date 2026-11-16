@@ -163,6 +163,26 @@ export class SlackHistory {
     ).map((row) => row.id);
   }
 
+  /** The Slack channels whose messages name an issue key, such as Linear's `PIP-1040`, in any case. */
+  mentioning(companyId: string, key: string): string[] {
+    const upper = key.toUpperCase();
+    if (!/^[A-Z0-9]+-\d+$/.test(upper)) {
+      return [];
+    }
+    // A key is whole: `PIP-104` is not in `PIP-1040`.
+    const whole = new RegExp(`(^|[^A-Z0-9])${upper}($|[^0-9])`);
+    const rows = this.database
+      .query(
+        "SELECT slack_channel_id AS id, upper(text) AS text FROM slack_message WHERE company_id = ? AND deleted_at IS NULL AND instr(upper(text), ?) > 0"
+      )
+      .all(companyId, upper) as { id: string; text: string }[];
+    return [
+      ...new Set(
+        rows.filter((row) => whole.test(row.text)).map((row) => row.id)
+      ),
+    ];
+  }
+
   /** Keeps what one message event changed: a new message or reply, an edit, or a delete. */
   async event(
     companyId: string,
