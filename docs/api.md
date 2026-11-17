@@ -658,14 +658,15 @@ share. Each run counts once, at its end, for the person of its message.
 ### MCP (`src/mcp/`)
 
 People connect their own agents, such as Claude Code or Codex, to Shadow's MCP server, which acts as them. In the web
-app, **Connect your agent** copies the words that set it up. The agent registers itself (RFC 7591), the person signs in
+app, **Connect your agent** copies the words that set it up and install the `shadow-notes` skill. The agent registers itself (RFC 7591), the person signs in
 with Google and allows it on `/consent`, and the agent gets an OAuth access token and a refresh token from better-auth's
 OAuth provider. Only such a token opens `/mcp`; a session token gets `401`. The tools follow the person's realm, as the
 JSON routes do.
 
 | Request | Response |
 | --- | --- |
-| `POST /mcp` | Streamable HTTP MCP, stateless, with `Authorization: Bearer <access token>`. Without a valid token, `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp"`; `403` before an admin adds the person. Tools: `ask` (a message to the person's orchestrator, a thread, or a new thread in a channel; it waits up to 10 minutes for the answer), `approve`, `list_channels`, `list_threads`, `read_thread`, `search`, `list_files`, `read_file`, `save_file`, `list_artifacts`, `read_artifact`, `create_artifact`, `update_artifact`, and `computer_run`, in the person's own folder on the shared work computer |
+| `POST /mcp` | Streamable HTTP MCP, stateless, with `Authorization: Bearer <access token>`. Without a valid token, `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp"`; `403` before an admin adds the person. Tools: `ask` (a message to the person's orchestrator, a thread, or a new thread in a channel; it waits up to 10 minutes for the answer), `approve`, `list_channels`, `list_threads`, `read_thread`, `search`, `list_files`, `read_file`, `save_file`, `list_artifacts`, `read_artifact`, `create_artifact`, `update_artifact`, `computer_run`, in the person's own folder on the shared work computer, and `note`, which saves a decision, fact, finished task, problem, or error as `note-YYYY-MM-DD-<title>.md` in the given channel, or in the channel of its topic that the fast model chooses among the person's channels, else in the person's own channel; it tells nobody |
+| `GET /mcp/skill.md` | No sign-in. The `shadow-notes` skill that **Connect your agent** installs: in a repository under one of `repositories` of `shadow.toml`, the agent keeps notes with `note` as it works |
 | `GET /.well-known/oauth-protected-resource`, `…/mcp` | RFC 9728 metadata of `/mcp`: its authorization server is `<base_url>/api/auth` |
 | `GET /.well-known/oauth-authorization-server`, `…/api/auth` | RFC 8414 metadata of better-auth's OAuth server: `/api/auth/oauth2/register`, `…/authorize`, `…/token`, `…/consent`, `…/revoke` |
 | `GET /consent` | The web app's page where the signed-in person allows or denies the agent; `/login` passes the signed OAuth query on to Google sign-in, so the flow goes on after it |

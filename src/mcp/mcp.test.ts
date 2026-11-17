@@ -3,6 +3,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startTestApp, type TestApp } from "../../test/harness.ts";
+import type { User } from "../platform/auth.ts";
 
 const REDIRECT = "http://127.0.0.1:5555/callback";
 const VERIFIER = "a-code-verifier-of-at-least-forty-three-characters";
@@ -85,6 +86,51 @@ test("ask gives the orchestrator's answer", async () => {
   expect(answer).toStartWith("Your day is free.");
   expect(await text("read_thread", {})).toContain("What is on today?");
 });
+
+test("the skill tells the agent where to keep notes, without a sign-in", async () => {
+  const response = await shadow.call("/mcp/skill.md");
+  expect(response.headers.get("content-type")).toStartWith("text/markdown");
+  const skill = await response.text();
+  expect(skill).toStartWith("---\nname: shadow-notes\n");
+  expect(skill).toContain("whose remote is under github.com/acme");
+});
+
+test("note files a note in the channel of its topic", async () => {
+  const user = await me();
+  const general = shadow.app.companies
+    .channels(shadow.app.companies.list(user)[0]!.id, user)
+    .find((channel) => channel.name === "general")!;
+  shadow.faux.setResponses([
+    fauxAssistantMessage(JSON.stringify({ channel: general.id })),
+  ]);
+  const saved = await text("note", {
+    title: "Use Postgres 16 for v2",
+    text: "The v2 migration needs logical replication.",
+    kind: "decision",
+    repository: "github.com/acme/app on v2",
+  });
+  expect(saved).toMatch(
+    /^Saved the note as note-\d{4}-\d{2}-\d{2}-use-postgres-16-for-v2\.md \(file \S+\) in #general\.$/
+  );
+  const fileId = /file (\S+)\)/.exec(saved)![1]!;
+  const note = await text("read_file", { file_id: fileId });
+  expect(note).toStartWith("# Use Postgres 16 for v2\n\ndecision · Alice · ");
+  expect(note).toContain("github.com/acme/app on v2");
+  // Without a channel that fits, the note stays in the person's own channel.
+  shadow.faux.setResponses([fauxAssistantMessage('{"channel": null}')]);
+  expect(
+    await text("note", {
+      title: "Flaky test",
+      text: "It fails.",
+      kind: "problem",
+    })
+  ).not.toContain("in #general.");
+});
+
+async function me(): Promise<User> {
+  const response = await shadow.call("/api/v1/me", { token: alice });
+  return ((await response.json()) as { user: User }).user;
+}
 
 async function text(name: string, args: Record<string, unknown>) {
   const result = await client.callTool({ name, arguments: args });

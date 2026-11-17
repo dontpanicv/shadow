@@ -58,6 +58,7 @@ export async function startTestApp(
         clientId: "test-client.apps.googleusercontent.com",
         clientSecret: "test-secret",
       },
+      repositories: ["github.com/acme"],
       sources: [],
       gitToken: null,
     },

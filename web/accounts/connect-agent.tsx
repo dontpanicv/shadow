@@ -40,15 +40,20 @@ export function ConnectAgentButton() {
   );
 }
 
-/** What the person's agent reads: how to add the server in each client, and that the person signs in. */
+/**
+ * What the person's agent reads: how to add the server in each client, that the person signs in, and how to install
+ * the skill that keeps notes in Shadow while the agent works on the company's code.
+ */
 export function setupPrompt(url: string): string {
-  return `Add Shadow, my company's AI agent, to yourself as an MCP server, then have me sign in.
+  const skill = `${url}/skill.md`;
+  return `Add Shadow, my company's AI agent, to yourself as an MCP server, install its skill, then have me sign in.
 
 Server: ${url} (Streamable HTTP; it signs in with OAuth in the browser)
+Skill: ${skill} (a SKILL.md file named shadow-notes)
 
-- Claude Code: run \`claude mcp add --transport http --scope user shadow ${url}\`. Then tell me to run /mcp, choose shadow, and sign in.
-- Codex: run \`codex mcp add shadow --url ${url}\`, then \`codex mcp login shadow\`, which opens the sign-in. Shadow's agent can work for minutes, so add \`tool_timeout_sec = 900\` under \`[mcp_servers.shadow]\` in ~/.codex/config.toml.
-- Another agent or app: add ${url} as a remote MCP server with OAuth in its settings, or tell me where to add it.
+- Claude Code: run \`claude mcp add --transport http --scope user shadow ${url}\` and \`mkdir -p ~/.claude/skills/shadow-notes && curl -fsSL ${skill} -o ~/.claude/skills/shadow-notes/SKILL.md\`. Then tell me to run /mcp, choose shadow, and sign in.
+- Codex: run \`codex mcp add shadow --url ${url}\` and \`mkdir -p ~/.codex/skills/shadow-notes && curl -fsSL ${skill} -o ~/.codex/skills/shadow-notes/SKILL.md\`, then \`codex mcp login shadow\`, which opens the sign-in. Shadow's agent can work for minutes, so add \`tool_timeout_sec = 900\` under \`[mcp_servers.shadow]\` in ~/.codex/config.toml.
+- Another agent or app: add ${url} as a remote MCP server with OAuth in its settings, and install the skill where it keeps skills, or tell me where to add them.
 
-In the browser, I sign in to Shadow with Google and allow the agent. Then list Shadow's tools to check the connection. Shadow's tools act as me: ask gives work or a question to my Shadow orchestrator, which knows my work and can use my connectors, routines, reminders, browser, and work computer; the other tools read and change channels, threads, files, artifacts, and the work computer directly.`;
+In the browser, I sign in to Shadow with Google and allow the agent. Then list Shadow's tools to check the connection. Shadow's tools act as me: ask gives work or a question to my Shadow orchestrator, which knows my work and can use my connectors, routines, reminders, browser, and work computer; note keeps a decision, a fact, a finished task, a problem, or an error in the channel of its topic, as the skill says; the other tools read and change channels, threads, files, artifacts, and the work computer directly.`;
 }

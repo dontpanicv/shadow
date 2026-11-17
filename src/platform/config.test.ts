@@ -120,6 +120,7 @@ test("[[sources]] lists the git repositories that agents read, and [git] has the
     await mkdir(env.SHADOW_CONFIG, { recursive: true });
     await write("");
     expect(await readConfig(env)).toMatchObject({
+      repositories: [],
       sources: [],
       gitToken: null,
     });
