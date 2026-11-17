@@ -10,6 +10,7 @@ import {
   FactsSection,
   MembersSection,
   ObservabilitySection,
+  RepositoriesSection,
   SlackBotSection,
   SlackDecisionsSection,
   SlackGoalsSection,
@@ -65,6 +66,9 @@ export function CompanySettingsPage() {
           </PageSection>
           <PageSection title="Observability">
             <ObservabilitySection companyId={companyId} />
+          </PageSection>
+          <PageSection title="Repositories">
+            <RepositoriesSection companyId={companyId} />
           </PageSection>
           <PageSection title="Members">
             <MembersSection company={company} />

@@ -71,7 +71,6 @@ beforeAll(async () => {
         clientId: "test-client.apps.googleusercontent.com",
         clientSecret: "test-secret",
       },
-      repositories: [],
       sources: [],
       gitToken: null,
     },

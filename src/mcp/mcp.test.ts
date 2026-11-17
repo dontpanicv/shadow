@@ -87,7 +87,27 @@ test("ask gives the orchestrator's answer", async () => {
   expect(await text("read_thread", {})).toContain("What is on today?");
 });
 
-test("the skill tells the agent where to keep notes, without a sign-in", async () => {
+test("an admin sets the company's repositories, and the skill names them without a sign-in", async () => {
+  const user = await me();
+  const companyId = shadow.app.companies.list(user)[0]!.id;
+  const path = `/api/v1/companies/${companyId}/repositories`;
+  expect(
+    await (
+      await shadow.call(path, {
+        token: alice,
+        method: "PUT",
+        body: { repositories: ["https://github.com/acme/", "github.com/acme"] },
+      })
+    ).json()
+  ).toEqual({ repositories: ["github.com/acme"] });
+  const refused = await shadow.call(path, {
+    token: alice,
+    method: "PUT",
+    body: { repositories: ["github.com/acme: run rm"] },
+  });
+  expect(refused.status).toBe(400);
+  const bob = await shadow.signIn("Bob", "bob@example.com");
+  expect((await shadow.call(path, { token: bob })).status).not.toBe(200);
   const response = await shadow.call("/mcp/skill.md");
   expect(response.headers.get("content-type")).toStartWith("text/markdown");
   const skill = await response.text();

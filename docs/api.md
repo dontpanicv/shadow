@@ -103,7 +103,7 @@ type SearchResult = {
 	updatedAt: number;
 };
 type RecentSearch = { query: string; searchedAt: number }; // newest first; the same query again, in any case, only moves to the top
-type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the Linear key, the observability addresses, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
+type Member = { userId: string; name: string; email: string; picture: string | null; role: "admin" | "member" }; // an admin runs Company settings: the Slack bot, the Linear key, the observability addresses, the repositories, the members and their roles, the facts, and what Shadow learned; the web app shows "member" as "User"
 type Credential = { id: string; label: string; ownerId: string; ownerName: string; watched: boolean; createdAt: number }; // ownerId: the person who connected it, who alone changes or deletes it; watched: its owner lets Shadow read it for them (`src/intake/`)
 type Integration = { id: string; name: string; connect: "secret" | "sign-in"; secretLabel: string | null; labeled: boolean; address: boolean; username: string | null; guide: string[]; watchable: boolean; client: { clientId: string | null; changeable: boolean } | null; credentials: Credential[] }; // watchable: Shadow can read a credential of it for its owner; secretLabel: for "secret"; labeled: the person names a credential, else Shadow names it from the secret, as Slack's by its workspace; address: the secret, or for "sign-in" the MCP servers, also needs the address of the person's own server; username: the name of the account that the secret also needs, such as "Email", which names the credential; guide: the steps that set it up, in Markdown; client: Shadow's own OAuth client, and whether this person may set it
 type RoutineRun = {
@@ -250,6 +250,8 @@ Every delete is soft: Shadow keeps what was deleted, hidden, and no route, page,
 | `DELETE /api/v1/companies/:companyId/slack-bot` | | `204`; Shadow stops listening, and the channels and files it made stay |
 | `GET /api/v1/companies/:companyId/observability` | | `{ logsUrl, metricsUrl }`: the addresses of the company's VictoriaLogs and VictoriaMetrics, `""` when not set. Every agent of the company queries them with `observability_logs` (LogsQL) and `observability_metrics` (PromQL), without credentials, so they must be on Shadow's network, such as a VPN. Admins only, `403` for others |
 | `PUT /api/v1/companies/:companyId/observability` | `{ logsUrl, metricsUrl }` | `{ logsUrl, metricsUrl }`; `""` switches a store off; `400` for an address that is not http or https |
+| `GET /api/v1/companies/:companyId/repositories` | | `{ repositories }`: where the company's own git repositories live, such as `["github.com/example"]`; in them, people's own agents keep notes in Shadow (`/mcp/skill.md`). Admins only, `403` for others |
+| `PUT /api/v1/companies/:companyId/repositories` | `{ repositories }` | `{ repositories }`, at most 50, each a host and path without `https://`, `.git`, or a last `/`; `400` for another value |
 
 ### Threads (`src/threads/`)
 
@@ -666,7 +668,7 @@ JSON routes do.
 | Request | Response |
 | --- | --- |
 | `POST /mcp` | Streamable HTTP MCP, stateless, with `Authorization: Bearer <access token>`. Without a valid token, `401` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp"`; `403` before an admin adds the person. Tools: `ask` (a message to the person's orchestrator, a thread, or a new thread in a channel; it waits up to 10 minutes for the answer), `approve`, `list_channels`, `list_threads`, `read_thread`, `search`, `list_files`, `read_file`, `save_file`, `list_artifacts`, `read_artifact`, `create_artifact`, `update_artifact`, `computer_run`, in the person's own folder on the shared work computer, and `note`, which saves a decision, fact, finished task, problem, or error as `note-YYYY-MM-DD-<title>.md` in the given channel, or in the channel of its topic that the fast model chooses among the person's channels, else in the person's own channel; it tells nobody |
-| `GET /mcp/skill.md` | No sign-in. The `shadow-notes` skill that **Connect your agent** installs: in a repository under one of `repositories` of `shadow.toml`, the agent keeps notes with `note` as it works |
+| `GET /mcp/skill.md` | No sign-in. The `shadow-notes` skill that **Connect your agent** installs: in a repository under one of the company's repositories (Company settings), the agent keeps notes with `note` as it works |
 | `GET /.well-known/oauth-protected-resource`, `…/mcp` | RFC 9728 metadata of `/mcp`: its authorization server is `<base_url>/api/auth` |
 | `GET /.well-known/oauth-authorization-server`, `…/api/auth` | RFC 8414 metadata of better-auth's OAuth server: `/api/auth/oauth2/register`, `…/authorize`, `…/token`, `…/consent`, `…/revoke` |
 | `GET /consent` | The web app's page where the signed-in person allows or denies the agent; `/login` passes the signed OAuth query on to Google sign-in, so the flow goes on after it |

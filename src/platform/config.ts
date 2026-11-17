@@ -21,11 +21,6 @@ export interface Config {
   readonly allowedEmails: readonly string[];
   /** The Google OAuth client for sign-in; see google-sign-in.md. */
   readonly google: OAuthClient;
-  /**
-   * Where the company's own git repositories live, such as `github.com/example`: in a repository whose remote starts
-   * with one of them, people's own agents keep notes in Shadow (`/mcp/skill.md`).
-   */
-  readonly repositories: readonly string[];
   /** The git repositories that agents read, such as the company's code and product docs. */
   readonly sources: readonly SourceConfig[];
   /** Reads private sources over https, such as a GitHub token; `null` for public ones. */
@@ -66,10 +61,6 @@ host = "127.0.0.1"
 # email of that domain. Nobody else can. The first is an email: the server's owner, who alone connects the LLM
 # provider and chooses its model.
 allowed_emails = []
-
-# Where the company's own git repositories live, for example ["github.com/example"]. When people work in a repository
-# whose git remote starts with one of them, their own agents, such as Claude Code or Codex, keep notes in Shadow.
-repositories = []
 
 # The Google OAuth client for sign-in. google-sign-in.md shows how to create it.
 [google]
@@ -124,7 +115,6 @@ export async function readConfig(
       clientId: text(google.client_id, "google.client_id"),
       clientSecret: text(google.client_secret, "google.client_secret"),
     },
-    repositories: list(values.repositories ?? [], "repositories"),
     sources: sources(values.sources ?? []),
     gitToken: git.token ? text(git.token, "git.token") : null,
   };

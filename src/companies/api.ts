@@ -131,6 +131,22 @@ export const companyApiRoutes: readonly Route[] = [
   ],
   [
     "GET",
+    "/api/v1/companies/:company/repositories",
+    api(async ({ app, user, params }) =>
+      json(app.companies.repositories(params.company!, user))
+    ),
+  ],
+  [
+    "PUT",
+    "/api/v1/companies/:company/repositories",
+    api(async ({ app, user, params, body }) =>
+      json(
+        app.companies.setRepositories(params.company!, user, body.repositories)
+      )
+    ),
+  ],
+  [
+    "GET",
     "/api/v1/companies/:company/members",
     api(async ({ app, user, params }) =>
       json(app.companies.members(params.company!, user))

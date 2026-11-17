@@ -7,6 +7,7 @@ import { queryClient } from "../app/query.ts";
 import type {
   Channel,
   Company,
+  CompanyRepositories,
   Facts,
   Inbox,
   Member,
@@ -269,6 +270,16 @@ export function slackBotQuery(companyId: string) {
     queryKey: ["companies", companyId, "slack-bot"],
     queryFn: ({ signal }) =>
       request<SlackBotStatus>(`/companies/${companyId}/slack-bot`, {
+        signal,
+      }),
+  });
+}
+
+export function repositoriesQuery(companyId: string) {
+  return queryOptions({
+    queryKey: ["companies", companyId, "repositories"],
+    queryFn: ({ signal }) =>
+      request<CompanyRepositories>(`/companies/${companyId}/repositories`, {
         signal,
       }),
   });

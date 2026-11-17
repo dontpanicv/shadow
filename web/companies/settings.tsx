@@ -4,6 +4,7 @@ import { request } from "../app/api.ts";
 import { queryClient } from "../app/query.ts";
 import type {
   Company,
+  CompanyRepositories,
   Facts,
   ObservabilitySettings,
   Role,
@@ -32,6 +33,7 @@ import {
   meQuery,
   observabilityQuery,
   refreshCompany,
+  repositoriesQuery,
   slackBotQuery,
   slackDecisionsQuery,
   slackDefaultGoalQuery,
@@ -168,6 +170,56 @@ export function ObservabilitySection({ companyId }: { companyId: string }) {
           />
           <Button label="Save" type="submit" />
         </SettingsRow>
+      </form>
+    </SettingsCard>
+  );
+}
+
+/**
+ * Where the company's own git repositories live, one per line; in them, people's own agents keep notes in Shadow. For
+ * its admins.
+ */
+export function RepositoriesSection({ companyId }: { companyId: string }) {
+  const settings = useQuery(repositoriesQuery(companyId)).data;
+  const save = useMutation({
+    mutationFn: (repositories: string[]) =>
+      request<CompanyRepositories>(`/companies/${companyId}/repositories`, {
+        method: "PUT",
+        body: { repositories },
+      }),
+    onSuccess: (saved) => {
+      showToast("success", "Saved");
+      queryClient.setQueryData(repositoriesQuery(companyId).queryKey, saved);
+    },
+  });
+  if (!settings) {
+    return null;
+  }
+  const text = settings.repositories.join("\n");
+  return (
+    <SettingsCard>
+      <form
+        aria-busy={save.isPending || undefined}
+        className="settings-text-form"
+        key={text}
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate(
+            String(new FormData(event.currentTarget).get("repositories")).split(
+              /[\s,]+/
+            )
+          );
+        }}
+      >
+        <textarea
+          aria-label="Repositories"
+          className="input multiline"
+          defaultValue={text}
+          name="repositories"
+          placeholder={"github.com/example\ngithub.com/example-internal"}
+          rows={4}
+        />
+        <Button label="Save" type="submit" />
       </form>
     </SettingsCard>
   );

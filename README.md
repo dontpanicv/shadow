@@ -326,14 +326,6 @@ skills = ["skill"]          # folders whose SKILL.md files agents get as skills
 token = "github_pat_…"      # reads private repositories: a fine-grained token with read access to their contents
 ```
 
-**Connect your agent** also installs the `shadow-notes` skill in people's own agents, such as Claude Code or Codex.
-In a repository whose git remote starts with one of `repositories`, the agent keeps its decisions, facts, finished
-tasks, problems, and errors as notes in the channel of their topic. Put it before the first `[table]`.
-
-```toml
-repositories = ["github.com/example", "github.com/example-internal"]
-```
-
 [google-sign-in.md](google-sign-in.md) shows how to make the Google client. Then sign in, connect ChatGPT in
 Settings, connect the Slack bot and add your colleagues in Company settings
 ([docs/integrations.md](docs/integrations.md#the-slack-bot-of-the-company)). Each person adds their own accounts in

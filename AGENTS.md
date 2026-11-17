@@ -70,7 +70,7 @@ addresses, or code and data from employers or clients.
   configured model provider. Silent filing starts no agent turn and sends no notification.
 - Every company read and write goes through `Companies.requireMember`; answer `404` to non-members.
 - A member is an `admin` or a `member` ("User" in the app). Only an admin opens Company settings: the Slack bot, the Linear key and its feed, the
-  VictoriaLogs and VictoriaMetrics addresses that every agent queries, the members and their roles, the LLM provider and model, the usage, the facts, what Shadow learned, the name, and the
+  VictoriaLogs and VictoriaMetrics addresses that every agent queries, the repositories where people's own agents keep notes, the members and their roles, the LLM provider and model, the usage, the facts, what Shadow learned, the name, and the
   server restart; an admin also sets the OAuth clients and reads agent feedback. A person's own Settings has only
   their integrations and account. Check with `Companies.requireAdmin` (`403`), or `isAdmin` for
   what all companies share. The first of `allowed_emails` starts the company as its first admin; one admin stays.

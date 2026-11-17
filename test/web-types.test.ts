@@ -4,6 +4,7 @@ import type * as Server from "../src/artifacts/artifacts.ts";
 import type {
   Channel,
   Company,
+  CompanyRepositories,
   Member,
   ThreadSummary,
 } from "../src/companies/companies.ts";
@@ -56,6 +57,7 @@ const checks: true[] = [
   true satisfies Fits<Member, Web.Member>,
   true satisfies Fits<SlackBotStatus, Web.SlackBotStatus>,
   true satisfies Fits<ObservabilitySettings, Web.ObservabilitySettings>,
+  true satisfies Fits<CompanyRepositories, Web.CompanyRepositories>,
   true satisfies Fits<CompanyKey, Web.CompanyKey>,
   true satisfies Fits<LinearFeedStatus, Web.LinearFeedStatus>,
   true satisfies Fits<SlackGoal, Web.SlackGoal>,

@@ -72,6 +72,10 @@ export interface Channel {
 export interface Facts {
   readonly text: string;
 }
+/** Where the company's own git repositories live, such as `github.com/example`; an admin sets them. */
+export interface CompanyRepositories {
+  readonly repositories: readonly string[];
+}
 export interface Member {
   readonly email: string;
   readonly name: string;
@@ -83,6 +87,9 @@ export interface Member {
 
 /** The longest facts text, so it stays a small part of every agent's instructions. */
 const MAX_FACTS = 20_000;
+const MOST_REPOSITORIES = 50;
+/** A host with an optional path, such as `github.com/example`; nothing that could break the skill's text. */
+const REPOSITORY = /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[\w.-]+)*$/i;
 
 /** Leaves out the rows of deleted companies. */
 const LIVE =
@@ -584,6 +591,67 @@ export class Companies {
       )
       .run(companyId, text.trim(), user.id, Date.now());
     return { text: text.trim() };
+  }
+
+  /** Where the company's own git repositories live, for an admin. */
+  repositories(companyId: string, user: User): CompanyRepositories {
+    this.requireAdmin(companyId, user);
+    return { repositories: this.repositoriesOf(companyId) };
+  }
+
+  /** Where the company's own git repositories live; empty when no admin set them. */
+  repositoriesOf(companyId: string): string[] {
+    const row = this.database
+      .query(
+        "SELECT repositories FROM company_repositories WHERE company_id = ?"
+      )
+      .get(companyId) as { repositories: string } | null;
+    return row ? (JSON.parse(row.repositories) as string[]) : [];
+  }
+
+  /** Replaces where the company's own git repositories live, each as a host and path; only an admin sets them. */
+  setRepositories(
+    companyId: string,
+    user: User,
+    input: unknown
+  ): CompanyRepositories {
+    this.requireAdmin(companyId, user);
+    if (
+      !Array.isArray(input) ||
+      input.length > MOST_REPOSITORIES ||
+      input.some((entry) => typeof entry !== "string")
+    ) {
+      throw new HttpError(
+        400,
+        `Give at most ${MOST_REPOSITORIES} repository addresses as text`
+      );
+    }
+    const repositories = [
+      ...new Set(
+        (input as string[])
+          .map((entry) =>
+            entry
+              .trim()
+              .replace(/^https?:\/\//, "")
+              .replace(/\.git$/, "")
+              .replace(/\/+$/, "")
+          )
+          .filter(Boolean)
+      ),
+    ];
+    const invalid = repositories.find((entry) => !REPOSITORY.test(entry));
+    if (invalid) {
+      throw new HttpError(
+        400,
+        `${invalid} is not an address such as github.com/example`
+      );
+    }
+    this.database
+      .query(
+        "INSERT INTO company_repositories (company_id, repositories, changed_by, changed_at) VALUES (?, ?, ?, ?) ON CONFLICT (company_id) DO UPDATE SET repositories = excluded.repositories, changed_by = excluded.changed_by, changed_at = excluded.changed_at"
+      )
+      .run(companyId, JSON.stringify(repositories), user.id, Date.now());
+    return { repositories };
   }
 
   /**

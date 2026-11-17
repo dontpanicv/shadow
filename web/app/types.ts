@@ -131,6 +131,11 @@ export interface Facts {
   readonly text: string;
 }
 
+/** Where the company's own git repositories live, such as `github.com/example`; an admin sets them. */
+export interface CompanyRepositories {
+  readonly repositories: readonly string[];
+}
+
 export interface Member {
   readonly userId: string;
   readonly name: string;

@@ -55,9 +55,14 @@ export const mcpApiRoutes: readonly Route[] = [
  * the agent keeps notes in Shadow as it works. It holds no data, so it needs no sign-in.
  */
 async function skill({ app }: RouteInput): Promise<Response> {
-  return new Response(skillText(app.config.repositories), {
-    headers: { "content-type": "text/markdown; charset=utf-8" },
-  });
+  // Shadow has one company.
+  const [companyId] = app.companies.ids();
+  return new Response(
+    skillText(companyId ? app.companies.repositoriesOf(companyId) : []),
+    {
+      headers: { "content-type": "text/markdown; charset=utf-8" },
+    }
+  );
 }
 
 export function skillText(repositories: readonly string[]): string {

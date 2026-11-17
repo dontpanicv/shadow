@@ -6,7 +6,7 @@ import { dirname } from "node:path";
  * Application tables. better-auth owns `user`, `session`, `account`, `verification`, `organization` (companies),
  * `member`, and `invitation`; it migrates them itself. Append a migration; never edit one that shipped.
  *
- * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `channel_pin`, `thread`, and `company_facts` (and reads
+ * Each table has one owner module, and only that module queries it: `accounts` owns `profile_picture`, `companies` owns `channel`, `channel_pin`, `thread`, `company_facts`, and `company_repositories` (and reads
  * `organization` and `member`, and writes the name and `deletedAt` of an `organization`), `integrations` owns
  * `credential`, `oauth_client`, `observability`, `company_key`, and `integration_setting` (no longer read), `linear` owns `linear_feed`, `linear_issue`, `linear_entry`, `linear_day`, and `linear_decision`, `llm` owns `provider_credential`, `llm_usage`, `llm_usage_seen`, and its keys in `setting`,
  * `artifacts` owns `artifact`, `artifact_name`, `artifact_visitor`, and `artifact_record`,
@@ -907,6 +907,14 @@ const migrations = [
     at INTEGER NOT NULL
   );
   CREATE INDEX linear_decision_at ON linear_decision (company_id, at);`,
+  // companies: where the company's own git repositories live, as a JSON list that an admin sets, such as
+  // ["github.com/example"]; people's own agents keep notes in Shadow when they work in one.
+  `CREATE TABLE company_repositories (
+    company_id TEXT PRIMARY KEY,
+    repositories TEXT NOT NULL,
+    changed_by TEXT NOT NULL,
+    changed_at INTEGER NOT NULL
+  );`,
 ];
 
 export function openDatabase(path: string): Database {
