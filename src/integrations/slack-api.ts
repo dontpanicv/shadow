@@ -85,7 +85,11 @@ export class SlackApi {
   async openSocket(appToken: string): Promise<string> {
     const response = await this.fetchSlack(
       "https://slack.com/api/apps.connections.open",
-      { method: "POST", headers: { authorization: `Bearer ${appToken}` } }
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${appToken}` },
+        signal: AbortSignal.timeout(30_000),
+      }
     );
     const body = (await response.json()) as {
       ok?: boolean;

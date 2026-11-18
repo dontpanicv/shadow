@@ -1,6 +1,11 @@
 /** The first wait before the socket connects again; it doubles on each failure, up to `LONGEST_WAIT`. */
 const FIRST_WAIT = 1000;
 const LONGEST_WAIT = 60_000;
+/**
+ * How often the socket pings Slack. A connection that sent nothing, not even a pong, between two pings is dead: a
+ * network that drops without a word leaves a socket that never closes by itself.
+ */
+export const HEARTBEAT_MS = 30_000;
 
 /** What a Socket Mode connection tells its owner. */
 export interface SlackSocketHandlers {
@@ -22,6 +27,8 @@ export interface SocketLike {
   onmessage: ((message: { data: unknown }) => void) | null;
   onclose: (() => void) | null;
   send: (data: string) => void;
+  ping: () => void;
+  addEventListener: (type: "pong", listener: () => void) => void;
   close: () => void;
 }
 
@@ -40,6 +47,7 @@ export class SlackSocket {
   private wait = FIRST_WAIT;
   private refreshing = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private heartbeat: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     /** The address of a new connection, from apps.connections.open. */
@@ -56,6 +64,7 @@ export class SlackSocket {
   close(): void {
     this.stopped = true;
     clearTimeout(this.timer);
+    clearInterval(this.heartbeat);
     const { socket } = this;
     this.socket = null;
     socket?.close();
@@ -69,8 +78,27 @@ export class SlackSocket {
       }
       const socket = this.connectTo(url);
       this.socket = socket;
-      socket.onmessage = (message) =>
+      let heard = true;
+      socket.onmessage = (message) => {
+        heard = true;
         this.receive(socket, String(message.data));
+      };
+      socket.addEventListener("pong", () => {
+        heard = true;
+      });
+      clearInterval(this.heartbeat);
+      this.heartbeat = setInterval(() => {
+        if (this.socket !== socket) {
+          return;
+        }
+        if (!heard) {
+          this.again(new Error("Slack stopped answering"));
+          socket.close();
+          return;
+        }
+        heard = false;
+        socket.ping();
+      }, HEARTBEAT_MS);
       socket.onclose = () => {
         // A socket that Shadow replaced or closed says nothing more.
         if (this.socket === socket) {
@@ -109,6 +137,7 @@ export class SlackSocket {
   }
 
   private again(error: unknown): void {
+    clearInterval(this.heartbeat);
     this.socket = null;
     this.refreshing = false;
     if (this.stopped) {

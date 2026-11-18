@@ -6,9 +6,24 @@ export class FakeSocket implements SocketLike {
   onclose: (() => void) | null = null;
   readonly sent: string[] = [];
   closed = false;
+  pings = 0;
+  /** Whether a ping gets its pong, as a live connection does. */
+  answers = true;
+  private pong: (() => void) | null = null;
 
   send(data: string): void {
     this.sent.push(data);
+  }
+
+  ping(): void {
+    this.pings += 1;
+    if (this.answers) {
+      this.pong?.();
+    }
+  }
+
+  addEventListener(_type: "pong", listener: () => void): void {
+    this.pong = listener;
   }
 
   close(): void {
