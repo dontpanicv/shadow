@@ -85,6 +85,7 @@ export function googleConnectors(redirectUrl: string): readonly Connector[] {
       },
       guide: [
         "Enable this service's Google API and MCP API in your Google Cloud project.",
+        "Enroll the Google Cloud project in the [Google Workspace Developer Preview Program](https://developers.google.com/workspace/preview). Until then, Google refuses every tool call, for Drive with “The caller does not have permission”.",
         `The Google OAuth client must have **Use this client for an AI-powered agent** selected and list \`${redirectUrl}\` as a redirect URI. Shadow uses the client in its server configuration.`,
         "Click **Connect** and select an account. Connect each Google service that you want Shadow to use.",
       ],
