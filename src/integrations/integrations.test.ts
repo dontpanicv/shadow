@@ -130,6 +130,15 @@ async function signIn(request: Request): Promise<Response> {
         parameters.get("code") === "code-own" ? "access-own" : "access-1",
       token_type: "Bearer",
       refresh_token: "refresh-1",
+      // A sign-in from before Shadow asked for more.
+      ...(parameters.get("code") === "code-narrow"
+        ? {
+            scope: "openid https://www.googleapis.com/auth/userinfo.email mail",
+          }
+        : {
+            scope:
+              "openid https://www.googleapis.com/auth/userinfo.email mail calendar",
+          }),
       ...(owned
         ? {
             id_token: `x.${btoa(JSON.stringify({ email: "anna@work.example" }))}.x`,
@@ -757,6 +766,9 @@ test("a Google MCP server signs in with the saved client and exposes its tools",
   expect((await service.tools(companyId)).map((tool) => tool.name)).toContain(
     "google_search_products"
   );
+  for (const credential of service.list(companyId, alice)[0]!.credentials) {
+    service.deleteCredential(companyId, alice, credential.id);
+  }
   await service.close();
 });
 
@@ -821,6 +833,145 @@ test("the own tools of a sign-in get a fresh access token, which the refresh tok
   expect(tokenRequests.at(-1)?.get("refresh_token")).toBe("refresh-1");
   withOwner.deleteCredential(companyId, alice, credential.id);
   await withOwner.close();
+});
+
+test("an MCP connector also has its own tools, and shadow-file arguments give an MCP tool a file's bytes", async () => {
+  const echo = () => {
+    const server = new Server(
+      { name: "drive", version: "1" },
+      { capabilities: { tools: {} } }
+    );
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        {
+          name: "create_file",
+          description: "Upload",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+    }));
+    server.setRequestHandler(CallToolRequestSchema, async ({ params }) => ({
+      content: [{ type: "text", text: "" }],
+      structuredContent: params.arguments,
+    }));
+    return server;
+  };
+  const drive: Connector = {
+    id: "drive",
+    name: "Drive",
+    description: "Files.",
+    secretLabel: null,
+    mcp: [new URL("/mcp", signInServer.url).href],
+    tools: [
+      {
+        name: "drive_share",
+        description: "Shares.",
+        parameters: Type.Object({}),
+        execute: async () => "shared",
+      },
+    ],
+  };
+  const service = new Integrations(
+    shadow.app.database,
+    Secrets.forTests(),
+    shadow.app.companies,
+    {
+      catalog: [drive],
+      transport: () => {
+        const [client, server] = InMemoryTransport.createLinkedPair();
+        echo().connect(server);
+        return client;
+      },
+    }
+  );
+  const { url } = await service.connect(companyId, alice, "drive");
+  await service.finishCallback(
+    alice,
+    `http://localhost:3000/api/v1/integrations/callback?code=code-5&state=${new URL(url).searchParams.get("state")}`
+  );
+  const tools = await service.tools(companyId);
+  expect(tools.map((tool) => tool.name)).toEqual([
+    "drive_create_file",
+    "drive_share",
+    "drive_accounts",
+  ]);
+  expect(await tools[1]!.execute({}, { userId: alice.id })).toBe("shared");
+  const path = `${shadow.app.config.dataDirectory}/upload.bin`;
+  await Bun.write(path, new Uint8Array([0, 255, 1]));
+  const asked: string[] = [];
+  const turn = {
+    userId: alice.id,
+    file: async (fileId: string) => {
+      asked.push(fileId);
+      return { path, name: "upload.bin" };
+    },
+  };
+  expect(
+    await tools[0]!.execute(
+      {
+        title: "shadow-file:not a reference",
+        base64Content: "shadow-file:file-1",
+        attachments: [{ content: "shadow-file:file-1", filename: "a.bin" }],
+      },
+      turn
+    )
+  ).toEqual({
+    title: "shadow-file:not a reference",
+    base64Content: "AP8B",
+    attachments: [{ content: "AP8B", filename: "a.bin" }],
+  });
+  expect(asked).toEqual(["file-1", "file-1"]);
+  await expect(
+    tools[0]!.execute(
+      { base64Content: "shadow-file:file-1" },
+      { userId: alice.id }
+    )
+  ).rejects.toThrow("Only an agent in a thread can give a tool a file.");
+  const [credential] = service.list(companyId, alice)[0]!.credentials;
+  service.deleteCredential(companyId, alice, credential!.id);
+  await service.close();
+});
+
+test("a sign-in without a scope that Shadow asks for now shows Connect again, and a new sign-in to it renews it", async () => {
+  const calendar: Connector = {
+    id: "google_calendar",
+    name: "Calendar",
+    description: "Events.",
+    secretLabel: null,
+    oauth: new URL(signInServer.url).origin,
+    registered: true,
+    clientKey: "google",
+    scope: "openid email mail calendar",
+    tools: [],
+  };
+  const service = new Integrations(
+    shadow.app.database,
+    Secrets.forTests(),
+    shadow.app.companies,
+    {
+      catalog: [calendar],
+      googleClient: { clientId: "own-client", clientSecret: "shh" },
+    }
+  );
+  const signInWith = async (code: string) => {
+    const { url } = await service.connect(companyId, alice, "google_calendar");
+    return service.finishConnect(
+      companyId,
+      alice,
+      "google_calendar",
+      `http://localhost:3000/api/v1/integrations/callback?code=${code}&state=${new URL(url).searchParams.get("state")}`
+    );
+  };
+  const narrow = await signInWith("code-narrow");
+  service.setWatched(companyId, alice, narrow.id, false);
+  expect(service.list(companyId, alice)[0]!.credentials).toMatchObject([
+    { id: narrow.id, label: "anna@work.example", reconnect: true },
+  ]);
+  const renewed = await signInWith("code-wide");
+  expect(renewed).toMatchObject({ id: narrow.id, reconnect: false });
+  expect(service.list(companyId, alice)[0]!.credentials).toHaveLength(1);
+  service.deleteCredential(companyId, alice, narrow.id);
+  await service.close();
 });
 
 test("a turn picks one of its person's accounts by name, and lists them", async () => {

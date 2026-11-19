@@ -251,6 +251,8 @@ export interface Credential {
   readonly ownerName: string;
   /** Whether every member's turns use it; else only its owner's. */
   readonly watched: boolean;
+  /** Whether its sign-in lacks a scope that Shadow asks for now; connecting it again renews it. */
+  readonly reconnect: boolean;
   readonly createdAt: number;
 }
 

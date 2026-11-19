@@ -154,6 +154,19 @@ export function IntegrationsSection({ companyId }: { companyId: string }) {
                 label={credential.label}
                 lead={<Icon name="key" />}
               >
+                {credential.reconnect ? (
+                  <Button
+                    disabled={connect.isPending}
+                    icon="link"
+                    label="Connect again"
+                    onClick={() =>
+                      integration.address
+                        ? setSigningIn(integration)
+                        : connect.mutate({ integration })
+                    }
+                    size="small"
+                  />
+                ) : null}
                 <Button
                   icon="trash"
                   label={`Delete ${credential.label}`}

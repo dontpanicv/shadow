@@ -32,6 +32,8 @@ export interface CredentialSummary {
   readonly ownerName: string;
   /** Whether its owner lets Shadow read it for them; see `Connector.watch`. */
   readonly watched: boolean;
+  /** Whether its sign-in lacks a scope that Shadow asks for now, so its owner connects it again. */
+  readonly reconnect: boolean;
 }
 export interface Integration {
   readonly credentials: readonly CredentialSummary[];
@@ -132,7 +134,10 @@ export interface Connector {
   /** The steps that set it up, in Markdown, which Settings shows. */
   readonly guide?: readonly string[];
   readonly tools: readonly ConnectorTool[];
-  /** The addresses of its MCP servers, which give the tools; one sign-in serves them all. */
+  /**
+   * The addresses of its MCP servers, which give the tools; one sign-in serves them all. Its own `tools` then call its
+   * API with that sign-in's access token, for what the servers cannot do.
+   */
   readonly mcp?: readonly string[];
   /**
    * The OAuth server that people sign in to, for a connector whose own tools call its API, such as Google's; the tools
@@ -339,6 +344,10 @@ interface PendingSignIn {
 const OWN_CREDENTIAL =
   "id = ?1 AND company_id = ?2 AND owner_id = ?3 AND deleted_at IS NULL";
 const SIGN_IN_MS = 10 * 60 * 1000;
+/** The scopes of OpenID Connect, which a grant can name in another form, such as Google's `userinfo.email` for `email`. */
+const OPENID_SCOPES = new Set(["openid", "email", "profile"]);
+/** A tool argument that stands for the bytes of a company file, as base64, such as an upload or an attachment. */
+const FILE_REFERENCE = /^shadow-file:(\S+)$/;
 
 /**
  * The outside systems that agents use. A person connects an integration in their Settings, in the company, and each
@@ -411,16 +420,35 @@ export class Integrations {
   ): (CredentialSummary & { integration: string })[] {
     const rows = this.database
       .query(
-        `SELECT c.id, c.integration, c.label, c.owner_id AS ownerId, u.name AS ownerName, c.watched, c.created_at AS createdAt FROM credential c JOIN user u ON u.id = c.owner_id WHERE ${where} AND c.deleted_at IS NULL ORDER BY c.created_at`
+        `SELECT c.id, c.integration, c.label, c.owner_id AS ownerId, u.name AS ownerName, c.watched, c.secret, c.created_at AS createdAt FROM credential c JOIN user u ON u.id = c.owner_id WHERE ${where} AND c.deleted_at IS NULL ORDER BY c.created_at`
       )
-      .all(...params) as (Omit<CredentialSummary, "watched"> & {
+      .all(...params) as (Omit<CredentialSummary, "watched" | "reconnect"> & {
       integration: string;
       watched: number;
+      secret: Uint8Array;
     })[];
-    return rows.map((row) => ({
+    return rows.map(({ secret, ...row }) => ({
       ...row,
       watched: row.watched === 1,
+      reconnect: this.lacksScope(row.integration, secret),
     }));
+  }
+
+  /** Whether a sign-in lacks a scope that its connector asks for now, such as one that Shadow added after it signed in. */
+  private lacksScope(integrationId: string, secret: Uint8Array): boolean {
+    const wanted = this.catalog
+      .find(({ id }) => id === integrationId)
+      ?.scope?.split(" ")
+      .filter((scope) => !OPENID_SCOPES.has(scope));
+    if (!wanted?.length) {
+      return false;
+    }
+    const granted = (
+      JSON.parse(this.secrets.decrypt(secret)) as McpGrant
+    ).tokens?.scope?.split(" ");
+    return (
+      granted !== undefined && wanted.some((scope) => !granted.includes(scope))
+    );
   }
 
   /**
@@ -595,14 +623,39 @@ export class Integrations {
     }
     const { provider, connector } = pending;
     await signIn(connector, provider, code);
+    const email = emailOf(provider.grant.tokens?.id_token);
+    const label =
+      email ??
+      (provider.grant.address
+        ? new URL(provider.grant.address).host
+        : connector.name);
+    // Only a sign-in that names its account, by its email, is known to be the same account again.
+    const renewed = email
+      ? (this.database
+          .query(
+            "SELECT id FROM credential WHERE company_id = ? AND owner_id = ? AND integration = ? AND label = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1"
+          )
+          .get(companyId, user.id, connector.id, email) as {
+          id: string;
+        } | null)
+      : null;
+    if (renewed) {
+      // A sign-in again to the same account renews it, so its id, "Read for me", and what intake read stay.
+      this.saveGrant(renewed.id, provider.grant);
+      this.closeClient(renewed.id);
+      this.accessTokens.delete(renewed.id);
+      this.options.changed?.(companyId);
+      const { integration: _, ...credential } = this.summaries(
+        "c.id = ?",
+        renewed.id
+      )[0]!;
+      return credential;
+    }
     return this.insertCredential(
       companyId,
       user,
       connector.id,
-      emailOf(provider.grant.tokens?.id_token) ??
-        (provider.grant.address
-          ? new URL(provider.grant.address).host
-          : connector.name),
+      label,
       JSON.stringify(provider.grant)
     );
   }
@@ -656,6 +709,7 @@ export class Integrations {
       ownerId: user.id,
       ownerName: user.name,
       watched: false,
+      reconnect: false,
       createdAt: Date.now(),
     };
     this.database
@@ -893,9 +947,10 @@ export class Integrations {
   async tools(companyId: string): Promise<CompanyTool[]> {
     const tools = await Promise.all(
       this.catalog.map(async (connector) => {
-        const own: AccountTool[] = connector.mcp
-          ? await this.mcpTools(companyId, connector)
-          : connector.tools.map((tool) => ({
+        const own: AccountTool[] = [
+          ...(connector.mcp ? await this.mcpTools(companyId, connector) : []),
+          ...connector.tools.map(
+            (tool): AccountTool => ({
               name: tool.name,
               description: tool.description,
               parameters: tool.parameters,
@@ -919,7 +974,9 @@ export class Integrations {
                   allowed,
                   save
                 ),
-            }));
+            })
+          ),
+        ];
         if (own.length === 0) {
           return [];
         }
@@ -1216,13 +1273,13 @@ export class Integrations {
                         ),
                     }
                   : {}),
-                call: (args, credential, signal) =>
+                call: async (args, credential, signal, file) =>
                   this.callMcp(
                     credential,
                     connector,
                     server,
                     tool.name,
-                    args as Record<string, unknown>,
+                    (await withFiles(args, file)) as Record<string, unknown>,
                     signal
                   ),
               })
@@ -1652,6 +1709,41 @@ class GrantProvider implements OAuthClientProvider {
   codeVerifier(): string {
     return this.verifier;
   }
+}
+
+/**
+ * The arguments of an MCP tool with each `shadow-file:<id>` value replaced by that file's bytes in base64, so a script
+ * uploads or attaches a file without carrying its bytes. The turn's `file` checks that the person sees the file.
+ */
+async function withFiles(
+  value: unknown,
+  file: FileOf | undefined
+): Promise<unknown> {
+  if (typeof value === "string") {
+    const fileId = FILE_REFERENCE.exec(value)?.[1];
+    if (!fileId) {
+      return value;
+    }
+    if (!file) {
+      throw new Error("Only an agent in a thread can give a tool a file.");
+    }
+    const { path } = await file(fileId);
+    return Buffer.from(await Bun.file(path).bytes()).toString("base64");
+  }
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((item) => withFiles(item, file)));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      await Promise.all(
+        Object.entries(value).map(async ([key, item]) => [
+          key,
+          await withFiles(item, file),
+        ])
+      )
+    );
+  }
+  return value;
 }
 
 /** The address of a person's own server, such as `http://my-mac:3774`. */
