@@ -10,7 +10,7 @@ server, with no cloud service between your company and its data.
 
 - **Every employee has a shadow.** Each person has their own thread with their shadow that never ends. It knows who
   writes each message, what each person works on, and what the team decided last week.
-- **It reads Slack and mail for you.** It reads your Slack in the channels that it copies, and Gmail or Plaud meeting notes when you turn on "Read for me". Your
+- **It reads Slack and mail for you.** It reads your Slack in the channels that it copies, and your Slack DMs, Gmail, or Plaud meeting notes when you turn on "Read for me". Your
   shadow keeps the useful context and files it with the matter it belongs to, so you do not read every message to
   know what is happening.
 - **It keeps track of what is asked of you.** Your shadow follows each open matter. When a customer has 30 days to
@@ -76,11 +76,12 @@ same text until its content changes, so the model's prompt cache stays warm.
 
 ## Your accounts, read for you
 
-Shadow reads your Slack without a setting. Turn on "Read for me" for Gmail and Plaud in Settings. Shadow reads incoming and outgoing material every 15 minutes.
+Shadow reads your Slack channels without a setting. Turn on "Read for me" for your Slack account, Gmail, and Plaud in
+Settings. Shadow reads incoming and outgoing material every 15 minutes.
 The first read covers one day; later reads continue from a saved cursor, including after an outage.
 
 - **Slack:** in the Slack channels that Shadow copies and you see, the messages that you send, your mentions, and the
-  replies in those Slack threads. Shadow does not read your DMs.
+  replies in those Slack threads. With "Read for me" on your Slack account, also your DMs and group DMs.
 - **Gmail:** incoming mail from the Primary inbox after your Gmail filters, and sent mail for context. It leaves out
   archived mail, other inbox categories, spam, trash, and drafts before it fetches the bodies.
 - **Plaud:** the summaries of your recorded meetings.

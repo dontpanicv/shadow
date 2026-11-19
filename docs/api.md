@@ -512,8 +512,9 @@ not a promised deadline. Coverage has `source` (credential id), `through` (Unix 
 All company access requires membership. Turning off an account stops its source reads and automatic checks and
 notices. Existing audit records remain private. Deleted Shadow threads are excluded from source recall.
 
-"Read for me" is off by default and only its credential owner can change it. Slack has no "Read for me": intake
-reads each member's Slack from the bot's copy of the channels that the member sees, as one more source. It permits automatic private context,
+"Read for me" is off by default and only its credential owner can change it. Slack channels need no "Read for me":
+intake reads each member's Slack from the bot's copy of the channels that the member sees, as one more source. "Read
+for me" on a personal Slack account adds only its DMs and group DMs. It permits automatic private context,
 future checks, and useful updates posted in the existing subject thread of the owner's private channels. No channel
 or thread that others see receives the source material. External messages still need the person's request and normal tool approval. Collection runs every 15 minutes, starts one day back, and uses saved cursors with an overlap. A bounded
 poll can retain a backlog checkpoint without claiming complete source coverage.
@@ -530,7 +531,7 @@ the thread's agent works only when a person asks there.
 Each person chooses which of their own accounts Shadow reads. Gmail uses Google's MCP server to read new mail and sent
 replies; Plaud reads recording summaries. Every member's Slack source is the bot's copy of the Slack channels that the
 member sees: their own messages, their mentions, and the replies in those threads, by the name of the Slack user with
-their email; no DMs. Each person's evidence, checks, and morning review use only that person's own sources.
+their email. A watched personal Slack account adds the person's DMs and group DMs. Each person's evidence, checks, and morning review use only that person's own sources.
 When no thread matches a useful development, Shadow starts a subject thread in one of the person's own private
 channels. If none fits, Shadow creates a private channel and its first thread. Invitations and tickets can start these threads.
 Channel names cover lasting subjects; thread titles name specific matters. The normal agent can search connected

@@ -8,7 +8,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Static, type TSchema, Type } from "@earendil-works/pi-ai";
-import type { Connector, ConnectorTool } from "./integrations.ts";
+import { localDay } from "../platform/time.ts";
+import type {
+  Connector,
+  ConnectorTool,
+  WatchedItem,
+  WatchSource,
+} from "./integrations.ts";
 import {
   type SlackUser,
   slackMarkdown,
@@ -57,6 +63,18 @@ export function slackConnector(binary: string): Connector {
       "Click **Add credential**, and paste it. Signing out of Slack in that browser ends the session.",
     ],
     secretFrom: (curl) => slack.signIn(curl),
+    watch: (source) => watchSlack(slack, source),
+    observations: async (tool, args, result, source) => {
+      if (tool !== "slack_search" && tool !== "slack_read") {
+        return [];
+      }
+      return readSlack(
+        tool,
+        args,
+        result,
+        await slack.owner(await source.secret(), undefined)
+      );
+    },
     tools: [
       slackTool(slack, {
         name: "slack_search",
@@ -213,6 +231,161 @@ export function slackConnector(binary: string): Connector {
   };
 }
 
+/** The pages of each search that one watch reads at most. */
+const WATCH_PAGES = 5;
+
+/** A message of `slackcli search messages --json`, in Shadow's form (`SlackCli.messages`). */
+export interface SlackMessage {
+  readonly channel: {
+    readonly id: string;
+    readonly name?: string;
+    readonly is_im?: boolean;
+    readonly is_mpim?: boolean;
+  };
+  /** The author's user ID; a bot's message has none. */
+  readonly user?: string;
+  /** The author's name, as the bot's copy of the channels gives it. */
+  readonly author: string;
+  readonly ts: string;
+  readonly thread_ts?: string;
+  readonly text: string;
+  readonly permalink: string;
+}
+
+/** The person whose Slack account it is: their user ID, and their name, as the text of messages has it. */
+interface SlackOwner {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * Reads the person's DMs and group DMs since `source.since`. Their channels come from the bot's copy for every member
+ * (`SlackBot.watched`), so this reads only what the bot cannot see.
+ */
+async function watchSlack(
+  slack: SlackCli,
+  source: WatchSource
+): Promise<WatchedItem[]> {
+  const session = await source.secret();
+  const owner = await slack.owner(session, source.signal);
+  const saved = (source.checkpoint?.value ?? {}) as {
+    page?: number;
+    through?: number;
+  };
+  const through = saved.through ?? Date.now();
+  const query = `after:${localDay(source.since - 24 * 60 * 60 * 1000)}`;
+  const items = new Map<string, WatchedItem>();
+  let page = saved.page ?? 1;
+  let complete = false;
+  for (let scanned = 0; scanned < WATCH_PAGES; scanned += 1) {
+    const response = (await slack.messages(
+      session,
+      [
+        "search",
+        "messages",
+        "--limit=100",
+        `--page=${page}`,
+        "--sort=timestamp",
+        "--sort-dir=asc",
+        "--",
+        query,
+      ],
+      source.signal
+    )) as { matches?: SlackMessage[]; pages?: number };
+    // A search gives every channel's messages; only the selected ones, which intake records, belong in the audit.
+    source.record?.("raw", {
+      query,
+      page,
+      matches: response.matches?.length ?? 0,
+      pages: response.pages ?? 1,
+    });
+    for (const message of response.matches ?? []) {
+      const item =
+        Number(message.ts) * 1000 >= source.since &&
+        directSlackMessage(message, owner);
+      if (item) {
+        items.set(item.id, item);
+      }
+    }
+    if (page >= (response.pages ?? 1)) {
+      complete = true;
+      break;
+    }
+    page += 1;
+  }
+  source.checkpoint?.save(complete ? {} : { page, through });
+  source.record?.("coverage", {
+    complete,
+    ...(complete ? { through } : { reason: "Slack page budget" }),
+  });
+  source.record?.("filter", { kept: items.size });
+  return [...items.values()];
+}
+
+/** The DM and group DM messages of a slack_search or slack_read answer, which an agent read for the person. */
+function readSlack(
+  tool: string,
+  args: Record<string, unknown>,
+  result: unknown,
+  owner: SlackOwner
+): WatchedItem[] {
+  const response = result as {
+    matches?: SlackMessage[];
+    messages?: SlackMessage[];
+    channel?: SlackMessage["channel"];
+  };
+  const messages =
+    (tool === "slack_search" ? response.matches : response.messages) ?? [];
+  const target =
+    typeof args.channel === "string" && CHANNEL.test(args.channel)
+      ? args.channel
+      : null;
+  return messages.flatMap((message) => {
+    const channel =
+      message.channel ??
+      response.channel ??
+      (target ? { id: target, is_im: target.startsWith("D") } : undefined);
+    if (!(channel?.id && message.ts) || typeof message.text !== "string") {
+      return [];
+    }
+    const item = directSlackMessage(
+      {
+        ...message,
+        channel,
+        thread_ts:
+          message.thread_ts ??
+          (typeof args.thread === "string" ? args.thread : undefined),
+      },
+      owner
+    );
+    return item && Number.isFinite(item.at) ? [item] : [];
+  });
+}
+
+/** A message of a DM or a group DM as intake keeps it; null for any other message. */
+export function directSlackMessage(
+  message: SlackMessage,
+  owner: SlackOwner
+): WatchedItem | null {
+  const direct = message.channel.is_im === true;
+  if (!((direct || message.channel.is_mpim) && message.text.trim())) {
+    return null;
+  }
+  const own = message.user === owner.id;
+  return {
+    id: `${message.channel.id}/${message.ts}`,
+    kind: "message",
+    chat: message.channel.id,
+    chatName: direct ? "Direct message" : "Group direct message",
+    group: !direct,
+    sender: own ? "" : message.author,
+    fromOwner: own,
+    at: Math.floor(Number(message.ts) * 1000),
+    text: message.text.replaceAll(`@${owner.name}`, "@me"),
+    url: message.permalink ?? null,
+  };
+}
+
 /** The workspace that slackcli uses with a session: its default, or its only one. */
 function workspaceOf(session: string): SlackWorkspace | undefined {
   const credentials = JSON.parse(session) as SlackWorkspaces;
@@ -264,6 +437,19 @@ class SlackCli {
     }
     return answer;
   }
+  /** The person whose session it is. */
+  async owner(
+    session: string,
+    signal: AbortSignal | undefined
+  ): Promise<SlackOwner> {
+    const id = workspaceOf(session)?.user_id;
+    if (!id) {
+      throw new Error("The Slack session has no user identity");
+    }
+    const names = await this.namesOf(session, [id], new Map(), signal);
+    return { id, name: names.get(id)! };
+  }
+
   /**
    * The names of users: known ones, then those that an answer lists, then users.info, as the bot's copy asks it, for
    * at most `LOOKUPS` users; a user whose lookup fails or waits keeps their ID.

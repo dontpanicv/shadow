@@ -2,7 +2,11 @@ import { afterAll, expect, test } from "bun:test";
 import { chmod, exists, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { slackConnector } from "./slack.ts";
+import {
+  directSlackMessage,
+  type SlackMessage,
+  slackConnector,
+} from "./slack.ts";
 import { slackPermalink, slackTime } from "./slack-text.ts";
 
 const directory = await mkdtemp(join(tmpdir(), "shadow-slack-test-"));
@@ -82,6 +86,90 @@ test("only slack_send acts as the person, and its approval shows what it sends",
     )
   ).toBe("Send on Slack to #company in a thread: Dinner at 7");
 });
+
+test("the personal Slack source keeps only DMs and group DMs, as the bot's copy has the channels", () => {
+  const message: SlackMessage = {
+    channel: { id: "C1", name: "work" },
+    user: "U2",
+    author: "Bob Smith",
+    ts: "1.2",
+    text: "@Alice Novak please check",
+    permalink: "https://example.slack.com/archives/C1/p1200000",
+  };
+  const owner = { id: "U1", name: "Alice Novak" };
+  expect(directSlackMessage(message, owner)).toBeNull();
+  const direct = directSlackMessage(
+    { ...message, channel: { id: "D1", is_im: true } },
+    owner
+  );
+  expect(direct).toMatchObject({
+    chat: "D1",
+    group: false,
+    sender: "Bob Smith",
+    text: "@me please check",
+  });
+  expect(
+    directSlackMessage(
+      { ...message, user: "U1", channel: { id: "G1", is_mpim: true } },
+      owner
+    )
+  ).toMatchObject({ chat: "G1", group: true, fromOwner: true, sender: "" });
+});
+
+test("source polling keeps DMs and group DMs across pages, and a page cursor until the search is done", async () => {
+  const binary = join(directory, "watch-slackcli");
+  await Bun.write(
+    binary,
+    `#!/usr/bin/env bun
+const args=process.argv.slice(2);
+const page=Number(args.find(a=>a.startsWith("--page=")).slice(7));
+const channels=[{id:"C1",name:"work"},{id:"D1",is_im:true},{id:"G1",is_mpim:true}];
+const matches=Array.from({length:6},(_,i)=>({type:"message",ts:(page*10+i)+".1",user:"U2",text:"m"+page+"-"+i,channel:channels[i%3],permalink:"https://example.slack.com/archives/X/p1"}));
+console.log(JSON.stringify({pages:6,matches}));
+`
+  );
+  await chmod(binary, 0o755);
+  const watched = slackConnector(binary);
+  let checkpoint: unknown = {};
+  const coverage: boolean[] = [];
+  const source = {
+    since: 1000,
+    account: "Work",
+    seen: () => false,
+    secret: async () =>
+      JSON.stringify({
+        default_workspace: "T1",
+        workspaces: { T1: { user_id: "U1" } },
+      }),
+    call: async () => null,
+    checkpoint: {
+      get value() {
+        return checkpoint;
+      },
+      save: (value: unknown) => {
+        checkpoint = value;
+      },
+    },
+    record: (stage: string, data: unknown) => {
+      if (stage === "coverage") {
+        coverage.push((data as { complete: boolean }).complete);
+      }
+    },
+  };
+  const first = await watched.watch!(source);
+  expect(first).toHaveLength(20);
+  expect(first.every((item) => /^[DG]1$/.test(item.chat))).toBe(true);
+  expect(coverage.at(-1)).toBe(false);
+  const second = await watched.watch!(source);
+  expect(second.map((item) => item.text)).toEqual([
+    "m6-1",
+    "m6-2",
+    "m6-4",
+    "m6-5",
+  ]);
+  expect(coverage.at(-1)).toBe(true);
+  expect(checkpoint).toEqual({});
+}, 15_000);
 
 test("the tools give messages in the form of the bot's copy: names, the text with names, the time, and the link", async () => {
   const binary = join(directory, "form-slackcli");
