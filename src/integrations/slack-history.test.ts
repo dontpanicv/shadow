@@ -42,3 +42,46 @@ test("a Linear issue key is named only as a whole key, in any case", () => {
   expect(history.mentioning("co", "PIP-104")).toEqual(["C4"]);
   expect(history.mentioning("co", "PIP-1040' OR 1")).toEqual([]);
 });
+
+test("intake gets the person's messages, mentions, and threads of the channels they see, not other channel talk", () => {
+  const database = authDatabase();
+  migrate(database);
+  const now = Date.now() / 1000;
+  const insert = database.query(
+    "INSERT INTO slack_message (company_id, slack_channel_id, ts, thread_ts, author, text, files, day) VALUES ('co', ?, ?, ?, ?, ?, ?, '2026-11-19')"
+  );
+  const ts = (minutes: number) => (now - minutes * 60).toFixed(6);
+  const root = ts(50);
+  insert.run("C1", root, null, "Bob", "@Ann can you check the export?", "[]");
+  insert.run("C1", ts(40), root, "Cid", "It fails for me too", "[]");
+  insert.run("C1", ts(30), null, "Cid", "Lunch?", "[]");
+  insert.run("C1", ts(20), null, "Ann", "", '[{"name":"plan.pdf","link":"x"}]');
+  insert.run(
+    "C2",
+    ts(10),
+    null,
+    "Bob",
+    "@Ann in a channel she does not see",
+    "[]"
+  );
+  insert.run("C1", ts(60 * 48), null, "Ann", "Too old", "[]");
+  const history = new SlackHistory(
+    database,
+    {} as never,
+    {} as never,
+    {} as never
+  );
+  const items = history.watched(
+    "co",
+    [{ slackId: "C1", name: "general" }],
+    "Ann",
+    Date.now() - 24 * 60 * 60_000
+  );
+  expect(items.map((item) => [item.sender, item.text, item.chat])).toEqual([
+    ["Bob", "@me can you check the export?", `C1/${root}`],
+    ["Cid", "It fails for me too", `C1/${root}`],
+    ["", "Attachments: plan.pdf", `C1/${ts(20)}`],
+  ]);
+  expect(items[2]!.fromOwner).toBe(true);
+  expect(items[0]!.chatName).toBe("#general");
+});

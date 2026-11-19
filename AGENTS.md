@@ -53,7 +53,8 @@ addresses, or code and data from employers or clients.
   post Shadow's answer.
 - Consent first: explicit routines, reminders, and external messages still need a person's request or an accepted
   suggestion. "Read for me" (`credential.watched`) is standing consent for `src/intake/` to read that account,
-  retain useful context and infer future checks. Hard rule: what intake reads from a person's accounts goes only to
+  retain useful context and infer future checks. Slack needs no opt-in: intake reads every member's messages, mentions,
+  and their threads in the bot's copy of the Slack channels they see (`SlackBot.watched`). Hard rule: what intake reads from a person's accounts goes only to
   threads of that person's private channels (`privateThreads` in `src/intake/recall.ts`), never to a channel or
   thread that someone else sees. Only the person's own request in a shared thread brings their sources there. A
   private thread or channel never moves or merges into a channel that others see, and a thread of a channel that

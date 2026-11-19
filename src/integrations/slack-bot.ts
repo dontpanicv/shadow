@@ -3,6 +3,7 @@ import type { Companies, SlackChannel } from "../companies/companies.ts";
 import type { User } from "../platform/auth.ts";
 import { HttpError, required } from "../platform/errors.ts";
 import type { Secrets } from "../platform/secrets.ts";
+import type { WatchedCredential, WatchedItem } from "./integrations.ts";
 import { SlackApi } from "./slack-api.ts";
 import {
   SlackHistory,
@@ -44,8 +45,17 @@ export interface SlackBotStatus {
 
 type BotCompanies = Pick<
   Companies,
-  "requireAdmin" | "requireMember" | "ids" | "syncSlackChannels" | "channelsIn"
+  | "requireAdmin"
+  | "requireMember"
+  | "ids"
+  | "syncSlackChannels"
+  | "channelsIn"
+  | "members"
+  | "agentMember"
 >;
+
+/** The start of the id of a member's Slack source (`SlackBot.watched`), which no credential has. */
+const SLACK_SOURCE = "slack-copy:";
 
 interface BotRow {
   token: Uint8Array;
@@ -221,6 +231,63 @@ export class SlackBot {
       .channelsIn(companyId, user.id)
       .filter((channel) => channel.slackId && slackIds.has(channel.slackId))
       .map((channel) => channel.id);
+  }
+
+  /**
+   * One source for each member of a company with a connected bot: the bot's copy of the Slack channels that the member
+   * sees, which intake reads for every member without an opt-in, as it reads a watched credential.
+   */
+  watched(): WatchedCredential[] {
+    return this.companies.ids().flatMap((companyId) => {
+      const row = this.row(companyId);
+      if (!row) {
+        return [];
+      }
+      return this.companies
+        .members(companyId, this.companies.agentMember(companyId))
+        .map((member) => ({
+          id: `${SLACK_SOURCE}${companyId}:${member.userId}`,
+          companyId,
+          integration: "slack",
+          integrationName: "Slack",
+          ownerId: member.userId,
+          label: row.team_name,
+        }));
+    });
+  }
+
+  /** Whether `watched` gave this source id. */
+  watches(sourceId: string): boolean {
+    return sourceId.startsWith(SLACK_SOURCE);
+  }
+
+  /**
+   * The messages since `since`, in ms, of a source of `watched` that concern its member; none without a Slack account
+   * with the member's email.
+   */
+  async watch(sourceId: string, since: number): Promise<WatchedItem[]> {
+    const [companyId, userId] = sourceId
+      .slice(SLACK_SOURCE.length)
+      .split(":") as [string, string];
+    const row = this.row(companyId);
+    if (!row) {
+      throw new Error("The company has no Slack bot");
+    }
+    const member = this.companies
+      .members(companyId, this.companies.agentMember(companyId))
+      .find((candidate) => candidate.userId === userId);
+    const name = member && (await this.slackName(companyId, row, member.email));
+    if (!name) {
+      return [];
+    }
+    const channels = this.companies
+      .channelsIn(companyId, userId)
+      .flatMap((channel) =>
+        channel.slackId
+          ? [{ slackId: channel.slackId, name: channel.name }]
+          : []
+      );
+    return this.history.watched(companyId, channels, name, since);
   }
 
   /** The channels that every member sees whose Slack channel named an issue key, such as Linear's `PIP-1040`. */

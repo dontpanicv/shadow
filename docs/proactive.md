@@ -5,12 +5,11 @@ They do not need to maintain a task list or set a routine for each expected repl
 
 ## The process
 
-1. **Collect.** Gmail, Slack, and Plaud have read adapters. Each account is off until its owner turns on
-   Read for me. Polls run every 15 minutes. The first poll starts one day back. Later polls use a durable cursor,
+1. **Collect.** Gmail and Plaud have read adapters. Each account is off until its owner turns on
+   Read for me. Slack needs no opt-in: each member's source is the bot's copy of the Slack channels that they see. Polls run every 15 minutes. The first poll starts one day back. Later polls use a durable cursor,
    an overlap, and bounded work. A failed or incomplete poll preserves its cursor. Raw results go to the audit.
-2. **Select and batch.** Slack retains the person's messages, direct mentions, DMs, group DMs, and replies in
-   threads where they wrote or were mentioned. The adapter resolves Slack thread roots and preserves cursors for
-   deferred lookups and partial thread reads. General channel activity is excluded. Gmail keeps incoming
+2. **Select and batch.** Slack retains the person's messages, direct mentions, and replies in
+   threads where they wrote or were mentioned in the last 30 days, from the bot's copy, which has no DMs. General channel activity is excluded. Gmail keeps incoming
    and outgoing text regardless of whether Shadow sent it. Each judge batch has at most six source conversations and
    normally 24,000 characters of new text. A larger individual message remains whole in its own batch.
 3. **Recall and assess.** FTS5 and EmbeddingGemma find candidate subject threads. Recall adds only matching checks,
@@ -66,7 +65,7 @@ They do not need to maintain a task list or set a routine for each expected repl
    files, or notifications on retry. There is no separate worker thread or result handoff. No source starts an agent, so no
    draft or other work is made unless the person asks in the thread.
 8. **Return source findings.** Successful connector reads in a thread can add original source
-   records to intake. Gmail thread reads decode MIME bodies and exclude drafts; Slack reads keep the personal selection rule; Plaud note reads keep summaries only.
+   records to intake. Gmail thread reads decode MIME bodies and exclude drafts; Plaud note reads keep summaries only. Slack tool reads add nothing, as the bot's copy already has those channels.
    The connector, not the agent, supplies the account and returned records. Only the owner of a still-enabled account
    can feed its reads back. Intake stores the evidence and a durable pending read in `intake_source_read`.
    A message that intake has not judged yet also gets the normal assessment, so a reply that an agent reads first
@@ -150,8 +149,8 @@ clients. The web and iOS account settings expose the same opt-in.
 ## Verification
 
 The direct-judge revision passes its tests, lint, and backend and web type checks. Source tests cover Slack's own
-messages, exact mentions, DMs, group DMs, participating-thread replies, unrelated-channel exclusion, deferred root
-lookups, and partial thread cursors. Intake tests cover whole long email bodies, outgoing direction, attachment
+messages, mentions, participating-thread replies, and the exclusion of other channel talk and of channels that the
+person does not see. Intake tests cover whole long email bodies, outgoing direction, attachment
 metadata, bounded batches, per-batch retry isolation, scoped checks, and a queued review's fixed subject.
 Intake does not read the messages that people write in Shadow threads; agents apply corrections with `intake_update`.
 

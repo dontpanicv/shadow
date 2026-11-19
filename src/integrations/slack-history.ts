@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import type { Channel, Companies } from "../companies/companies.ts";
+import type { WatchedItem } from "./integrations.ts";
 import type { SlackApi } from "./slack-api.ts";
 import {
   type SlackUser,
@@ -181,6 +182,74 @@ export class SlackHistory {
         rows.filter((row) => whole.test(row.text)).map((row) => row.id)
       ),
     ];
+  }
+
+  /**
+   * The messages since `since`, in ms, of these Slack channels that concern the person with this Slack name: what
+   * they wrote, what mentions them, and the replies in threads where they wrote or someone mentioned them in the last
+   * `SLACK_HISTORY_DAYS` days. Intake reads them for the person, as `Connector.watch` gives an account's messages.
+   * shortcut: by name, as `involved` is; keep the user IDs of messages when two people share a name.
+   */
+  watched(
+    companyId: string,
+    channels: readonly { readonly slackId: string; readonly name: string }[],
+    name: string,
+    since: number
+  ): WatchedItem[] {
+    const names = new Map(
+      channels.map((channel) => [channel.slackId, channel.name])
+    );
+    const mention = `@${name}`;
+    const rows = this.database
+      .query(
+        `WITH personal AS (
+          SELECT slack_channel_id, coalesce(thread_ts, ts) AS root FROM slack_message
+          WHERE company_id = ?1 AND slack_channel_id IN (SELECT value FROM json_each(?2)) AND deleted_at IS NULL
+            AND CAST(ts AS REAL) >= ?3 AND (author = ?4 OR instr(text, ?5) > 0)
+        )
+        SELECT m.slack_channel_id AS channel, m.ts, m.thread_ts, m.author, m.text, m.files FROM slack_message m
+        WHERE m.company_id = ?1 AND m.slack_channel_id IN (SELECT value FROM json_each(?2)) AND m.deleted_at IS NULL
+          AND CAST(m.ts AS REAL) >= ?6
+          AND (m.author = ?4 OR instr(m.text, ?5) > 0 OR EXISTS (SELECT 1 FROM personal p
+            WHERE p.slack_channel_id = m.slack_channel_id AND p.root = coalesce(m.thread_ts, m.ts)))
+        ORDER BY CAST(m.ts AS REAL)`
+      )
+      .all(
+        companyId,
+        JSON.stringify([...names.keys()]),
+        (Date.now() - SLACK_HISTORY_DAYS * 86_400_000) / 1000,
+        name,
+        mention,
+        since / 1000
+      ) as (StoredMessage & { channel: string })[];
+    const workspaceUrl = this.workspaceUrl(companyId);
+    return rows.flatMap((row) => {
+      const files = (JSON.parse(row.files) as Kept[]).map((file) => file.name);
+      const text = [
+        row.text.replaceAll(mention, "@me"),
+        ...(files.length > 0 ? [`Attachments: ${files.join(", ")}`] : []),
+      ]
+        .join("\n")
+        .trim();
+      if (!text) {
+        return [];
+      }
+      const own = row.author === name;
+      return {
+        id: `${row.channel}/${row.ts}`,
+        kind: "message" as const,
+        chat: `${row.channel}/${row.thread_ts ?? row.ts}`,
+        chatName: `#${names.get(row.channel)}`,
+        group: true,
+        sender: own ? "" : row.author,
+        fromOwner: own,
+        at: Math.floor(Number(row.ts) * 1000),
+        text,
+        url:
+          workspaceUrl &&
+          slackPermalink(workspaceUrl, row.channel, row.ts, row.thread_ts),
+      };
+    });
   }
 
   /** Keeps what one message event changed: a new message or reply, an edit, or a delete. */

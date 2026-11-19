@@ -225,7 +225,15 @@ export async function createApp(
   const intake = new Intake(
     database,
     companies,
-    integrations,
+    // Every member's Slack comes from the bot's copy, made below, without an opt-in; the other accounts are watched.
+    {
+      watched: () => [...integrations.watched(), ...slackBot.watched()],
+      watch: (id, since, ...rest) =>
+        slackBot.watches(id)
+          ? slackBot.watch(id, since)
+          : integrations.watch(id, since, ...rest),
+      attachment: (...args) => integrations.attachment(...args),
+    },
     threads,
     indexer,
     llm,
