@@ -13,11 +13,16 @@ export const routineApiRoutes: readonly Route[] = [
   [
     "PUT",
     "/api/v1/routines/:routine",
-    api(async ({ app, user, params, body }) =>
-      json(
+    api(async ({ app, user, params, body }) => {
+      if (typeof body.instructions === "string") {
+        return json(
+          app.routines.setInstructions(params.routine!, user, body.instructions)
+        );
+      }
+      return json(
         app.routines.setEnabled(params.routine!, user, body.enabled === true)
-      )
-    ),
+      );
+    }),
   ],
   [
     "POST",

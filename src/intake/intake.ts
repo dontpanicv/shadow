@@ -48,7 +48,14 @@ export type {
   IntakeUpdate,
 } from "./following.ts";
 
+import { briefContext } from "./brief.ts";
 import { saveCheck } from "./future.ts";
+import {
+  LEDGER_SECTIONS,
+  Ledger,
+  type LedgerReaction,
+  MEETING_COVERAGE,
+} from "./ledger.ts";
 import {
   fallbackPlan,
   type MorningInput,
@@ -74,6 +81,12 @@ const BATCH = 1000;
 const BATCH_TEXT = 24_000;
 const BATCH_CONVERSATIONS = 6;
 const REVIEW_DELAY = 3 * DAY;
+/** The state of a ledger row by its check's state. */
+const LEDGER_STATES = {
+  open: "open",
+  resolved: "done",
+  stopped: "written_off",
+} as const;
 
 export type IntakeIntegrations = Pick<
   Integrations,
@@ -90,7 +103,6 @@ export type IntakeThreads = Pick<
   | "files"
   | "place"
   | "startAgentThread"
-  | "orchestrator"
   | "learnedFor"
 >;
 export type IntakeCompanies = Pick<
@@ -106,6 +118,16 @@ export type IntakeCompanies = Pick<
   | "factsOf"
 >;
 export type IntakeSearch = Pick<Indexer, "search">;
+/** What the morning review needs of other modules for the person's Morning brief. */
+export interface IntakeMorning {
+  /** The person's :ledger: reactions in the bot's copy of Slack, also the ones taken away. */
+  reactions: (companyId: string, owner: User) => Promise<LedgerReaction[]>;
+  /**
+   * Starts the person's Morning brief with what the review found, in the background; it answers in its own thread
+   * and notifies the person.
+   */
+  brief: (companyId: string, owner: User, context: string) => Promise<void>;
+}
 export type IntakeLlm = Pick<Llm, "complete">;
 
 export interface Delivery {
@@ -142,6 +164,7 @@ export class Intake {
   private readonly sourceReads: SourceReads;
   private readonly destinations: IntakeDestinations;
   readonly following: Following;
+  readonly ledger: Ledger;
   private readonly archives: IntakeArchives;
 
   constructor(
@@ -158,8 +181,10 @@ export class Intake {
     private readonly timeZoneOf: (
       companyId: string,
       email: string
-    ) => Promise<string | null>
+    ) => Promise<string | null>,
+    private readonly morningPorts: IntakeMorning
   ) {
+    this.ledger = new Ledger(database);
     this.recall = new IntakeRecall(
       database,
       companies,
@@ -174,7 +199,8 @@ export class Intake {
       companies,
       this.recall,
       audit,
-      llm
+      llm,
+      this.ledger
     );
     this.archives = new IntakeArchives(
       database,
@@ -880,6 +906,7 @@ export class Intake {
           threadId,
           checkAt,
           now,
+          sourceUrl: source.url,
         });
       }
       for (const closed of decision.resolved) {
@@ -1190,7 +1217,14 @@ export class Intake {
         }
       }
       const nudged = this.nudge(trace, companyId, owner, now);
-      await this.sendSummary(trace, companyId, owner);
+      this.ledger.age(companyId, owner.id, now, zone);
+      this.ledger.importReactions(
+        companyId,
+        owner.id,
+        await this.morningPorts.reactions(companyId, owner),
+        now
+      );
+      await this.startBrief(trace, companyId, owner, now, zone);
       // With nothing waiting and no nudge sent, a later update still goes this morning.
       if (deliveries.length > 0 || nudged > 0) {
         setSetting(this.database, doneKey, day);
@@ -1448,29 +1482,35 @@ export class Intake {
     }
   }
 
-  /** Sends the morning summary once, also when an earlier try posted the matters and then failed. */
-  private async sendSummary(
+  /**
+   * Starts the person's Morning brief once a day, after the matters of the morning are in their threads: it gets the
+   * window since the last brief and the lines of this morning, which list every matter and due nudge.
+   */
+  private async startBrief(
     trace: string,
     companyId: string,
-    owner: User
+    owner: User,
+    now: number,
+    zone: string
   ): Promise<void> {
-    const posted = this.morningLines(trace, companyId, owner);
-    if (
-      !posted?.lines.length ||
-      this.audit.last(trace, "morning.summary", companyId, owner.id)
-    ) {
+    if (this.audit.last(trace, "morning.brief", companyId, owner.id)) {
       return;
     }
-    // The person asked for this summary to notify them.
-    await this.threads.observe(
-      await this.threads.orchestrator(companyId, owner),
-      [posted.summary, posted.lines.join("\n")].filter(Boolean).join("\n\n"),
-      `${trace}:summary`,
+    const posted = this.morningLines(trace, companyId, owner);
+    const last = this.ledger.lastBrief(companyId, owner.id);
+    await this.morningPorts.brief(
+      companyId,
       owner,
-      true
+      briefContext({
+        windowStart: last?.windowEnd ?? now - DAY,
+        now,
+        zone,
+        summary: posted?.summary ?? "",
+        lines: posted?.lines ?? [],
+      })
     );
-    this.record(trace, "morning.summary", companyId, owner.id, {
-      lines: posted.lines.length,
+    this.record(trace, "morning.brief", companyId, owner.id, {
+      lines: posted?.lines.length ?? 0,
     });
   }
 
@@ -1538,7 +1578,15 @@ export class Intake {
     await this.threads.observe(thread, text, requestId, owner, false, files);
     this.finishDelivery(group, owner, [], now);
     if (matter.ask) {
-      this.followAsk(companyId, owner, thread.id, matter, [...sourceIds], now);
+      this.followAsk(
+        companyId,
+        owner,
+        thread.id,
+        matter,
+        [...sourceIds],
+        input.evidence.find((item) => sourceIds.has(item.id))?.url ?? null,
+        now
+      );
     }
     this.record(
       requestId,
@@ -1568,6 +1616,7 @@ export class Intake {
     threadId: string,
     matter: MorningMatter,
     sourceIds: string[],
+    sourceUrl: string | null,
     now: number
   ): void {
     const id = hash(
@@ -1582,6 +1631,7 @@ export class Intake {
         quote: "",
         at: matter.due,
         afterDays: null,
+        section: "on_me",
       },
       {
         id,
@@ -1590,6 +1640,7 @@ export class Intake {
         threadId,
         checkAt: matter.due ? Date.parse(matter.due) : now + 30 * DAY,
         now,
+        sourceUrl,
       }
     );
     this.database
@@ -2492,6 +2543,21 @@ export class Intake {
       }
       return { user, thread };
     };
+    // The ledger is the person's own: only a turn that answers them reads or writes it.
+    const ledgerActor = async (
+      conversationId: Parameters<Threads["requester"]>[1]
+    ) => {
+      const asked = await actor(conversationId);
+      if (!asked) {
+        throw new Error(
+          "This turn answers no person, so it has no ledger. Use the ledger only in a person's own turn."
+        );
+      }
+      return asked;
+    };
+    const text = (value: unknown) => ({
+      output: [{ type: "text" as const, text: JSON.stringify(value) }],
+    });
     return [
       defineTool({
         name: "intake_read",
@@ -2525,6 +2591,217 @@ export class Intake {
               },
             ],
           };
+        },
+      }),
+      defineTool({
+        name: "intake_ledger_read",
+        description:
+          "Read your ledger: each row has its #ref, text, state, section (on_me A, waiting B, dropped C, decision E), owedBy, bucket, whyMine, needsYou, client, due and aging times (ms), source, a link (a thread or the source), and its newest History lines. Fetch the rows again before you change one. Reading changes nothing.",
+        parameters: Type.Object({
+          state: Type.Optional(
+            Type.Union([
+              Type.Literal("open"),
+              Type.Literal("closed"),
+              Type.Literal("all"),
+            ])
+          ),
+        }),
+        replay: "safe",
+        execute: async ({ state = "open" }, api) => {
+          const { user } = await ledgerActor(api.conversationId);
+          const rows = this.following
+            .list(companyId, user)
+            .filter(
+              (row) =>
+                state === "all" || (state === "open") === (row.state === "open")
+            )
+            .toSorted((a, b) => a.ref - b.ref);
+          const notes = this.ledger.notes(
+            companyId,
+            user.id,
+            rows.map((row) => row.id)
+          );
+          return text(
+            rows.map((row) => ({
+              id: row.id,
+              ref: row.ref,
+              text: row.text,
+              state: LEDGER_STATES[row.state],
+              section: row.section,
+              owedBy: row.owedBy,
+              bucket: row.bucket,
+              whyMine: row.whyMine,
+              needsYou: row.needsYou,
+              client: row.client,
+              evidenceKind: row.evidenceKind,
+              sourceType: row.sourceType,
+              link: row.threadId ? `thread:${row.threadId}` : row.sourceUrl,
+              sourceUrl: row.sourceUrl,
+              firstAskedAt: row.firstAskedAt,
+              dueAt: row.dueAt,
+              lastMovementAt: row.lastMovementAt,
+              lastChasedAt: row.lastChasedAt,
+              movedToCAt: row.movedToCAt,
+              parkedUntil: row.parkedUntil,
+              closedAt: row.closedAt,
+              meetingId: row.meetingId,
+              history: notes.get(row.id),
+            }))
+          );
+        },
+      }),
+      defineTool({
+        name: "intake_ledger_save",
+        description:
+          "Make or change one row of your ledger. Without id it makes a row, unless an open row has the same sourceUrl, which it changes instead. Every call needs note, the History line: what changed and the evidence. state done closes the row, written_off closes it without success, open opens it again. movement=true sets the last movement to now. Times are ISO dates or times. Only your own turns write your ledger.",
+        parameters: Type.Object({
+          id: Type.Optional(Type.String()),
+          text: Type.Optional(Type.String()),
+          section: Type.Optional(
+            Type.Union(LEDGER_SECTIONS.map((section) => Type.Literal(section)))
+          ),
+          owedBy: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          bucket: Type.Optional(
+            Type.Union([
+              Type.Literal("today"),
+              Type.Literal("week"),
+              Type.Literal("parked"),
+              Type.Null(),
+            ])
+          ),
+          whyMine: Type.Optional(
+            Type.Union([
+              Type.Literal("promise"),
+              Type.Literal("direct_ask"),
+              Type.Literal("reply_owed"),
+              Type.Literal("blocking_decision"),
+              Type.Null(),
+            ])
+          ),
+          needsYou: Type.Optional(Type.Boolean()),
+          client: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          evidenceKind: Type.Optional(
+            Type.Union([
+              Type.Literal("direct"),
+              Type.Literal("transcript"),
+              Type.Literal("notes_page"),
+              Type.Literal("summary"),
+              Type.Null(),
+            ])
+          ),
+          sourceUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          sourceType: Type.Optional(
+            Type.Union([
+              Type.Literal("slack"),
+              Type.Literal("email"),
+              Type.Literal("meeting"),
+              Type.Literal("calendar"),
+              Type.Literal("dictation"),
+              Type.Literal("notion"),
+              Type.Literal("linear"),
+              Type.Null(),
+            ])
+          ),
+          firstAskedAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          dueAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          lastChasedAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          parkedUntil: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          meetingId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          state: Type.Optional(
+            Type.Union([
+              Type.Literal("open"),
+              Type.Literal("done"),
+              Type.Literal("written_off"),
+            ])
+          ),
+          movement: Type.Optional(Type.Boolean()),
+          note: Type.String(),
+        }),
+        replay: "safe",
+        execute: async (change, api) => {
+          const { user } = await ledgerActor(api.conversationId);
+          const id = this.ledger.save(companyId, user.id, change);
+          const row = this.following
+            .list(companyId, user)
+            .find((each) => each.id === id);
+          return text({ id, ref: row?.ref ?? null });
+        },
+      }),
+      defineTool({
+        name: "intake_meetings_read",
+        description:
+          "Read the meetings that your Morning brief kept since a time (ISO), with their coverage, decisions, open questions, and the refs of the ledger rows they opened.",
+        parameters: Type.Object({ since: Type.String() }),
+        replay: "safe",
+        execute: async ({ since }, api) => {
+          const { user } = await ledgerActor(api.conversationId);
+          const from = Date.parse(since);
+          if (!Number.isFinite(from)) {
+            throw new Error("since is an ISO date or time");
+          }
+          return text(this.ledger.meetings(companyId, user.id, from));
+        },
+      }),
+      defineTool({
+        name: "intake_meeting_save",
+        description: `Keep one meeting that you attended, by its calendar event id; saving the same event again changes it. coverage is one of ${MEETING_COVERAGE.join(", ")}. Returns its id, the meetingId of the ledger rows it opens.`,
+        parameters: Type.Object({
+          eventId: Type.String(),
+          title: Type.String(),
+          startAt: Type.String(),
+          endAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          coverage: Type.Union(
+            MEETING_COVERAGE.map((coverage) => Type.Literal(coverage))
+          ),
+          series: Type.Optional(Type.String()),
+          eventUrl: Type.Optional(Type.String()),
+          transcriptUrl: Type.Optional(Type.String()),
+          secondSourceUrl: Type.Optional(Type.String()),
+          notesUrl: Type.Optional(Type.String()),
+          purpose: Type.Optional(Type.String()),
+          decisions: Type.Optional(Type.String()),
+          openQuestions: Type.Optional(Type.String()),
+          gaps: Type.Optional(Type.String()),
+          topicDiff: Type.Optional(Type.String()),
+          external: Type.Optional(Type.Boolean()),
+          client: Type.Optional(Type.String()),
+          channelChecked: Type.Optional(Type.String()),
+        }),
+        replay: "safe",
+        execute: async (meeting, api) => {
+          const { user } = await ledgerActor(api.conversationId);
+          return text({
+            id: this.ledger.saveMeeting(companyId, user.id, meeting),
+          });
+        },
+      }),
+      defineTool({
+        name: "intake_brief_log",
+        description:
+          "Log one run of your Morning brief: its window (ISO), the time zone, what it could only skim or did not cover, and the ledger refs in the order the brief shows them. The next brief starts at this window's end.",
+        parameters: Type.Object({
+          windowStart: Type.String(),
+          windowEnd: Type.String(),
+          zone: Type.String(),
+          notCovered: Type.String(),
+          printedRefs: Type.Array(Type.Number()),
+        }),
+        replay: "safe",
+        execute: async (log, api) => {
+          const { user } = await ledgerActor(api.conversationId);
+          const windowStart = Date.parse(log.windowStart);
+          const windowEnd = Date.parse(log.windowEnd);
+          if (!(Number.isFinite(windowStart) && Number.isFinite(windowEnd))) {
+            throw new Error("The window is two ISO times");
+          }
+          this.ledger.logBrief(companyId, user.id, {
+            windowStart,
+            windowEnd,
+            zone: log.zone,
+            notCovered: log.notCovered,
+            printedRefs: log.printedRefs,
+          });
+          return text({ logged: true });
         },
       }),
       defineTool({

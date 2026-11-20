@@ -1,7 +1,11 @@
 import type { Database } from "bun:sqlite";
 import type { Assessment } from "./assess.ts";
+import { type LedgerSection, sourceTypeOf } from "./ledger.ts";
 
-/** Stores the stated time separately from the next internal review. */
+/**
+ * Stores the stated time separately from the next internal review. A new check gets its ledger section, who owes it,
+ * and its source; a change of an existing one is movement.
+ */
 export function saveCheck(
   database: Database,
   check: Assessment["checks"][number],
@@ -12,6 +16,7 @@ export function saveCheck(
     threadId: string | null;
     checkAt: number;
     now: number;
+    sourceUrl?: string | null;
   }
 ): void {
   const prior = database
@@ -50,4 +55,24 @@ export function saveCheck(
       preserveTime ? prior.next_review_at : scope.checkAt,
       scope.now
     );
+  const section: LedgerSection | undefined = check.section;
+  if (prior) {
+    database
+      .query(
+        "UPDATE intake_check SET last_movement_at=?,section=coalesce(?,section),owed_by=coalesce(?,owed_by),due_at=CASE WHEN explicit_time=1 THEN check_at ELSE due_at END WHERE id=? AND state='open'"
+      )
+      .run(scope.now, section ?? null, check.owedBy ?? null, scope.id);
+  } else {
+    database
+      .query(
+        "UPDATE intake_check SET section=?,owed_by=?,source_url=?,source_type=?,evidence_kind='direct' WHERE id=?"
+      )
+      .run(
+        section ?? "on_me",
+        check.owedBy ?? null,
+        scope.sourceUrl ?? null,
+        sourceTypeOf(scope.sourceUrl ?? null),
+        scope.id
+      );
+  }
 }

@@ -7,6 +7,7 @@ import { localTime } from "../platform/time.ts";
 import type { Evidence } from "./assess.ts";
 import type { Audit } from "./audit.ts";
 import type { Delivery, IntakeCompanies, IntakeLlm } from "./intake.ts";
+import type { Ledger, LedgerFields, LedgerSection } from "./ledger.ts";
 import {
   type IntakeRecall,
   type IntakeSourceStatus,
@@ -32,7 +33,8 @@ export interface CheckRevision {
   previous: CheckSnapshot | null;
   current: CheckSnapshot;
 }
-export interface FollowingCheck extends CheckSnapshot {
+/** A check with its ledger fields: the row of the person's ledger. */
+export interface FollowingCheck extends CheckSnapshot, LedgerFields {
   id: string;
   revision: number;
   updatedAt: number;
@@ -94,6 +96,12 @@ export interface FollowingOverview {
   blocked: IntakeBlock[];
 }
 const WEEK = 7 * 24 * 60 * 60_000;
+const SECTION_NAMES: Record<LedgerSection, string> = {
+  on_me: "On me",
+  waiting: "Waiting on others",
+  dropped: "Dropped",
+  decision: "Decisions",
+};
 /** The newest feedback that every assessment reads. */
 const FEEDBACK = 30;
 
@@ -113,7 +121,8 @@ export class Following {
     private readonly companies: IntakeCompanies,
     private readonly recall: IntakeRecall,
     private readonly audit: Audit,
-    private readonly llm: IntakeLlm
+    private readonly llm: IntakeLlm,
+    private readonly ledger: Ledger
   ) {}
 
   list(companyId: string, owner: User): FollowingCheck[] {
@@ -128,9 +137,12 @@ export class Following {
       at: number;
       current: string;
     }[];
+    const fields = this.ledger.fields(companyId, owner.id);
     return rows
+      .filter((row) => fields.has(row.id))
       .map((row) => ({
         ...(JSON.parse(row.current) as CheckSnapshot),
+        ...fields.get(row.id)!,
         id: row.id,
         revision: row.revision,
         updatedAt: row.at,
@@ -270,6 +282,22 @@ export class Following {
       after,
     });
     return after;
+  }
+
+  /** Moves one row of the person's ledger to another section, as the person decides. */
+  moveSection(
+    companyId: string,
+    owner: User,
+    id: string,
+    section: LedgerSection
+  ): FollowingDetail {
+    this.detail(companyId, owner, id);
+    this.ledger.save(companyId, owner.id, {
+      id,
+      section,
+      note: `${owner.name} moved it to ${SECTION_NAMES[section]}.`,
+    });
+    return this.detail(companyId, owner, id);
   }
 
   /** All that intake holds for the person: its sources, its updates of the last week, what it keeps, and their feedback. */

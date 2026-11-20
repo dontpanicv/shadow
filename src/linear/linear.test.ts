@@ -99,6 +99,7 @@ function setup() {
     replaces?: string;
   }[] = [];
   const posts: Parameters<LinearPorts["post"]>[0][] = [];
+  const changed: Parameters<LinearPorts["issueChanged"]>[1][] = [];
   const ports: LinearPorts = {
     keys: () => [{ companyId: "co", key: "lin_api_read" }],
     graphql: async (_key, _query, variables) => {
@@ -138,6 +139,9 @@ function setup() {
     post: async (post) => {
       posts.push(post);
     },
+    issueChanged: (_companyId, change) => {
+      changed.push(change);
+    },
   };
   const admins: string[] = [];
   const feed = new LinearFeed(
@@ -156,6 +160,7 @@ function setup() {
     asked,
     files,
     posts,
+    changed,
     setIssues: (next: unknown[]) => {
       issues = next;
     },
@@ -219,9 +224,19 @@ test("the first read files the last 30 days silently, and later reads post what 
   ]);
   expect(shadow.posts[0]!.file.name).toMatch(/^linear-/);
 
+  // The ledgers get each change once, with the issue's state.
+  expect(shadow.changed.at(-1)).toMatchObject({
+    identifier: "PIP-2",
+    url: "https://linear.app/acme/issue/PIP-2",
+    stateType: "completed",
+    stateName: "Done",
+  });
+  const changes = shadow.changed.length;
+
   // A read of the same versions again changes nothing.
   await shadow.feed.tick(NOW + 10 * MINUTE);
   expect(shadow.posts).toHaveLength(1);
+  expect(shadow.changed).toHaveLength(changes);
 
   const status = shadow.feed.status("co", admin);
   expect(shadow.admins).toEqual(["admin"]);

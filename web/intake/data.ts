@@ -9,6 +9,7 @@ import type {
   FollowingCheck,
   FollowingDetail,
   FollowingOverview,
+  LedgerSection,
 } from "../app/types.ts";
 
 /** The person's ledger; a state change shows at once and rolls back if the server refuses it. */
@@ -29,10 +30,14 @@ export const followingOf = keyed((companyId: string) =>
       refetchInterval: 30_000,
       onUpdate: async ({ transaction }) => {
         for (const mutation of transaction.mutations) {
-          const input = mutation.metadata as FollowingChange;
+          const input = mutation.metadata as
+            | FollowingChange
+            | { section: LedgerSection };
           try {
             const detail = await request<FollowingDetail>(
-              `/companies/${companyId}/following/${mutation.key}`,
+              "section" in input
+                ? `/companies/${companyId}/following/${mutation.key}/section`
+                : `/companies/${companyId}/following/${mutation.key}`,
               { method: "POST", body: input }
             );
             queryClient.setQueryData(
@@ -83,6 +88,22 @@ export function changeFollowing(
       } else if (action === "reopen") {
         draft.state = "open";
       }
+      draft.updatedAt = Date.now();
+    }
+  ).isPersisted.promise;
+}
+
+/** Moves a row of the ledger to another section; it shows there at once. */
+export function moveFollowing(
+  companyId: string,
+  check: FollowingCheck,
+  section: LedgerSection
+) {
+  return followingOf(companyId).update(
+    check.id,
+    { metadata: { section } },
+    (draft) => {
+      draft.section = section;
       draft.updatedAt = Date.now();
     }
   ).isPersisted.promise;

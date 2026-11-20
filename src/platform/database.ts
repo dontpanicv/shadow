@@ -915,6 +915,72 @@ const migrations = [
     changed_by TEXT NOT NULL,
     changed_at INTEGER NOT NULL
   );`,
+  // intake: each check is a row of the person's ledger. `section` is on_me (A), waiting (B), dropped (C), or
+  // decision (E); `ref` is its permanent number for the person, #N. A trigger gives each new check its ref and its
+  // first time, also when a machine on the previous version writes it; another keeps when a check closed.
+  // intake: the meetings that the morning brief read, and each brief's window and the refs it showed.
+  // routines: `kind` is `morning` for a person's Morning brief, which the morning review runs, never a schedule.
+  // integrations: the :ledger: reactions in the bot's copy of Slack.
+  `ALTER TABLE intake_check ADD COLUMN ref INTEGER;
+  ALTER TABLE intake_check ADD COLUMN section TEXT NOT NULL DEFAULT 'on_me';
+  ALTER TABLE intake_check ADD COLUMN owed_by TEXT;
+  ALTER TABLE intake_check ADD COLUMN bucket TEXT;
+  ALTER TABLE intake_check ADD COLUMN why_mine TEXT;
+  ALTER TABLE intake_check ADD COLUMN needs_you INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE intake_check ADD COLUMN client TEXT;
+  ALTER TABLE intake_check ADD COLUMN evidence_kind TEXT;
+  ALTER TABLE intake_check ADD COLUMN source_url TEXT;
+  ALTER TABLE intake_check ADD COLUMN source_type TEXT;
+  ALTER TABLE intake_check ADD COLUMN first_asked_at INTEGER;
+  ALTER TABLE intake_check ADD COLUMN due_at INTEGER;
+  ALTER TABLE intake_check ADD COLUMN last_movement_at INTEGER;
+  ALTER TABLE intake_check ADD COLUMN last_chased_at INTEGER;
+  ALTER TABLE intake_check ADD COLUMN moved_to_c_at INTEGER;
+  ALTER TABLE intake_check ADD COLUMN parked_until INTEGER;
+  ALTER TABLE intake_check ADD COLUMN closed_at INTEGER;
+  ALTER TABLE intake_check ADD COLUMN meeting_id TEXT;
+  UPDATE intake_check SET
+    first_asked_at = coalesce((SELECT min(at) FROM intake_check_revision r WHERE r.check_id = intake_check.id), revised_at),
+    due_at = CASE WHEN explicit_time = 1 THEN check_at END,
+    closed_at = CASE WHEN state != 'open' THEN revised_at END;
+  UPDATE intake_check SET ref = (
+    SELECT count(*) FROM intake_check o WHERE o.company_id = intake_check.company_id AND o.owner_id = intake_check.owner_id
+      AND (o.first_asked_at < intake_check.first_asked_at OR (o.first_asked_at = intake_check.first_asked_at AND o.rowid <= intake_check.rowid))
+  );
+  CREATE UNIQUE INDEX intake_check_ref ON intake_check(company_id, owner_id, ref);
+  CREATE TRIGGER intake_check_numbered AFTER INSERT ON intake_check WHEN NEW.ref IS NULL BEGIN
+    UPDATE intake_check SET
+      ref = (SELECT coalesce(max(ref), 0) + 1 FROM intake_check WHERE company_id = NEW.company_id AND owner_id = NEW.owner_id),
+      first_asked_at = coalesce(NEW.first_asked_at, NEW.revised_at),
+      due_at = coalesce(NEW.due_at, CASE WHEN NEW.explicit_time = 1 THEN NEW.check_at END)
+    WHERE id = NEW.id;
+  END;
+  CREATE TRIGGER intake_check_closed AFTER UPDATE OF state ON intake_check WHEN OLD.state IS NOT NEW.state BEGIN
+    UPDATE intake_check SET closed_at = CASE WHEN NEW.state = 'open' THEN NULL ELSE CAST(unixepoch('subsec')*1000 AS INTEGER) END
+    WHERE id = NEW.id;
+  END;
+  CREATE TABLE intake_meeting (
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL, event_id TEXT NOT NULL,
+    title TEXT NOT NULL, start_at INTEGER NOT NULL, end_at INTEGER, series TEXT, event_url TEXT,
+    transcript_url TEXT, second_source_url TEXT, notes_url TEXT, coverage TEXT NOT NULL, purpose TEXT,
+    decisions TEXT, open_questions TEXT, gaps TEXT, topic_diff TEXT, external INTEGER NOT NULL DEFAULT 0,
+    client TEXT, channel_checked TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER,
+    UNIQUE(company_id, owner_id, event_id)
+  );
+  CREATE INDEX intake_meeting_start ON intake_meeting(company_id, owner_id, start_at);
+  CREATE TABLE intake_brief (
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL, owner_id TEXT NOT NULL, window_start INTEGER NOT NULL,
+    window_end INTEGER NOT NULL, zone TEXT NOT NULL, not_covered TEXT NOT NULL, printed_refs TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX intake_brief_owner ON intake_brief(company_id, owner_id, window_end);
+  ALTER TABLE routine ADD COLUMN kind TEXT;
+  CREATE TABLE slack_reaction (
+    company_id TEXT NOT NULL, slack_channel_id TEXT NOT NULL, ts TEXT NOT NULL, user_id TEXT NOT NULL,
+    name TEXT NOT NULL, at INTEGER NOT NULL, removed_at INTEGER,
+    PRIMARY KEY (company_id, slack_channel_id, ts, user_id, name)
+  );
+  CREATE INDEX slack_reaction_user ON slack_reaction(company_id, user_id, name, at);`,
 ];
 
 export function openDatabase(path: string): Database {

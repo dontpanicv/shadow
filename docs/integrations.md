@@ -42,6 +42,8 @@ admin connects the bot once in Company settings, where the info button next to *
    version of Shadow runs. Keep it an app of your own workspace: Slack gives such an app the normal limits on reading
    history.
 2. **Install App › Install to Workspace › Allow**, and copy the **Bot User OAuth Token** (`xoxb-…`) into Bot token.
+   An app made from an older manifest needs the `reactions:read` scope and the `reaction_added` and `reaction_removed`
+   events for `:ledger:` to-dos: paste the new manifest in **App Manifest**, and install the app again.
 3. **Basic Information › App-Level Tokens › Generate** with the scope `connections:write`, and copy the token
    (`xapp-…`) into App token. Shadow opens the connection to Slack, so it needs no public address.
 

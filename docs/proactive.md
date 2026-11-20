@@ -50,13 +50,17 @@ They do not need to maintain a task list or set a routine for each expected repl
    source files in its thread, which says what changed, what it asks of the owner or of whom, and any stated
    deadline; no agent starts on it. The plan never analyses further or drafts. A matter that needs something of the
    owner gets a check: a literal request, a reported problem, someone who waits for them, an unsolved failure or
-   decision, or their own unfinished matter; when the plan is not sure, it keeps the ask. The morning summary nudges the check every 2 days. The same plan first reads each due
+   decision, or their own unfinished matter; when the plan is not sure, it keeps the ask. The Morning brief gets the check as a due nudge every 2 days. The same plan first reads each due
    nudge against the newest sources and the person's pending reminders, and closes it only with clear evidence that it is handled, or that a reminder
-   covers it or it is someone else's. The owner can also say it is done, rejected, or someone else's (handled or stop in Following, or `intake_update`). Then the person's own Shadow thread gets one
-   summary with a link to each thread with an ask or a deadline, and a notification; a matter with neither stays in its thread. A plan that leaves an update out or names a thread or
+   covers it or it is someone else's. The owner can also say it is done, rejected, or someone else's (handled or stop in Following, or `intake_update`). Then Shadow ages the
+   person's ledger (`src/intake/ledger.ts`), adds their `:ledger:` reactions to it, and starts their Morning brief
+   (`src/intake/brief.ts`), a routine in their own channel whose instructions they and their orchestrator edit. It gets
+   the window since the last brief and a line with a link for each thread with an ask or a deadline; a matter with
+   neither stays in its thread. Its agent updates the ledger from the person's meetings, mail, Slack, and Linear, and
+   answers in its thread with one notification, or `QUIET`. A plan that leaves an update out or names a thread or
    channel that was not given changes nothing, and the review is tried again after 15 minutes, then 30. After two
    failed plans, each update goes alone to its thread without a plan. A failing review has its own back-off, so the
-   person's urgent updates never wait for it, and a summary that a try could not send goes at the next try. Other
+   person's urgent updates never wait for it, and a brief that a try could not start starts at the next try. Other
    failed intake work waits 15 minutes, then twice as long each time it fails in a row, up to a day.
 7. **Decide whether to notify.** Thread completion is silent, even when its answer is useful. The judge must supply
    a separate reason and exact source quote before a notification is eligible. After the answer, Shadow reads the

@@ -54,6 +54,31 @@ export interface SlackHistoryPorts {
   ) => Promise<void>;
 }
 
+/** The reactions that Shadow keeps: a person's :ledger: makes the message a row of their ledger. */
+const KEPT_REACTIONS = new Set(["ledger"]);
+
+/** A reaction event of the Slack Events API: reaction_added or reaction_removed. */
+export interface SlackReactionEvent {
+  readonly type: "reaction_added" | "reaction_removed";
+  readonly user: string;
+  readonly reaction: string;
+  readonly item: {
+    readonly type: string;
+    readonly channel?: string;
+    readonly ts?: string;
+  };
+  readonly event_ts: string;
+}
+
+/** A kept reaction of one Slack user, with its message. */
+export interface SlackReaction {
+  readonly permalink: string;
+  readonly text: string;
+  readonly author: string;
+  readonly at: number;
+  readonly removed: boolean;
+}
+
 /** A message event of the Slack Events API, as Socket Mode gives it. */
 export interface SlackMessageEvent {
   readonly type: "message";
@@ -276,6 +301,74 @@ export class SlackHistory {
     if (message?.ts && !SKIPPED.has(message.subtype ?? "")) {
       await this.keep(companyId, channel, token, message, signal);
     }
+  }
+
+  /** Keeps a kept reaction on a message of a channel that Shadow copies, or when it was taken away. */
+  reaction(companyId: string, event: SlackReactionEvent): void {
+    const { channel } = event.item;
+    if (
+      !(
+        KEPT_REACTIONS.has(event.reaction) &&
+        event.item.type === "message" &&
+        channel &&
+        event.item.ts &&
+        this.slackChannels(companyId).some(
+          (candidate) => candidate.slackId === channel
+        )
+      )
+    ) {
+      return;
+    }
+    const at = Math.floor(Number(event.event_ts) * 1000);
+    this.database
+      .query(
+        event.type === "reaction_added"
+          ? "INSERT INTO slack_reaction (company_id, slack_channel_id, ts, user_id, name, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET at = excluded.at, removed_at = NULL"
+          : "UPDATE slack_reaction SET removed_at = ?6 WHERE company_id = ?1 AND slack_channel_id = ?2 AND ts = ?3 AND user_id = ?4 AND name = ?5"
+      )
+      .run(companyId, channel, event.item.ts, event.user, event.reaction, at);
+  }
+
+  /** The reactions `name` of one Slack user on the kept messages of `channels`, also the ones taken away. */
+  reactions(
+    companyId: string,
+    userId: string,
+    name: string,
+    channels: readonly string[]
+  ): SlackReaction[] {
+    const workspaceUrl = this.workspaceUrl(companyId);
+    if (!workspaceUrl) {
+      return [];
+    }
+    const rows = this.database
+      .query(
+        `SELECT r.slack_channel_id AS channel, r.ts, r.at, r.removed_at AS removedAt, m.thread_ts AS threadTs, m.author, m.text
+        FROM slack_reaction r JOIN slack_message m ON m.company_id = r.company_id AND m.slack_channel_id = r.slack_channel_id AND m.ts = r.ts
+        WHERE r.company_id = ? AND r.user_id = ? AND r.name = ? AND m.deleted_at IS NULL
+          AND r.slack_channel_id IN (SELECT value FROM json_each(?))
+        ORDER BY r.at`
+      )
+      .all(companyId, userId, name, JSON.stringify(channels)) as {
+      channel: string;
+      ts: string;
+      at: number;
+      removedAt: number | null;
+      threadTs: string | null;
+      author: string;
+      text: string;
+    }[];
+    return rows.map((row) => ({
+      permalink: slackPermalink(
+        workspaceUrl,
+        row.channel,
+        row.ts,
+        row.threadTs
+      ),
+      text: row.text,
+      author: row.author,
+      at: row.at,
+      removed: row.removedAt !== null,
+    }));
   }
 
   /** Writes each day that changed, then gives the briefs what they have not read, as `writeDays` and `brief` do. */

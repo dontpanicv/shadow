@@ -473,7 +473,7 @@ read.
 | Request | Body | Response |
 | --- | --- | --- |
 | `GET /api/v1/companies/:companyId/channels/:channelId/routines` | | `{ routines: Routine[], runs: RoutineRun[] }`; the 20 newest runs, newest first |
-| `PUT /api/v1/routines/:routineId` | `{ enabled }` | `Routine` |
+| `PUT /api/v1/routines/:routineId` | `{ enabled }` or `{ instructions }` | `Routine`; new instructions make the runs those of the person who wrote them. A Morning brief (`kind: "morning"`) has no schedule to change |
 | `POST /api/v1/routines/:routineId/runs` | | `202`; the run shows in the list; `409` while it runs |
 | `DELETE /api/v1/routines/:routineId` | | `204`; its thread stays |
 
@@ -537,8 +537,8 @@ channels. If none fits, Shadow creates a private channel and its first thread. I
 Channel names cover lasting subjects; thread titles name specific matters. The normal agent can search connected
 accounts for older related sources. No background worker thread is made. Nonurgent developments wait for the person's morning
 review in the 08:00 hour of the person's Slack time zone, else the server's: one plan groups them by matter, drops what is handled or stale, posts one
-message to each thread with what it asks of the person, nudges each open ask that is still unsolved every 2 days in the morning summary, and
-sends one summary of the matters with an ask or a deadline to the person's own thread with a notification (see `docs/proactive.md`). One urgent delivery group belongs to one person and one subject thread. Stable request ids
+message to each thread with what it asks of the person, and nudges each open ask that is still unsolved every 2 days. Then it
+ages the person's ledger, adds their `:ledger:` reactions to it, and starts their Morning brief (see below and `docs/proactive.md`). One urgent delivery group belongs to one person and one subject thread. Stable request ids
 prevent duplicate review messages, runs, and notices. A resolved check cancels queued reviews. A `QUIET` answer sends
 no notice and does not mark an internal check as already notified. The judge separately proposes a notification with
 an exact source quote and one reason: the owner requested it, a substantive awaited reply needs attention, a stated
@@ -546,12 +546,32 @@ time arrived, or time-sensitive preparation helps now. A new message, mention, o
 Only a proposed notification triggers a fresh read of its source accounts and a final judge check after the thread
 answers. A later owner reply can suppress the notice while the useful answer remains visible. Source failures keep
 the notification pending for retry. Silent turns cannot promote themselves with `notify` or a useful answer. A morning
-review cannot promote a silent update either; its one summary notification is the person's. Only confirmed notifications mark their related due checks as notified.
+review cannot promote a silent update either; the Morning brief's one notification is the person's. Only confirmed notifications mark their related due checks as notified.
 No source starts an agent: an update is a Shadow message with its files, and the thread's agent works only when a
 person asks there. Source messages and files use the existing message endpoints and event streams.
 
 A turn uses the script tools for the person it answers, in any thread: `intake_read({ query })` and `intake_update({ id, action, revision, quote })`. `intake_read` gives the observations that match the query, every waiting update with its destination, time, and source names, and the checks; reading it changes nothing. The latter
 requires an exact quote from the person's latest message. Source text is untrusted data. See [process](proactive.md).
+
+#### The ledger and the Morning brief
+
+Each check is a row of the person's ledger, with a permanent `ref` (#N) and a `section`: `on_me` (A), `waiting` (B,
+with `owedBy`), `dropped` (C), or `decision` (E, with who must decide as `owedBy`). History is the check's revisions,
+which only grow. Code keeps what is the same every morning, in business days (Monday to Friday): a B row without
+movement for 5 moves to C, and a C row 10 days in C gets `needsYou`. The company's Linear feed closes the open rows
+that name an issue, by its link or key, as done when it completes and as written off when it is canceled; its other
+changes are movement. A `:ledger:` reaction of the person on a message in the bot's copy of Slack makes an A row once,
+and taking the reaction away adds "closed?" to the open row.
+
+Every member has one Morning brief, a routine with `kind: "morning"` in their own channel. The morning review makes it
+the first time, with default instructions that the person edits in the channel details or asks their orchestrator to
+change, and starts it each day after it put the matters into their threads, with the window since the last brief. Its
+answer stays in its thread and notifies the person; a brief that they pause or delete does not run. Its turn is the
+person's, with their credentials, and uses these script tools, which only a person's own turn calls:
+`intake_ledger_read({ state? })`, `intake_ledger_save({ id?, text?, section?, …, state?, movement?, note })` (every
+change needs a History line; without `id` it makes a row, or changes the open row with the same `sourceUrl`),
+`intake_meetings_read({ since })`, `intake_meeting_save({ eventId, title, startAt, coverage, … })`, and
+`intake_brief_log({ windowStart, windowEnd, zone, notCovered, printedRefs })`.
 
 #### Following
 
@@ -569,6 +589,7 @@ checks of the last week that are done, and the person's feedback. Each row opens
 | `GET /api/v1/companies/:companyId/following` | | `{ checks: FollowingCheck[] }`, including open, resolved, and stopped checks |
 | `GET /api/v1/companies/:companyId/following/:checkId` | | `{ check, evidence, history }`; all supporting source text, even outside the latest 30 observations; newest revision first |
 | `POST /api/v1/companies/:companyId/following/:checkId` | `{ action: "handled" \| "stop" \| "reopen" \| "correct" \| "undo", revision: number, quote: string }` | The updated detail; `409` if the check changed; `404` for a check outside the person's visible sources and threads |
+| `POST /api/v1/companies/:companyId/following/:checkId/section` | `{ section: "on_me" \| "waiting" \| "dropped" \| "decision" }` | The updated detail; the move adds a History line. `404` as above |
 
 ```ts
 type CheckSnapshot = {

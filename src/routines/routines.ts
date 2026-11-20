@@ -5,6 +5,7 @@ import {
   type CodemodeTool,
   renderDeclarations,
 } from "@earendil-works/pi-codemode";
+import { randomUUIDv5 } from "bun";
 import type { Companies, Realm } from "../companies/companies.ts";
 import type { Integrations } from "../integrations/integrations.ts";
 import type { User } from "../platform/auth.ts";
@@ -41,6 +42,8 @@ export interface Routine {
   readonly threadId: string | null;
   /** Whether each answer also goes to the Slack channel that its channel copies. */
   readonly postInSlack: boolean;
+  /** `morning` for a person's Morning brief, which the morning review runs at 08:00 of their time zone. */
+  readonly kind: "morning" | null;
   readonly lastRun: RoutineRun | null;
 }
 
@@ -84,6 +87,11 @@ export type RoutineThreads = Pick<
 >;
 export type RoutineSearch = Pick<Indexer, "search">;
 
+/** The id of each person's Morning brief comes from their company and id in this namespace. */
+const MORNING_NAMESPACE = "0f6c3b0e-5a4f-4d35-9d0b-6a1b2c3d4e5f";
+const MORNING_NAME = "Morning brief";
+/** What the Morning brief shows as its schedule: every day at 8, of its person's own time zone. */
+const MORNING_SCHEDULE = "0 8 * * *";
 /** How often the scheduler looks for routines that are due. */
 const TICK = 30_000;
 /** The longest a script may run, with its tool calls. */
@@ -110,10 +118,13 @@ interface RoutineRow {
   /** The member who last wrote its instructions or script, whose turns its runs are; `shadow` when nobody did. */
   readonly createdBy: string;
   readonly postInSlack: number;
+  readonly kind: "morning" | null;
+  /** What the morning review gives one run of a Morning brief; only a run's copy of its routine has it. */
+  readonly context?: string;
 }
 
 const ROUTINE_COLUMNS =
-  "id, company_id AS companyId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, post_in_slack AS postInSlack";
+  "id, company_id AS companyId, channel_id AS channelId, name, schedule, instructions, script, store, enabled, next_run_at AS nextRunAt, thread_id AS threadId, created_by AS createdBy, post_in_slack AS postInSlack, kind";
 const RUN_COLUMNS =
   "r.id, r.routine_id AS routineId, t.name AS routineName, r.started_at AS startedAt, r.finished_at AS finishedAt, r.outcome, r.error";
 
@@ -241,8 +252,24 @@ export class Routines {
     const row = this.rowFor(routineId, user);
     this.database
       .query("UPDATE routine SET enabled = ?, next_run_at = ? WHERE id = ?")
-      .run(enabled ? 1 : 0, nextRun(row.schedule, Date.now()), row.id);
+      .run(enabled ? 1 : 0, nextRunOf(row, Date.now()), row.id);
     return this.get(routineId, user);
+  }
+
+  /** Changes a routine's instructions for a person who sees its channel; its runs become theirs. */
+  setInstructions(
+    routineId: string,
+    user: User,
+    instructions: string
+  ): Routine {
+    const row = this.rowFor(routineId, user);
+    return this.update(
+      row.companyId,
+      user.id,
+      routineId,
+      { instructions },
+      user.id
+    );
   }
 
   /** Moves the routine that runs in a thread to the channel the thread moved to, so its results stay in its channel. */
@@ -318,6 +345,47 @@ export class Routines {
   }
 
   /**
+   * Runs the person's Morning brief in their own channel with what the morning review found, in the background; the
+   * first time, it makes the routine with `instructions`. A brief that the person paused or deleted does not run.
+   */
+  runMorning(
+    companyId: string,
+    owner: User,
+    channelId: string,
+    instructions: string,
+    context: string
+  ): void {
+    const id = randomUUIDv5(`${companyId}:${owner.id}`, MORNING_NAMESPACE);
+    this.database
+      .query(
+        "INSERT OR IGNORE INTO routine (id, company_id, channel_id, name, schedule, instructions, script, store, enabled, next_run_at, created_by, post_in_slack, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, NULL, '{}', 1, NULL, ?, 0, ?, 'morning')"
+      )
+      .run(
+        id,
+        companyId,
+        channelId,
+        MORNING_NAME,
+        MORNING_SCHEDULE,
+        instructions,
+        owner.id,
+        Date.now()
+      );
+    const [routine] = this.live(
+      this.database
+        .query(
+          `SELECT ${ROUTINE_COLUMNS} FROM routine WHERE id = ? AND enabled = 1 AND deleted_at IS NULL`
+        )
+        .all(id) as RoutineRow[]
+    );
+    if (!routine || this.running.has(routine.id)) {
+      return;
+    }
+    this.run({ ...routine, context }, Date.now()).catch(() => {
+      // The run records its own failure; this one is a database closed while it ran.
+    });
+  }
+
+  /**
    * Changes a routine for an agent of the company. A new schedule moves the next run. The person who writes new instructions or a new script, `changedBy`, becomes the
    * person its runs are for.
    */
@@ -334,6 +402,12 @@ export class Routines {
       changes.script === undefined && changes.instructions === undefined
         ? row.createdBy
         : changedBy;
+    if (row.kind === "morning" && changes.schedule !== undefined) {
+      throw new HttpError(
+        400,
+        "The Morning brief has no schedule: it runs at the morning review, in the 08:00 hour of its person's time zone."
+      );
+    }
     const moved = changes.schedule !== undefined;
     const schedule = changes.schedule ?? row.schedule;
     const enabled = changes.enabled ?? routine.enabled;
@@ -352,7 +426,7 @@ export class Routines {
         script,
         enabled ? 1 : 0,
         moved || changes.enabled !== undefined
-          ? nextRun(schedule, Date.now())
+          ? nextRunOf({ ...row, schedule }, Date.now())
           : routine.nextRunAt,
         createdBy,
         (changes.postInSlack ?? routine.postInSlack) ? 1 : 0,
@@ -435,7 +509,7 @@ export class Routines {
       .run(id, routine.id, startedAt, JSON.stringify(routine));
     this.database
       .query("UPDATE routine SET next_run_at = ? WHERE id = ?")
-      .run(nextRun(routine.schedule, now + MIN_ROUTINE_GAP), routine.id);
+      .run(nextRunOf(routine, now + MIN_ROUTINE_GAP), routine.id);
     return this.finish(routine, id, startedAt, null);
   }
 
@@ -511,6 +585,16 @@ export class Routines {
           { cause: error }
         );
       }
+    }
+    if (routine.kind === "morning") {
+      // The person keeps the brief to be told: its answer notifies them.
+      const answer = await this.tell(
+        routine,
+        runId,
+        morningTask(routine, startedAt),
+        [routine.createdBy]
+      );
+      return answer === null ? "quiet" : "posted";
     }
     if (!routine.script) {
       const answer = await this.tell(
@@ -798,6 +882,7 @@ export class Routines {
       nextRunAt: row.enabled === 1 ? row.nextRunAt : null,
       threadId: row.threadId,
       postInSlack: row.postInSlack === 1,
+      kind: row.kind,
       lastRun,
     };
   }
@@ -890,6 +975,23 @@ function runTask(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function morningTask(routine: RoutineRow, startedAt: number): string {
+  return [
+    `Your Morning brief (routine ${routine.id}) runs now, at ${localTime(startedAt)}, after Shadow's morning review.`,
+    `Its instructions, which the person and you may change with routines_update:\n${routine.instructions}`,
+    routine.context ?? "The person started this run by hand.",
+    "Do what the instructions say, with your tools. Write the brief for the person; it stays in this thread and notifies them. If nothing needs them, answer with only QUIET.",
+  ].join("\n\n");
+}
+
+/** The next run of a routine on its schedule; a Morning brief runs only at the morning review. */
+function nextRunOf(
+  routine: Pick<RoutineRow, "kind" | "schedule">,
+  now: number
+): number | null {
+  return routine.kind === "morning" ? null : nextRun(routine.schedule, now);
 }
 
 function repairTask(

@@ -304,6 +304,9 @@ export interface Routine {
   readonly threadId: string | null;
   /** Whether each answer also goes to the Slack channel that its channel copies. */
   readonly postInSlack: boolean;
+  readonly instructions: string;
+  /** `morning` for the person's Morning brief, which runs at the morning review instead of a schedule. */
+  readonly kind: "morning" | null;
   readonly lastRun: RoutineRun | null;
 }
 
@@ -483,10 +486,25 @@ export interface CheckSnapshot {
   explicitTime: number;
   notifiedAt: number | null;
 }
+/** on_me is A, waiting B, dropped C (a B row that did not move), and decision E. */
+export type LedgerSection = "on_me" | "waiting" | "dropped" | "decision";
+/** A row of the person's ledger. Times are ms; null when not known. */
 export interface FollowingCheck extends CheckSnapshot {
   id: string;
   revision: number;
   updatedAt: number;
+  /** The row's permanent number, shown as #N. */
+  ref: number;
+  section: LedgerSection;
+  owedBy: string | null;
+  bucket: "today" | "week" | "parked" | null;
+  needsYou: boolean;
+  client: string | null;
+  sourceUrl: string | null;
+  firstAskedAt: number | null;
+  dueAt: number | null;
+  lastMovementAt: number | null;
+  closedAt: number | null;
 }
 /** A source observation: a mail, a message, or a note that intake keeps. */
 export interface IntakeEvidence {

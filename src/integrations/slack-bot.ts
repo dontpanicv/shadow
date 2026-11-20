@@ -9,6 +9,8 @@ import {
   SlackHistory,
   type SlackHistoryPorts,
   type SlackMessageEvent,
+  type SlackReaction,
+  type SlackReactionEvent,
 } from "./slack-history.ts";
 import { SlackSocket, type SocketLike } from "./slack-socket.ts";
 import { type SlackUser, slackPersonName } from "./slack-text.ts";
@@ -290,6 +292,30 @@ export class SlackBot {
     return this.history.watched(companyId, channels, name, since);
   }
 
+  /**
+   * The reactions `name` of the person with this email on messages of the channels they see, also the ones taken
+   * away; none without a bot or a Slack account with their email.
+   */
+  async reactionsOf(
+    companyId: string,
+    user: Pick<User, "id" | "email">,
+    name: string
+  ): Promise<SlackReaction[]> {
+    const row = this.row(companyId);
+    const slackUser = row && (await this.slackUser(companyId, row, user.email));
+    if (!slackUser?.id) {
+      return [];
+    }
+    return this.history.reactions(
+      companyId,
+      slackUser.id,
+      name,
+      this.companies
+        .channelsIn(companyId, user.id)
+        .flatMap((channel) => (channel.slackId ? [channel.slackId] : []))
+    );
+  }
+
   /** The channels that every member sees whose Slack channel named an issue key, such as Linear's `PIP-1040`. */
   mentioning(companyId: string, key: string): string[] {
     const slackIds = new Set(this.history.mentioning(companyId, key));
@@ -560,6 +586,14 @@ export class SlackBot {
           this.stopping.signal
         );
       });
+    } else if (
+      event.type === "reaction_added" ||
+      event.type === "reaction_removed"
+    ) {
+      // After the message that it marks, which comes in the same lane.
+      this.enqueue(companyId, "live", async () =>
+        this.history.reaction(companyId, event as SlackReactionEvent)
+      );
     } else if (event.type === "message") {
       this.enqueue(companyId, "live", (token) =>
         this.history.event(

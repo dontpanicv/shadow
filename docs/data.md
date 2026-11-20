@@ -85,7 +85,7 @@ data/
 | --- | --- | --- |
 | People, sessions, companies, members | `shadow.sqlite` (better-auth tables) | SQLite |
 | Channels, threads, credentials, routines and their runs, one-time reminders, suggestions, notifications, recent searches, the usage of the model by day, the feedback of agents | `shadow.sqlite` | SQLite; secrets AES-256-GCM with `config/secret.key` |
-| Current and historical source evidence, collection cursors, private context, internal checks, and delivery state | `shadow.sqlite`, `intake_item`, `intake_source`, `intake_fts`, `intake_check`, `intake_context`, `intake_delivery`, `intake_thread_read` | SQLite; all rows belong to one person |
+| Current and historical source evidence, collection cursors, private context, the ledger's checks, the meetings and runs of the Morning brief, and delivery state | `shadow.sqlite`, `intake_item`, `intake_source`, `intake_fts`, `intake_check`, `intake_meeting`, `intake_brief`, `intake_context`, `intake_delivery`, `intake_thread_read` | SQLite; all rows belong to one person |
 | Raw collection results, attachment bytes, prompts, model responses and usage, retrieval results, state changes, notices, agent work, corrections, and runtime fingerprints | `audit.sqlite`, `event` and `blob` | SQLite WAL, synchronous FULL; local private file, no integration credential secrets |
 | ChatGPT login | `shadow.sqlite` | encrypted, shared by all companies |
 | A thread's conversation and agent state | `session.sqlite`, the conversation named in `thread.conversation_id` | Pi Durable |

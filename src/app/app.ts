@@ -8,7 +8,9 @@ import { Browser, browserRequirements } from "../browser/browser.ts";
 import { Companies } from "../companies/companies.ts";
 import { Computer } from "../computer/computer.ts";
 import { FeedbackReports } from "../feedback/feedback.ts";
+import { DEFAULT_BRIEF } from "../intake/brief.ts";
 import { Intake } from "../intake/intake.ts";
+import { LEDGER_EMOJI } from "../intake/ledger.ts";
 import type { Connector } from "../integrations/integrations.ts";
 import { Integrations } from "../integrations/integrations.ts";
 import { linearGraphql } from "../integrations/linear.ts";
@@ -241,7 +243,19 @@ export async function createApp(
     notifications,
     reminders,
     // The Slack bot is made below; the review asks it only once Shadow runs.
-    (companyId, email) => slackBot.timeZoneOf(companyId, email)
+    (companyId, email) => slackBot.timeZoneOf(companyId, email),
+    {
+      reactions: (companyId, owner) =>
+        slackBot.reactionsOf(companyId, owner, LEDGER_EMOJI),
+      brief: async (companyId, owner, context) =>
+        routines.runMorning(
+          companyId,
+          owner,
+          companies.personalChannelOf(companyId, owner).id,
+          DEFAULT_BRIEF,
+          context
+        ),
+    }
   );
   // The Slack bot works for no person; the files of a channel take the member that background work acts as.
   const slackBot = new SlackBot(
@@ -301,6 +315,11 @@ export async function createApp(
         file,
         replaces
       ),
+    issueChanged: (companyId, change) =>
+      intake.ledger.issueChanged(companyId, {
+        ...change,
+        changes: [...change.changes],
+      }),
     post: async ({
       companyId,
       channelId,

@@ -85,3 +85,52 @@ test("intake gets the person's messages, mentions, and threads of the channels t
   expect(items[2]!.fromOwner).toBe(true);
   expect(items[0]!.chatName).toBe("#general");
 });
+
+test("a :ledger: reaction on a copied message is kept until it is taken away, and other reactions are not", () => {
+  const database = authDatabase();
+  migrate(database);
+  database.run(
+    "INSERT INTO slack_bot (company_id, token, team_id, team_name, connected_by, connected_at, team_url) VALUES ('co', x'00', 'T1', 'Acme', 'ann', 1, 'https://acme.slack.com/')"
+  );
+  database.run(
+    "INSERT INTO slack_message (company_id, slack_channel_id, ts, thread_ts, author, text, files, day) VALUES ('co', 'C1', '100.000200', '100.000100', 'Bob', 'Can you check the invoice?', '[]', '2026-11-19')"
+  );
+  const history = new SlackHistory(
+    database,
+    {} as never,
+    { channelsIn: () => [{ slackId: "C1" }] } as never,
+    {} as never
+  );
+  const reaction = (
+    type: "reaction_added" | "reaction_removed",
+    name = "ledger",
+    channel = "C1"
+  ) => ({
+    type,
+    user: "U1",
+    reaction: name,
+    item: { type: "message", channel, ts: "100.000200" },
+    event_ts: "200.000000",
+  });
+  history.reaction("co", reaction("reaction_added"));
+  history.reaction("co", reaction("reaction_added", "eyes"));
+  history.reaction("co", reaction("reaction_added", "ledger", "C9"));
+  expect(history.reactions("co", "U1", "ledger", ["C1"])).toEqual([
+    {
+      permalink: expect.stringContaining("/archives/C1/p100000200"),
+      text: "Can you check the invoice?",
+      author: "Bob",
+      at: 200_000,
+      removed: false,
+    },
+  ]);
+  // Only the channels that the person sees.
+  expect(history.reactions("co", "U1", "ledger", ["C2"])).toEqual([]);
+  history.reaction("co", reaction("reaction_removed"));
+  expect(history.reactions("co", "U1", "ledger", ["C1"])[0]!.removed).toBe(
+    true
+  );
+  expect(
+    database.query("SELECT count(*) AS n FROM slack_reaction").get()
+  ).toEqual({ n: 1 });
+});

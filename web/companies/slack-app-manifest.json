@@ -51,6 +51,7 @@
         "links:write",
         "mpim:history",
         "mpim:read",
+        "reactions:read",
         "users:read",
         "users:read.email"
       ]
@@ -75,7 +76,9 @@
         "message.channels",
         "message.groups",
         "message.im",
-        "message.mpim"
+        "message.mpim",
+        "reaction_added",
+        "reaction_removed"
       ]
     },
     "interactivity": {

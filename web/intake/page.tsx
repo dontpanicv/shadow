@@ -17,6 +17,7 @@ import {
   Dialog,
   Empty,
   PageSection,
+  Select,
   SettingsCard,
   SettingsRow,
 } from "../ui/components.tsx";
@@ -29,12 +30,24 @@ import {
   deleteUpdate,
   followingDetailQuery,
   followingOf,
+  moveFollowing,
   overviewQuery,
   sendFeedback,
   unblock,
 } from "./data.ts";
 
 const route = getRouteApi("/signed-in/c/$companyId/following");
+
+/** The sections of the ledger, in the order the page shows them. */
+const SECTIONS: readonly {
+  section: FollowingCheck["section"];
+  title: string;
+}[] = [
+  { section: "on_me", title: "On me" },
+  { section: "waiting", title: "Waiting on others" },
+  { section: "dropped", title: "Dropped" },
+  { section: "decision", title: "Decisions" },
+];
 
 /** The kept observations that show before "Show all". */
 const KEPT_ROWS = 15;
@@ -66,6 +79,15 @@ export function FollowingPage() {
     (update) => update.deliveredAt === null && update.cancelledAt === null
   );
   const open = checks.filter((check) => check.state === "open");
+  // Needs you first, then the oldest.
+  const sections = SECTIONS.map(({ section, title }) => ({
+    title,
+    rows: open
+      .filter((check) => check.section === section)
+      .toSorted(
+        (a, b) => Number(b.needsYou) - Number(a.needsYou) || a.ref - b.ref
+      ),
+  })).filter(({ rows }) => rows.length > 0);
   const history = [
     ...updates
       .filter((update) => !waiting.includes(update))
@@ -116,10 +138,10 @@ export function FollowingPage() {
               </SettingsCard>
             </PageSection>
           ) : null}
-          {open.length > 0 ? (
-            <PageSection title="Following">
+          {sections.map(({ title, rows }) => (
+            <PageSection key={title} title={title}>
               <SettingsCard>
-                {open.map((check) => (
+                {rows.map((check) => (
                   <CheckRow
                     check={check}
                     key={check.id}
@@ -128,7 +150,7 @@ export function FollowingPage() {
                 ))}
               </SettingsCard>
             </PageSection>
-          ) : null}
+          ))}
           {overview && overview.sources.length > 0 ? (
             <>
               <SourcesSection
@@ -309,11 +331,17 @@ function CheckRow({
   return (
     <SettingsRow
       compact
-      description={checkState(check)}
-      label={line(check.text)}
+      description={[check.owedBy, checkState(check)]
+        .filter(Boolean)
+        .join(" · ")}
+      label={`#${check.ref} ${line(check.text)}`}
       lead={<Icon name={check.state === "open" ? "eye" : "check"} />}
       onClick={onOpen}
-    />
+    >
+      {check.state === "open" && check.needsYou ? (
+        <Badge label="Needs you" tone="warning" />
+      ) : null}
+    </SettingsRow>
   );
 }
 
@@ -629,28 +657,45 @@ function CheckDialog({
       }}
       open
       submit={busy ? "Saving…" : "Correct"}
-      title={current.text}
+      title={`#${current.ref} ${current.text}`}
     >
       <p>{checkState(current)}</p>
+      {current.state === "open" ? (
+        <Select
+          label="Section"
+          onChange={(section) => {
+            moveFollowing(
+              companyId,
+              current,
+              section as FollowingCheck["section"]
+            ).catch(showError);
+          }}
+          options={SECTIONS.map(({ section, title }) => ({
+            value: section,
+            label: title,
+          }))}
+          value={current.section}
+        />
+      ) : null}
       <div className="following-actions">
         {current.state === "open" ? (
           <>
             <Button
               disabled={busy}
-              label="Handled"
-              onClick={() => act("handled", "Handled")}
+              label="Done"
+              onClick={() => act("handled", "Done")}
             />
             <Button
               disabled={busy}
-              label="Stop following"
-              onClick={() => act("stop", "Stop following this matter")}
+              label="Write off"
+              onClick={() => act("stop", "Write this off")}
             />
           </>
         ) : (
           <Button
             disabled={busy}
-            label="Follow again"
-            onClick={() => act("reopen", "Follow this matter again")}
+            label="Reopen"
+            onClick={() => act("reopen", "Open this again")}
           />
         )}
         {detail?.history[0]?.previous ? (
@@ -753,13 +798,14 @@ function checkState(check: FollowingCheck): string {
   if (check.state !== "open") {
     return `${stateLabel(check.state)} · ${weekdayTime(check.updatedAt)}`;
   }
-  return check.explicitTime
-    ? `Due ${weekdayTime(check.checkAt)}`
-    : `Next look ${weekdayTime(check.reviewAt)}`;
+  if (check.dueAt) {
+    return `Due ${weekdayTime(check.dueAt)}`;
+  }
+  return check.firstAskedAt ? `Since ${weekdayTime(check.firstAskedAt)}` : "";
 }
 
 function stateLabel(state: FollowingCheck["state"]): string {
-  return { open: "Following", resolved: "Handled", stopped: "Stopped" }[state];
+  return { open: "Open", resolved: "Done", stopped: "Written off" }[state];
 }
 
 function keptWhere(item: IntakeKept): string {

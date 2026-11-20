@@ -145,6 +145,13 @@ function agent(context: Context) {
       script: 'text("hello"); return [1, 2];',
     });
   }
+  if (text.includes("Your Morning brief")) {
+    return fauxAssistantMessage(
+      text.includes("Window: today")
+        ? "Needs attention: #1 Send the offer"
+        : "QUIET"
+    );
+  }
   if (text.includes("arrives at Cottage")) {
     return fauxAssistantMessage("The heating is on.");
   }
@@ -745,4 +752,70 @@ test("agents create routines and test scripts", async () => {
   expect(toolResults.at(-1)).toContain(
     "The agent would get:\nhello\n[\n  1,\n  2\n]"
   );
+});
+
+test("the Morning brief is made once in the person's own channel, runs only when the morning review starts it, and notifies its person", async () => {
+  const own = shadow.app.companies.personalChannelOf(companyId, alice);
+  routines.runMorning(
+    companyId,
+    alice,
+    own.id,
+    "Write my brief.",
+    "Window: today"
+  );
+  const [brief] = routines
+    .inCompany(companyId, alice.id)
+    .filter((routine) => routine.kind === "morning");
+  expect(brief).toMatchObject({
+    channelId: own.id,
+    instructions: "Write my brief.",
+    nextRunAt: null,
+  });
+  await until(
+    async () => routines.get(brief!.id, alice).lastRun?.outcome,
+    (outcome) => outcome !== "running"
+  );
+  expect(routines.get(brief!.id, alice).lastRun).toMatchObject({
+    outcome: "posted",
+  });
+  const { threadId } = routines.get(brief!.id, alice);
+  expect(threadOf(threadId).channelId).toBe(own.id);
+  expect(noticesOf(threadId!).join(" ")).toContain("Send the offer");
+  // The scheduler never runs it (no next run), and it has no schedule to change.
+  expect(routines.get(brief!.id, alice).nextRunAt).toBeNull();
+  expect(() =>
+    routines.update(
+      companyId,
+      alice.id,
+      brief!.id,
+      { schedule: "0 9 * * *" },
+      alice.id
+    )
+  ).toThrow("no schedule");
+  // The person's own instructions stay; a paused brief does not run.
+  routines.update(
+    companyId,
+    alice.id,
+    brief!.id,
+    { instructions: "Only my meetings." },
+    alice.id
+  );
+  routines.setEnabled(brief!.id, alice, false);
+  routines.runMorning(
+    companyId,
+    alice,
+    own.id,
+    "Write my brief.",
+    "Window: today"
+  );
+  expect(routines.get(brief!.id, alice)).toMatchObject({
+    instructions: "Only my meetings.",
+    enabled: false,
+    nextRunAt: null,
+  });
+  expect(
+    shadow.app.database
+      .query("SELECT count(*) AS n FROM routine_run WHERE routine_id = ?")
+      .get(brief!.id)
+  ).toEqual({ n: 1 });
 });

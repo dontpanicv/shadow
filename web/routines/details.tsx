@@ -2,6 +2,7 @@ import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import { createCollection, eq, useLiveQuery } from "@tanstack/react-db";
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { request } from "../app/api.ts";
 import { keyed } from "../app/collections.ts";
 import { queryClient } from "../app/query.ts";
@@ -13,6 +14,7 @@ import { AgentText } from "../threads/message.tsx";
 import {
   Badge,
   Button,
+  Dialog,
   Empty,
   Menu,
   PageSection,
@@ -66,7 +68,10 @@ const routinesOf = keyed((key: string) =>
         for (const mutation of transaction.mutations) {
           await request(`/routines/${mutation.key}`, {
             method: "PUT",
-            body: { enabled: mutation.modified.enabled },
+            body:
+              "instructions" in mutation.changes
+                ? { instructions: mutation.modified.instructions }
+                : { enabled: mutation.modified.enabled },
           });
         }
       },
@@ -108,6 +113,7 @@ export function ChannelDetails() {
       queryFn: ({ signal }) => routinesRequest(key, signal),
       select: (list) => list.runs,
     }).data ?? [];
+  const [editing, setEditing] = useState<Routine | null>(null);
   const runNow = async (routine: Routine) => {
     try {
       await request(`/routines/${routine.id}/runs`, { method: "POST" });
@@ -202,6 +208,12 @@ export function ChannelDetails() {
                       : []),
                     {
                       kind: "action",
+                      label: "Edit instructions",
+                      icon: "compose",
+                      onSelect: () => setEditing(routine),
+                    },
+                    {
+                      kind: "action",
                       label: "Run now",
                       icon: "play",
                       onSelect: () => runNow(routine),
@@ -258,6 +270,38 @@ export function ChannelDetails() {
           <Empty title="No runs yet" />
         )}
       </PageSection>
+      {editing ? (
+        <Dialog
+          onClose={() => setEditing(null)}
+          onSubmit={(form) => {
+            const instructions = String(form.get("instructions") ?? "").trim();
+            if (!instructions || instructions === editing.instructions) {
+              setEditing(null);
+              return;
+            }
+            routines
+              .update(editing.id, (draft) => {
+                draft.instructions = instructions;
+              })
+              .isPersisted.promise.then(() => showToast("success", "Saved"))
+              .catch(showError);
+            setEditing(null);
+          }}
+          open
+          submit="Save"
+          title={editing.name}
+        >
+          <label className="field">
+            Instructions
+            <textarea
+              className="input multiline"
+              defaultValue={editing.instructions}
+              name="instructions"
+              rows={16}
+            />
+          </label>
+        </Dialog>
+      ) : null}
       {brief ? (
         <PageSection title="Brief">
           <div className="page-text prose">
@@ -277,6 +321,9 @@ export function ChannelDetails() {
 function routineWhen(routine: Routine): string {
   if (!routine.enabled) {
     return "Paused";
+  }
+  if (routine.kind === "morning") {
+    return "Every morning at 08:00";
   }
   return routine.nextRunAt === null
     ? "Paused"

@@ -64,6 +64,18 @@ export interface LinearPorts {
     readonly requestId: string;
     readonly file: { readonly id: string; readonly name: string };
   }) => Promise<void>;
+  /** Gives each change of an issue to the ledgers whose rows name it, which follow its state. */
+  readonly issueChanged: (
+    companyId: string,
+    change: {
+      readonly identifier: string;
+      readonly url: string;
+      readonly stateType: string;
+      readonly stateName: string;
+      readonly changes: readonly string[];
+      readonly at: number;
+    }
+  ) => void;
 }
 
 /** What the feed of a company's Linear did, for its admins; a decision never holds the issue's text. */
@@ -249,6 +261,16 @@ export class LinearFeed {
       const events = issues.flatMap((issue) =>
         this.eventOf(companyId, issue, since)
       );
+      for (const event of events) {
+        this.ports.issueChanged(companyId, {
+          identifier: event.issue.identifier,
+          url: event.issue.url,
+          stateType: event.issue.state.type,
+          stateName: event.issue.state.name,
+          changes: event.changes.map((change) => change.replace(/^- /, "")),
+          at: event.at,
+        });
+      }
       for (let start = 0; start < events.length; start += BATCH) {
         await this.route(
           companyId,

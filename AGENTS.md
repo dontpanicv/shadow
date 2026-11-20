@@ -65,8 +65,14 @@ addresses, or code and data from employers or clients.
   person's second brain, not their worker: no source starts an agent, and an agent does research, analysis, or a draft
   only when a person asks. An urgent development is posted at once. The others wait for the person's one morning
   review in the 08:00 hour of the person's Slack time zone, which groups them by matter, posts one message to each thread with what it asks of the
-  person, keeps a check of each ask that the morning summary nudges every 2 days until it is handled or the person
-  says it is done, rejected, or someone else's, and sends the person one summary with a notification. Another notification needs a separate supported reason and a fresh
+  person, and keeps a check of each ask, nudged every 2 days until it is handled or the person says it is done,
+  rejected, or someone else's. Each check is a row of the person's ledger (`src/intake/ledger.ts`): section A on me,
+  B waiting, C dropped, E decision, with a permanent #ref and a History that only grows; code ages it in business days,
+  follows Linear states, and adds `:ledger:` reactions. Then the review starts the person's Morning brief: the one
+  routine (`routine.kind = 'morning'`) that every member has without a request, in their own channel, made with
+  `DEFAULT_BRIEF` (`src/intake/brief.ts`) and edited by the person or their orchestrator. It runs only from the
+  review, as the person, writes only their ledger, meetings, and run log, and sends them one notification or `QUIET`.
+  Another notification needs a separate supported reason and a fresh
   source check; useful answers alone never notify. No separate worker thread is made. Code selects personally relevant Slack
   conversations and keeps incoming and outgoing context. Bounded batches and subject-scoped recall reach the
   configured model provider. Silent filing starts no agent turn and sends no notification.

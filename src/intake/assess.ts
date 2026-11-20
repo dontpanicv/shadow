@@ -82,6 +82,10 @@ export interface Assessment {
     quote: string;
     at: string | null;
     afterDays: number | null;
+    /** The ledger section: the owner owes it, waits on someone, or a decision waits for a meeting. */
+    section?: "on_me" | "waiting" | "decision";
+    /** Who owes it in waiting, or who must decide in decision. */
+    owedBy?: string | null;
   }[];
   resolved: { id: string; evidence: string; quote: string }[];
 }
@@ -105,7 +109,7 @@ attention: none for filing without an agent turn, brief for a thread review at t
 notification: null by default, even when a useful answer or draft belongs in the thread. A notification needs {kind: requested, awaited_reply, due, or time_sensitive; reason: why interrupting this person helps now; evidence: a supporting source id; quote: exact supporting words}. requested means the owner asked to be told; awaited_reply means a substantive reply changes a matter Shadow was already following and the person needs to know; due means an explicit stated time has arrived and the matter remains unresolved; time_sensitive means concrete preparation or a changed event needs attention now, such as today's conference ticket or a changed departure. Preserve an exact source quote. An important matter, a new message, an @mention, an unread message, or an hour without a reply never qualifies alone. Ordinary Slack exchanges stay silent, including when someone replies later. A morning review cannot turn silent updates into notifications. Never treat an inferred internal review time as a promised deadline;
 message: the useful thread update in the person's language, whether or not a notification is warranted;
 evidence: supporting evidence ids;
-checks: [{id: an existing check id or null, text: what remains unresolved or becomes useful, evidence: source id, quote: exact source words, at: an explicit ISO date/time with UTC offset or null; currentTime and written show the company's time in timeZone with its offset, and a time that a source gives without a zone is in timeZone, afterDays: explicit calendar-day count after that evidence's timestamp or null}];
+checks: [{id: an existing check id or null, text: what remains unresolved or becomes useful, evidence: source id, quote: exact source words, at: an explicit ISO date/time with UTC offset or null; currentTime and written show the company's time in timeZone with its offset, and a time that a source gives without a zone is in timeZone, afterDays: explicit calendar-day count after that evidence's timestamp or null, section: on_me when the owner owes it (their promise, a direct ask to them, a reply they owe, or a decision that blocks someone), waiting when someone else committed to the owner, or decision when a decision was deferred to a later meeting, owedBy: the name of who owes it for waiting or who must decide for decision, else null}];
 resolved: [{id: given check id, evidence: source id, quote: exact words showing resolution or cancellation}].
 Create a new check only from newEvidenceIds. Earlier evidence is context and must not recreate resolved checks. Create a future check for a clear commitment, an unanswered request or partially fulfilled matter that remains useful to follow, a stated response period, a deadline, or an event where later preparation is useful. Waiting for a reply is not resolution. An ongoing matter must not be forgotten merely because its response date or sending details are uncertain: keep an undated internal check, and let the existing thread agent verify those details with its normal tools. This does not justify a notification. Use only dates supported by the evidence; at and afterDays are mutually exclusive. No assumed 3-day or 30-day expiry. Never convert business days or a period that starts at delivery into calendar days from the message timestamp without proof of the start and rule. Keep an uncertain internal review instead. For an event, check before it starts, not afterwards. For an undated clear commitment, choose at=null,afterDays=null: Shadow will revisit it later without claiming a promised deadline. Tentative ideas need no check. A postponement changes the same check. A resolved check needs evidence, including another person's confirmation or the owner's account of an offline resolution.
 At a time trigger, first check new evidence and source coverage. Never claim no reply when a relevant source has an error or stale coverage; explain the verification gap only when the owner needs it. An unresolved due check can justify attention now. deadlineAt=null means an internal review, not a promised deadline. At that review, stay quiet unless following up is useful; never claim a missed deadline. Once it has notifiedAt, do not repeat the same notice without a material change.
@@ -371,6 +375,15 @@ function validateChecks(
           check.afterDays <= 3660)
       ) ||
       (check.at !== null && check.afterDays !== null) ||
+      !(
+        check.section === undefined ||
+        ["on_me", "waiting", "decision"].includes(check.section)
+      ) ||
+      !(
+        check.owedBy === undefined ||
+        check.owedBy === null ||
+        typeof check.owedBy === "string"
+      ) ||
       (check.afterDays !== null &&
         input.evidence.find((item) => item.id === check.evidence)
           ?.observedAt !== undefined)

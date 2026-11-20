@@ -16,6 +16,7 @@ import {
   type IntakeIntegrations,
   type IntakeThreads,
 } from "./intake.ts";
+import type { LedgerReaction } from "./ledger.ts";
 import {
   MORNING_SYSTEM,
   type MorningInput,
@@ -105,6 +106,8 @@ async function setup(
     files: readonly { id: string; name: string }[];
   }[] = [];
   const plans: MorningInput[] = [];
+  const briefs: string[] = [];
+  let reactions: LedgerReaction[] = [];
   const reviews: {
     threadId: string;
     requestId: string;
@@ -178,7 +181,6 @@ async function setup(
       }
     },
     file: app.app.threads.file.bind(app.app.threads),
-    orchestrator: app.app.threads.orchestrator.bind(app.app.threads),
     learnedFor: (_companyId, person) => options.learned?.(person.id) ?? [],
     writeFile: app.app.threads.writeFile.bind(app.app.threads),
     deleteFile: app.app.threads.deleteFile.bind(app.app.threads),
@@ -348,7 +350,25 @@ async function setup(
       new Audit(join(app.dataDirectory, "test-audit.sqlite")),
       app.app.notifications,
       { list: () => (options.reminders?.(owner.id) ?? []) as never },
-      async () => options.timeZone ?? null
+      async () => options.timeZone ?? null,
+      {
+        reactions: async () => reactions,
+        // The Morning brief answers in the person's own channel and notifies them; here it shows its context there,
+        // and stays quiet, as a brief does, when the review put nothing into threads.
+        brief: async (briefCompany, person, context) => {
+          briefs.push(context);
+          if (context.includes("put no new matters")) {
+            return;
+          }
+          await threads.observe(
+            await app.app.threads.orchestrator(briefCompany, person),
+            context,
+            `brief:${briefs.length}`,
+            person,
+            true
+          );
+        },
+      }
     );
   intake = create();
   return {
@@ -362,6 +382,10 @@ async function setup(
     reviews,
     posts,
     plans,
+    briefs,
+    setReactions: (next: LedgerReaction[]) => {
+      reactions = next;
+    },
     token,
     credential,
     enable: (value: boolean) => {
@@ -3150,6 +3174,9 @@ test("a morning matter that needs nothing stays in its thread and out of the sum
   await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
   expect(run.reviews).toHaveLength(1);
   expect(run.posts.some((post) => post.notify)).toBe(false);
+  // The Morning brief still runs, once, and knows that nothing new came.
+  expect(run.briefs).toHaveLength(1);
+  expect(run.briefs[0]).toContain("put no new matters");
 });
 
 test("a display name that the source learns later is not a new message", async () => {
@@ -3184,4 +3211,69 @@ test("a check made from an older version of a message still follows its conversa
   expect(run.snapshots.at(-1)!.checks.map((each) => each.text)).toEqual([
     "Substantive response to balcony claim",
   ]);
+});
+
+test("each check is a ledger row with its section and source, and the morning review adds :ledger: reactions before the brief", async () => {
+  const run = await setup({
+    decide: (input) =>
+      input.newEvidenceIds.length
+        ? [
+            {
+              threadId: null,
+              startThread: false,
+              channelId: null,
+              newChannel: null,
+              title: "Balcony claim",
+              summary: "",
+              attention: "none",
+              notification: null,
+              message: "",
+              evidence: input.newEvidenceIds,
+              checks: [
+                {
+                  id: null,
+                  text: "The builder sends the repair plan",
+                  evidence: input.newEvidenceIds[0]!,
+                  quote: input.evidence[0]!.text,
+                  at: null,
+                  afterDays: null,
+                  section: "waiting",
+                  owedBy: "Builder",
+                },
+              ],
+              resolved: [],
+            },
+          ]
+        : [],
+  });
+  await intake.tick(START + 1000);
+  const [waiting] = intake.following.list(run.companyId, run.owner);
+  expect(waiting).toMatchObject({
+    ref: 1,
+    section: "waiting",
+    owedBy: "Builder",
+    sourceUrl: "https://mail.example.com/request",
+    firstAskedAt: START + 1000,
+  });
+  run.setReactions([
+    {
+      permalink: "https://acme.slack.com/archives/C1/p1",
+      text: "Can you sign the contract?",
+      author: "Bob",
+      at: START,
+      removed: false,
+    },
+  ]);
+  await intake.tick(Date.parse("2026-10-02T08:00:00+02:00"));
+  const rows = intake.following.list(run.companyId, run.owner);
+  expect(rows.find((row) => row.ref === 2)).toMatchObject({
+    text: "Can you sign the contract?",
+    section: "on_me",
+    sourceType: "slack",
+  });
+  expect(run.briefs).toHaveLength(1);
+  expect(run.briefs[0]).toContain("Window: ");
+  // One brief a day.
+  await intake.tick(Date.parse("2026-10-02T08:05:00+02:00"));
+  expect(run.briefs).toHaveLength(1);
 });

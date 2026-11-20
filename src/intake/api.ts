@@ -1,6 +1,7 @@
 import { api } from "../app/api.ts";
 import { json, type Route } from "../app/http.ts";
 import { HttpError } from "../platform/errors.ts";
+import { LEDGER_SECTIONS, type LedgerSection } from "./ledger.ts";
 
 /** Private evidence and corrections use the same service as the agent tools. */
 export const intakeApiRoutes: readonly Route[] = [
@@ -75,6 +76,28 @@ export const intakeApiRoutes: readonly Route[] = [
     api(async ({ app, params, user }) =>
       json({ checks: app.intake.following.list(params.company!, user) })
     ),
+  ],
+  [
+    "POST",
+    "/api/v1/companies/:company/following/:check/section",
+    api(async ({ app, params, user, body }) => {
+      if (
+        !(
+          typeof body.section === "string" &&
+          (LEDGER_SECTIONS as readonly string[]).includes(body.section)
+        )
+      ) {
+        throw new HttpError(400, `Send section: ${LEDGER_SECTIONS.join(", ")}`);
+      }
+      return json(
+        app.intake.following.moveSection(
+          params.company!,
+          user,
+          params.check!,
+          body.section as LedgerSection
+        )
+      );
+    }),
   ],
   [
     "GET",
